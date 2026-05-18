@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Noble ER diagram (Listec)</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'neutral',
+      er: { diagramPadding: 20 },
+      securityLevel: 'loose',
+      // Default 50_000 is exceeded by ~100+ tables with full column lists.
+      maxTextSize: 16_777_216,
+      themeVariables: {
+        fontFamily: 'system-ui, "Segoe UI", Roboto, sans-serif',
+      },
+    });
+
+    const $ = (id) => document.getElementById(id);
+
+    async function waitFrames(n) {
+      const k = Math.max(0, Math.floor(n));
+      for (let i = 0; i < k; i += 1) {
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+    }
+
+    /**
+     * Mermaid ER SVGs often declare a huge viewBox / canvas while the graph is a
+     * small cluster — tighten to real content and map to a readable CSS width.
+     */
+    function fitMermaidErSvg(svg, targetCssWidthPx) {
+      const pad = 64;
+      let bbox;
+      try {
+        bbox = svg.getBBox();
+      } catch {
+        return;
+      }
+      if (!bbox?.width || !bbox?.height || bbox.width < 2 || bbox.height < 2) return;
+      const x0 = bbox.x - pad;
+      const y0 = bbox.y - pad;
+      const vbW = bbox.width + pad * 2;
+      const vbH = bbox.height + pad * 2;
+      svg.setAttribute('viewBox', `${x0} ${y0} ${vbW} ${vbH}`);
+      svg.removeAttribute('width');
+      svg.removeAttribute('height');
+      const tw = Math.max(320, Number(targetCssWidthPx) || 640);
+      const th = (vbH / vbW) * tw;
+      svg.style.width = `${tw}px`;
+      svg.style.height = `${th}px`;
+      svg.style.maxWidth = 'none';
+      svg.style.display = 'block';
+      svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+    }
+
+    async function finalizeMermaidSvg(containerEl, widthPx) {
+      await waitFrames(2);
+      const svg = containerEl.querySelector('svg');
+      if (svg) fitMermaidErSvg(svg, widthPx);
+    }
+
+    function entityId(fullName) {
+      const s = fullName.replace(/[^a-zA-Z0-9]+/g, '_');
+      return /^[0-9]/.test(s) ? 'T_' + s : 'T_' + s;
+    }
+
+    function fmtColType(c) {
+      let t = String(c.dataType || 'unknown');
+      const len = c.charMaxLength;
+      if (len != null && len > 0 && len < 1_000_000) t += `(${len})`;
+      else if (c.numericPrecision != null) {
+        t += `(${c.numericPrecision}${c.numericScale != null ? `,${c.numericScale}` : ''})`;
+      }
+      return t.replace(/[\r\n"]/g, ' ').slice(0, 48);
+    }
+
+    /**
+     * @returns {{ diagram: string, note: string }}
+     */
+    function buildMermaid(schemaPayload, tableFilter) {
+      const needle = tableFilter.trim().toLowerCase();
+      const visible = new Set();
+      for (const t of schemaPayload.tables) {
+        if (!needle || t.fullName.toLowerCase().includes(needle)) {
+          visible.add(t.fullName);
+        }
+      }
+      const visibleCount = visible.size;
+      const pkOnly = visibleCount > 35;
+      const namesOnly = visibleCount > 85;
+      const notes = [];
+      if (namesOnly) {
+        notes.push(
+          'Very large selection: entities are name-only (no attributes). Filter to fewer tables to show PKs, then full columns in the diagram.',
+        );
+      } else if (pkOnly) {
+        notes.push(
+          'Large selection: diagram shows primary-key columns only. Narrow the table filter to draw all columns.',
+        );
+      }
+
+      const lines = ['erDiagram'];
+      for (const t of schemaPayload.tables) {
+        if (!visible.has(t.fullName)) continue;
+        const eid = entityId(t.fullName);
+        lines.push(`  ${eid}["${t.fullName.replace(/"/g, '\\"')}"] {`);
+        if (namesOnly) {
+          lines.push('    t _');
+          lines.push('  }');
+          continue;
+        }
+        let cols = pkOnly ? t.columns.filter((c) => c.isPrimaryKey) : t.columns;
+        if (cols.length === 0) {
+          lines.push('    t _');
+          lines.push('  }');
+          continue;
+        }
+        for (const c of cols) {
+          const key = c.isPrimaryKey ? ' PK' : '';
+          const typRaw = fmtColType(c);
+          const typ = typRaw
+            .replace(/[^\w]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '') || 't';
+          const safeName = String(c.name).replace(/[\r\n\s"]/g, '_');
+          lines.push(`    ${typ} ${safeName}${key}`);
+        }
+        lines.push('  }');
+      }
+      for (const fk of schemaPayload.foreignKeys) {
+        const fromFull = `${fk.fromSchema}.${fk.fromTable}`;
+        const toFull = `${fk.toSchema}.${fk.toTable}`;
+        if (!visible.has(fromFull) || !visible.has(toFull)) continue;
+        const fid = entityId(fromFull);
+        const tid = entityId(toFull);
+        const label = String(fk.name || '')
+          .replace(/[\r\n"']/g, ' ')
+          .slice(0, 40);
+        lines.push(`  ${fid} }o--|| ${tid} : "${label}"`);
+      }
+      return { diagram: lines.join('\n'), note: notes.join(' ') };
+    }
+
+    let lastDiagramMarkdown = '';
+    let lastDiagramNoteText = '';
+
+    async function renderMermaidDiagram() {
+      $('diagramError').textContent = '';
+      const noteEl = $('diagramNote');
+      if (noteEl) noteEl.textContent = '';
+      if (!lastPayload) return;
+      const { diagram, note } = buildMermaid(lastPayload, $('filter').value);
+      lastDiagramMarkdown = diagram;
+      lastDiagramNoteText = note || '';
+      if (noteEl && note) noteEl.textContent = note;
+      const out = $('mermaidHost');
+      out.innerHTML = '';
+      const wrap = document.createElement('pre');
+      wrap.className = 'mermaid';
+      wrap.textContent = diagram;
+      out.appendChild(wrap);
+      try {
+        await mermaid.run({ nodes: [wrap] });
+        const w = Math.max(280, $('mermaidHost').getBoundingClientRect().width || 640);
+        await finalizeMermaidSvg(out, w);
+      } catch (err) {
+        console.error(err);
+        $('diagramError').textContent = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    let lastPayload = null;
+
+    let diagramModalZoom = 1;
+    let diagramModalPanX = 0;
+    let diagramModalPanY = 0;
+    let diagramModalDragging = false;
+    let diagramModalDragStart = { x: 0, y: 0, panX: 0, panY: 0 };
+    let modalResizeTimer = 0;
+
+    function applyModalTransform() {
+      const stage = $('diagramModalStage');
+      const z = Math.min(32, Math.max(0.12, diagramModalZoom));
+      diagramModalZoom = z;
+      stage.style.transform = `translate(${diagramModalPanX}px, ${diagramModalPanY}px) scale(${diagramModalZoom})`;
+      $('diagramZoomLabel').textContent = `${Math.round(diagramModalZoom * 100)}%`;
+    }
+
+    function refitModalSvgToViewport() {
+      const host = $('diagramModalMermaidHost');
+      const vp = $('diagramModalViewport');
+      const svg = host.querySelector('svg');
+      if (!svg || !vp) return;
+      const w = Math.max(320, vp.clientWidth - 6);
+      fitMermaidErSvg(svg, w);
+    }
+
+    async function renderModalMermaid() {
+      const errEl = $('diagramModalError');
+      errEl.textContent = '';
+      const host = $('diagramModalMermaidHost');
+      host.innerHTML = '';
+      if (!lastDiagramMarkdown) {
+        errEl.textContent = 'No diagram to show.';
+        return;
+      }
+      const wrap = document.createElement('pre');
+      wrap.className = 'mermaid';
+      wrap.textContent = lastDiagramMarkdown;
+      host.appendChild(wrap);
+      try {
+        await mermaid.run({ nodes: [wrap] });
+        await waitFrames(2);
+        const vp = $('diagramModalViewport');
+        const w = Math.max(320, vp.clientWidth - 6);
+        const svg = host.querySelector('svg');
+        if (svg) fitMermaidErSvg(svg, w);
+      } catch (err) {
+        console.error(err);
+        errEl.textContent = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    async function openDiagramModal() {
+      if (!lastDiagramMarkdown) return;
+      const modal = $('diagramModal');
+      modal.classList.add('is-open');
+      modal.setAttribute('aria-hidden', 'false');
+      $('diagramModalNote').textContent = lastDiagramNoteText || '';
+      diagramModalZoom = 1;
+      diagramModalPanX = 0;
+      diagramModalPanY = 0;
+      applyModalTransform();
+      document.body.style.overflow = 'hidden';
+      await renderModalMermaid();
+      await waitFrames(2);
+      refitModalSvgToViewport();
+    }
+
+    function closeDiagramModal() {
+      const modal = $('diagramModal');
+      modal.classList.remove('is-open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      $('diagramModalMermaidHost').innerHTML = '';
+      $('diagramModalError').textContent = '';
+      diagramModalDragging = false;
+    }
+
+    function wireDiagramModalControls() {
+      const viewport = $('diagramModalViewport');
+      const modalRoot = $('diagramModal');
+      $('diagramExpand').addEventListener('click', () => void openDiagramModal());
+      $('mermaidHost').addEventListener('dblclick', () => {
+        if (lastDiagramMarkdown) void openDiagramModal();
+      });
+      $('diagramModalClose').addEventListener('click', closeDiagramModal);
+      for (const el of modalRoot.querySelectorAll('[data-close-modal]')) {
+        el.addEventListener('click', closeDiagramModal);
+      }
+      $('diagramZoomIn').addEventListener('click', () => {
+        diagramModalZoom *= 1.2;
+        applyModalTransform();
+      });
+      $('diagramZoomOut').addEventListener('click', () => {
+        diagramModalZoom /= 1.2;
+        applyModalTransform();
+      });
+      $('diagramZoomReset').addEventListener('click', () => {
+        diagramModalZoom = 1;
+        diagramModalPanX = 0;
+        diagramModalPanY = 0;
+        refitModalSvgToViewport();
+        applyModalTransform();
+      });
+
+      viewport.addEventListener(
+        'wheel',
+        (e) => {
+          if (!e.ctrlKey && !e.metaKey) return;
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -1 : 1;
+          const factor = 1 + delta * 0.12;
+          diagramModalZoom *= factor;
+          applyModalTransform();
+        },
+        { passive: false },
+      );
+
+      viewport.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        diagramModalDragging = true;
+        diagramModalDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          panX: diagramModalPanX,
+          panY: diagramModalPanY,
+        };
+        viewport.classList.add('is-dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!diagramModalDragging) return;
+        diagramModalPanX = diagramModalDragStart.panX + (e.clientX - diagramModalDragStart.x);
+        diagramModalPanY = diagramModalDragStart.panY + (e.clientY - diagramModalDragStart.y);
+        applyModalTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (diagramModalDragging) {
+          diagramModalDragging = false;
+          viewport.classList.remove('is-dragging');
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && $('diagramModal').classList.contains('is-open')) {
+          closeDiagramModal();
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        if (!$('diagramModal').classList.contains('is-open')) return;
+        window.clearTimeout(modalResizeTimer);
+        modalResizeTimer = window.setTimeout(() => refitModalSvgToViewport(), 150);
+      });
+    }
+
+    function renderDetails(fullName) {
+      const el = $('detailsPanel');
+      if (!lastPayload || !fullName) {
+        el.textContent = 'Select a table from the list.';
+        return;
+      }
+      const t = lastPayload.tables.find((x) => x.fullName === fullName);
+      if (!t) {
+        el.textContent = 'Table not found.';
+        return;
+      }
+      const fksIn = lastPayload.foreignKeys.filter(
+        (f) => `${f.toSchema}.${f.toTable}` === fullName,
+      );
+      const fksOut = lastPayload.foreignKeys.filter(
+        (f) => `${f.fromSchema}.${f.fromTable}` === fullName,
+      );
+      const colRows = t.columns
+        .map(
+          (c) =>
+            `<tr><td><code>${escapeHtml(c.name)}</code></td><td>${escapeHtml(
+              fmtColType(c),
+            )}</td><td>${c.nullable ? 'NULL' : 'NOT NULL'}</td><td>${
+              c.isPrimaryKey ? 'PK' : ''
+            }</td></tr>`,
+        )
+        .join('');
+      el.innerHTML = `
+        <h3>${escapeHtml(t.fullName)}</h3>
+        <p><strong>Columns</strong></p>
+        <table class="grid"><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th></tr></thead>
+        <tbody>${colRows}</tbody></table>
+        <p><strong>Foreign keys referencing this table</strong></p>
+        <ul>${fksIn.map((f) => `<li><code>${escapeHtml(f.name)}</code>: ${escapeHtml(
+          `${f.fromSchema}.${f.fromTable}.${f.fromColumn}`,
+        )} → ${escapeHtml(f.toColumn)}</li>`).join('') || '<li>(none)</li>'}</ul>
+        <p><strong>Outgoing foreign keys</strong></p>
+        <ul>${fksOut.map((f) => `<li><code>${escapeHtml(f.name)}</code>: ${escapeHtml(
+          f.fromColumn,
+        )} → ${escapeHtml(`${f.toSchema}.${f.toTable}.${f.toColumn}`)}</li>`).join('') || '<li>(none)</li>'}</ul>
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function fillTableList(schemaPayload) {
+      const ul = $('tableList');
+      ul.innerHTML = '';
+      const filt = $('filter').value.trim().toLowerCase();
+      const frag = document.createDocumentFragment();
+      for (const t of schemaPayload.tables) {
+        if (filt && !t.fullName.toLowerCase().includes(filt)) continue;
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = t.fullName;
+        btn.addEventListener('click', () => renderDetails(t.fullName));
+        li.appendChild(btn);
+        frag.appendChild(li);
+      }
+      ul.appendChild(frag);
+      $('metaLine').textContent =
+        `${schemaPayload.database} · ${schemaPayload.tableCount} tables · ` +
+        `${schemaPayload.foreignKeys.length} foreign-key edges (filtered diagram uses table filter)`;
+    }
+
+    async function loadSchema() {
+      const schemas = $('schemas').value.trim() || 'dbo';
+      const url = new URL('/api/noble/schema', window.location.origin);
+      url.searchParams.set('schemas', schemas);
+      $('status').textContent = 'Loading catalog…';
+      $('diagramError').textContent = '';
+      try {
+        const res = await fetch(url.toString(), { credentials: 'same-origin' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        lastPayload = await res.json();
+        $('status').textContent = `OK · ${lastPayload.generatedAt}`;
+        fillTableList(lastPayload);
+        await renderMermaidDiagram();
+      } catch (e) {
+        console.error(e);
+        $('status').textContent = 'Error';
+        $('diagramError').textContent = e instanceof Error ? e.message : String(e);
+        lastPayload = null;
+        lastDiagramMarkdown = '';
+        lastDiagramNoteText = '';
+        $('tableList').innerHTML = '';
+        $('mermaidHost').innerHTML = '';
+        $('detailsPanel').textContent = '';
+      }
+    }
+
+    $('reload').addEventListener('click', () => loadSchema());
+    $('filter').addEventListener('input', () => {
+      if (lastPayload) {
+        fillTableList(lastPayload);
+        void renderMermaidDiagram();
+      }
+    });
+
+    wireDiagramModalControls();
+
+    const qp = new URLSearchParams(window.location.search);
+    if (qp.get('schemas')) $('schemas').value = qp.get('schemas');
+    if (qp.get('filter')) $('filter').value = qp.get('filter');
+    loadSchema();
+  </script>
+  <style>
+    :root {
+      font-family: system-ui, Segoe UI, Roboto, sans-serif;
+      line-height: 1.4;
+      color: #1a1a1a;
+      background: #f4f4f5;
+    }
+    body {
+      margin: 0;
+      padding: 16px 20px 40px;
+      max-width: 1280px;
+      margin-inline: auto;
+    }
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 12px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+      margin-bottom: 12px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.8rem;
+      gap: 4px;
+    }
+    input {
+      padding: 6px 8px;
+      min-width: 200px;
+    }
+    button {
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+    aside,
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    #tableList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 320px;
+      overflow: auto;
+    }
+    #tableList li button {
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: transparent;
+      padding: 6px 4px;
+      font: inherit;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #tableList li button:hover {
+      background: #eef2ff;
+    }
+    .mermaid {
+      overflow: auto;
+      background: #fafafa;
+      border: 1px dashed #ccc;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    table.grid {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.85rem;
+    }
+    table.grid th,
+    table.grid td {
+      border: 1px solid #ddd;
+      padding: 4px 6px;
+      text-align: left;
+    }
+    #diagramError {
+      color: #991b1b;
+      font-weight: 600;
+      margin: 8px 0;
+    }
+    #detailsPanel code {
+      font-size: 0.85rem;
+    }
+    .meta {
+      font-size: 0.85rem;
+      color: #555;
+      margin-bottom: 8px;
+    }
+    #diagramNote {
+      margin-top: 0;
+    }
+    .diagram-panel-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .diagram-panel-head h2 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+    .btn-ghost {
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border: 1px solid #c7c7cc;
+      border-radius: 6px;
+      background: #f8f8fa;
+    }
+    .btn-ghost:hover {
+      background: #eef2ff;
+      border-color: #a5b4fc;
+    }
+    #mermaidHost {
+      cursor: zoom-in;
+      min-height: 100px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #mermaidHost .mermaid {
+      min-height: 80px;
+    }
+    .diagram-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    .diagram-modal.is-open {
+      display: flex;
+    }
+    .diagram-modal__backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      cursor: pointer;
+    }
+    .diagram-modal__shell {
+      position: relative;
+      z-index: 1;
+      width: min(96vw, 1680px);
+      height: min(92vh, 1200px);
+      max-height: 92vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+      display: flex;
+      flex-direction: column;
+      padding: 10px 12px 12px;
+      box-sizing: border-box;
+    }
+    .diagram-modal__bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 16px;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e5e5e5;
+    }
+    .diagram-modal__hint {
+      font-size: 0.8rem;
+      color: #555;
+      flex: 1 1 160px;
+    }
+    .diagram-modal__zoom {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .diagram-modal__zoom button {
+      padding: 6px 12px;
+      min-width: 40px;
+    }
+    #diagramZoomLabel {
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      min-width: 3.5rem;
+      text-align: center;
+    }
+    .diagram-modal__viewport {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      background: #fafafa;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+    }
+    .diagram-modal__viewport.is-dragging {
+      cursor: grabbing;
+    }
+    .diagram-modal__stage {
+      transform-origin: 0 0;
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #diagramModalMermaidHost {
+      width: 100%;
+      box-sizing: border-box;
+      display: block;
+    }
+    #diagramModalMermaidHost .mermaid {
+      overflow: visible;
+      background: transparent;
+      border: none;
+      margin: 0;
+      padding: 8px 0;
+    }
+    #diagramModalMermaidHost svg text {
+      font-weight: 500;
+    }
+    #diagramModalMermaidHost svg :is(path, line, polyline) {
+      stroke-width: 1.15;
+    }
+    #diagramModalError {
+      color: #991b1b;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin: 0 0 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Noble database — ER diagram</h1>
+  <p class="meta">
+    Read-only catalog via <code>/api/noble/schema</code>. Default schema filter is <code>dbo</code>; use
+    <code>*</code> for all schemas (can be slow). Bookmark
+    <code>?schemas=…</code> and <code>?filter=…</code> via the URL, or use the fields below.
+  </p>
+  <div class="toolbar">
+    <label>Schemas query <input id="schemas" type="text" value="dbo" placeholder="dbo, * , or schema1,schema2" /></label>
+    <label>Table filter <input id="filter" type="text" placeholder="substring match" /></label>
+    <button id="reload" type="button">Reload catalog</button>
+    <span id="status"></span>
+  </div>
+  <div id="diagramError"></div>
+  <p id="diagramNote" class="meta" style="color: #2563eb"></p>
+  <div class="layout">
+    <aside>
+      <h2>Tables</h2>
+      <p id="metaLine" class="meta"></p>
+      <ul id="tableList"></ul>
+    </aside>
+    <div>
+      <div class="panel">
+        <div class="diagram-panel-head">
+          <h2>Diagram</h2>
+          <button type="button" id="diagramExpand" class="btn-ghost">Expand view</button>
+        </div>
+        <p class="meta" style="margin: 0 0 8px">
+          Double-click the preview or use <strong>Expand view</strong> for fullscreen pan (drag) and zoom
+          (toolbar buttons or Ctrl / ⌘ + scroll wheel). Press Esc to close.
+        </p>
+        <div
+          id="mermaidHost"
+          title="Double-click to open fullscreen diagram"
+        ></div>
+      </div>
+      <div class="panel" style="margin-top: 16px">
+        <h2>Details</h2>
+        <div id="detailsPanel">Select a table from the list.</div>
+      </div>
+    </div>
+  </div>
+
+  <div
+    id="diagramModal"
+    class="diagram-modal"
+    aria-hidden="true"
+  >
+    <div class="diagram-modal__backdrop" data-close-modal></div>
+    <div
+      class="diagram-modal__shell"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="diagramModalTitle"
+    >
+      <div class="diagram-modal__bar">
+        <strong id="diagramModalTitle" style="font-size: 0.95rem">Expanded diagram</strong>
+        <button type="button" id="diagramModalClose">Close</button>
+        <span class="diagram-modal__hint"
+          >Drag to pan · Ctrl / ⌘ + scroll wheel to zoom (up to 3200%) · Esc closes · Reset refits width</span
+        >
+        <div class="diagram-modal__zoom">
+          <button type="button" id="diagramZoomOut" title="Zoom out">−</button>
+          <span id="diagramZoomLabel">100%</span>
+          <button type="button" id="diagramZoomIn" title="Zoom in">+</button>
+          <button type="button" id="diagramZoomReset" title="Reset pan and zoom">Reset</button>
+        </div>
+      </div>
+      <div id="diagramModalError"></div>
+      <p id="diagramModalNote" class="meta" style="color: #2563eb; margin: 0 0 6px"></p>
+      <div id="diagramModalViewport" class="diagram-modal__viewport">
+        <div id="diagramModalStage" class="diagram-modal__stage">
+          <div id="diagramModalMermaidHost"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "stellar-telo",
+  "private": true,
+  "description": "Repo root — Listec app package lives in Listec/integration/node-mssql",
+  "scripts": {
+    "postinstall": "npm install --prefix Listec/integration/node-mssql",
+    "start": "npm start --prefix Listec/integration/node-mssql",
+    "dev": "npm run dev --prefix Listec/integration/node-mssql",
+    "build": "npm run build --prefix Listec/integration/node-mssql",
+    "install:listec": "npm install --prefix Listec/integration/node-mssql"
+  }
+}

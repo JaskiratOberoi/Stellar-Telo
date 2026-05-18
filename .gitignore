@@ -1,0 +1,13 @@
+# Listec / secrets
+Listec/.env
+.env
+.env.local
+
+# Dependencies & build
+Listec/integration/node-mssql/node_modules/
+Listec/integration/node-mssql/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
