@@ -1,0 +1,130 @@
+'use client';
+
+import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { getPendingAccessions, type PendingAccessionsFeed } from '@/actions/orders.actions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { fmtIST } from '@/lib/datetime';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+export function PendingAccessionsList({
+  initial,
+  canCreate,
+}: {
+  initial: PendingAccessionsFeed;
+  canCreate: boolean;
+}) {
+  const [feed, setFeed] = useState<PendingAccessionsFeed>(initial);
+  const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+
+  const refresh = useCallback(async () => {
+    setBusy(true);
+    try {
+      setFeed(await getPendingAccessions());
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return feed.orders;
+    return feed.orders.filter(
+      (o) =>
+        (o.patientName ?? '').toLowerCase().includes(needle) ||
+        String(o.billNumber ?? o.billId).includes(needle) ||
+        String(o.mccCode ?? '').includes(needle),
+    );
+  }, [feed.orders, q]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Input
+          placeholder="Filter by patient, bill # or MCC…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="h-8 max-w-sm"
+          suppressHydrationWarning
+        />
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>
+            {feed.orders.length} awaiting accessioning · updated{' '}
+            {fmtIST(feed.fetchedAt, 'time')} IST
+          </span>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={busy}>
+            {busy ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-28">Bill #</TableHead>
+            <TableHead className="w-40">Registered</TableHead>
+            <TableHead>Patient</TableHead>
+            <TableHead className="w-20">MCC</TableHead>
+            <TableHead className="w-24 text-center">SIDs</TableHead>
+            <TableHead className="w-24 text-right">Amount</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-muted-foreground">
+                {feed.orders.length === 0
+                  ? 'No orders awaiting Sample IDs.'
+                  : 'No match.'}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((o) => (
+              <TableRow key={o.billId}>
+                <TableCell>
+                  <Link
+                    href={`/orders/new/${o.billId}`}
+                    className="font-mono text-xs underline"
+                  >
+                    {o.billNumber ?? o.billId}
+                  </Link>
+                </TableCell>
+                <TableCell>{fmtIST(o.billDate)}</TableCell>
+                <TableCell>{o.patientName ?? '—'}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {o.mccCode ?? '—'}
+                </TableCell>
+                <TableCell className="text-center">
+                  <span className="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    {o.haveGroups}/{o.requiredGroups}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">₹{o.total}</TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      {/* FAB — register a new order. Hidden for Technicians (no order:create). */}
+      {canCreate && (
+        <Link
+          href="/orders/new/create"
+          aria-label="Register new order"
+          className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-3xl leading-none text-primary-foreground shadow-lg hover:opacity-90"
+        >
+          +
+        </Link>
+      )}
+    </div>
+  );
+}
