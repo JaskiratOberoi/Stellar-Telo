@@ -7,6 +7,7 @@
  *   LISTEC_SQL_SERVER, LISTEC_SQL_DATABASE, LISTEC_SQL_USER, LISTEC_SQL_PASSWORD
  */
 
+import net from 'net';
 import sql from 'mssql';
 import type { WorksheetReportFilters, WorksheetReportRow, TestResult } from './listec.types';
 
@@ -44,6 +45,9 @@ export function getListecPoolConfig(): sql.config {
       encrypt: process.env.LISTEC_SQL_ENCRYPT !== 'false',
       trustServerCertificate: process.env.LISTEC_SQL_TRUST_CERT === 'true',
       appName: process.env.LISTEC_SQL_APP_NAME ?? 'ListecWorksheetReport',
+      // Node.js TLS rejects bare IP as SNI servername. When server is an IP and trustServerCertificate
+      // is true, override the SNI name with a placeholder — cert hostname is not validated anyway.
+      serverName: net.isIP(host) ? 'sqlserver' : undefined,
     },
     pool: { max: 10, min: 0, idleTimeoutMillis: 30_000 },
     connectionTimeout: Number(process.env.LISTEC_SQL_CONNECT_TIMEOUT_MS ?? 15_000),
