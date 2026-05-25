@@ -14,6 +14,8 @@ services:
       - "127.0.0.1:31311:31311"
     volumes:
       - ./Listec/integration/node-mssql/data:/app/dist/data
+    networks:
+      - telo
     healthcheck:
       test:
         [
@@ -26,3 +28,71 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  # Sessions + lookup cache for Telo (internal only)
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - telo
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Telo — B2C billing web app (Next.js). Internal; exposed via caddy only.
+  telo-web:
+    build: ./telo-web
+    restart: unless-stopped
+    env_file:
+      - ./telo-web/.env
+    environment:
+      TZ: ${TZ:-Asia/Kolkata}
+      LISTEC_API_BASE_URL: http://listec:31311
+      REDIS_URL: redis://redis:6379
+    networks:
+      - telo
+    depends_on:
+      listec:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Reverse proxy — the only publicly exposed service (auto-HTTPS).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - telo
+    depends_on:
+      telo-web:
+        condition: service_started
+
+networks:
+  telo:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

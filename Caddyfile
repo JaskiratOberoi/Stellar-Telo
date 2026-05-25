@@ -1,0 +1,6 @@
+# Telo reverse proxy. Replace :80 with your domain (e.g. telo.example.com) to
+# get automatic HTTPS from Caddy. telo-web is internal-only on the compose net.
+:80 {
+	encode gzip zstd
+	reverse_proxy telo-web:3000
+}
