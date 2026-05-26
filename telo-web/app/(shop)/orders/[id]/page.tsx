@@ -4,8 +4,13 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { getOrder } from '@/db/read/orders';
+import { fetchScopedMccUnits } from '@/db/read/mccUnits';
+import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { RecordPaymentForm } from '@/components/payment/record-payment';
 import { RecordRefundForm } from '@/components/payment/record-refund';
+import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-button';
+import { LabInvoice } from '@/components/orders/lab-invoice';
+import { BillInvoice } from '@/components/orders/bill-invoice';
 import { fmtIST } from '@/lib/datetime';
 import {
   Card,
@@ -26,10 +31,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function OrderReceiptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ back?: string }>;
 }) {
   const { id } = await params;
+  const { back } = await searchParams;
   const billId = Number(id);
   if (!Number.isInteger(billId)) notFound();
 
@@ -37,6 +45,14 @@ export default async function OrderReceiptPage({
   const scope = await getMccScope(user.uid);
   const order = await getOrder(billId, scope);
   if (!order) notFound();
+
+  // Fetch MCC display name + invoice branding config in parallel.
+  const mccId = order.mccCode;
+  const [mccUnits, invoiceConfig] = await Promise.all([
+    mccId != null ? fetchScopedMccUnits([mccId]) : Promise.resolve([]),
+    mccId != null ? getMccInvoiceConfig(mccId) : Promise.resolve(null),
+  ]);
+  const mccName = mccUnits[0]?.name ?? null;
 
   const canCapture = hasCapability(user.caps, 'payment:capture');
   const canPay = order.balance > 0 && canCapture;
@@ -47,20 +63,41 @@ export default async function OrderReceiptPage({
     order.gender === 1 ? 'Male' : order.gender === 2 ? 'Female' : order.gender ?? '—';
 
   return (
-    <div className="space-y-4">
+    <div>
+      {/* ── Print: lab receipt (samples + tests) ─────────────────── */}
+      <div className="hidden print:block" data-invoice="lab">
+        <LabInvoice order={order} mccName={mccName} config={invoiceConfig} />
+      </div>
+
+      {/* ── Print: bill (costing only, no samples) ───────────────── */}
+      <div className="hidden print:block" data-invoice="bill">
+        <BillInvoice order={order} mccName={mccName} config={invoiceConfig} />
+      </div>
+
+      {/* ── Screen view: interactive web layout ──────────────────── */}
+      <div className="space-y-4 print:hidden">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
             Receipt #{order.billNumber ?? order.billId}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {order.patientName ?? 'Patient'} · {dateLabel} · MCC{' '}
-            <span className="font-mono">{order.mccCode ?? '—'}</span>
+            {order.patientName ?? 'Patient'} · {dateLabel} ·{' '}
+            {mccName ?? (
+              <>MCC <span className="font-mono">{order.mccCode ?? '—'}</span></>
+            )}
           </p>
         </div>
-        <Link href="/orders" className="text-sm underline">
-          ← All orders
-        </Link>
+        <div className="flex items-center gap-3">
+          <PrintLabButton />
+          <PrintBillButton />
+          <Link
+            href={back ?? '/orders'}
+            className="text-sm underline"
+          >
+            {back?.startsWith('/balances') ? '← Accounts' : '← All orders'}
+          </Link>
+        </div>
       </div>
 
       {/* Top row: Patient (narrow) + Samples (wide) */}
@@ -74,18 +111,42 @@ export default async function OrderReceiptPage({
           <CardContent className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 p-4 pt-0 text-sm">
             <span className="text-muted-foreground">Date</span>
             <span>{dateLabel}</span>
-            <span className="text-muted-foreground">MCC</span>
-            <span className="font-mono">{order.mccCode ?? '—'}</span>
+            <span className="text-muted-foreground">Client</span>
+            <span>{mccName ?? <span className="font-mono text-xs">{order.mccCode ?? '—'}</span>}</span>
             <span className="text-muted-foreground">Age / Gender</span>
             <span>
               {order.age ?? '—'} / {genderLabel}
             </span>
             <span className="text-muted-foreground">Mobile</span>
             <span>{order.mobile ?? '—'}</span>
+            {order.email && (
+              <>
+                <span className="text-muted-foreground">Email</span>
+                <span className="truncate">{order.email}</span>
+              </>
+            )}
             {order.patientId != null && (
               <>
                 <span className="text-muted-foreground">PID</span>
                 <span className="font-mono">{order.patientId}</span>
+              </>
+            )}
+            {order.refCustomerName && (
+              <>
+                <span className="text-muted-foreground">MRD / Visit</span>
+                <span>{order.refCustomerName}</span>
+              </>
+            )}
+            {order.refDoctorName && (
+              <>
+                <span className="text-muted-foreground">Ref. doctor</span>
+                <span>{order.refDoctorName}</span>
+              </>
+            )}
+            {order.paymentType && (
+              <>
+                <span className="text-muted-foreground">Payment</span>
+                <span>{order.paymentType}</span>
               </>
             )}
           </CardContent>
@@ -111,7 +172,7 @@ export default async function OrderReceiptPage({
                         {s.sampleTypeName}
                       </p>
                       {s.status && (
-                        <span className="shrink-0 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                        <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                           {s.status}
                         </span>
                       )}
@@ -166,21 +227,42 @@ export default async function OrderReceiptPage({
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-4">
+        <Card variant="light" className="lg:col-span-4">
           <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-base">Summary</CardTitle>
+            <CardTitle className="text-base text-zinc-900">Summary</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 p-4 pt-0 text-sm">
+          <CardContent className="space-y-3 p-4 pt-0 text-sm text-zinc-900">
             <div className="space-y-1">
               <Row label="Amount" value={`₹${order.amount}`} />
               <Row label="Discount" value={`₹${order.discount}`} />
-              <Row label="Paid" value={`₹${order.amountPaid}`} />
-              <div className="border-t pt-1">
-                <Row label="Balance" value={`₹${order.balance}`} bold />
+            </div>
+
+            {order.receipts.length > 0 && (
+              <div className="border-t border-zinc-200 pt-2 space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Payments &amp; refunds · {order.receipts.length}
+                </p>
+                <div className="space-y-1">
+                  {order.receipts.map((rcpt, idx) => (
+                    <ReceiptRow key={idx} rcpt={rcpt} />
+                  ))}
+                </div>
+                <div className="border-t border-zinc-200 pt-1.5">
+                  <Row label="Net paid" value={`₹${order.amountPaid}`} />
+                </div>
               </div>
+            )}
+            {order.receipts.length === 0 && (
+              <div className="border-t border-zinc-200 pt-2">
+                <Row label="Paid" value={`₹${order.amountPaid}`} />
+              </div>
+            )}
+
+            <div className="border-t border-zinc-200 pt-2">
+              <Row label="Balance" value={`₹${order.balance}`} bold />
             </div>
             {canPay && (
-              <div className="border-t pt-3">
+              <div className="border-t border-zinc-200 pt-3">
                 <RecordPaymentForm
                   billId={order.billId}
                   balance={order.balance}
@@ -188,7 +270,7 @@ export default async function OrderReceiptPage({
               </div>
             )}
             {canRefund && (
-              <div className="border-t pt-3">
+              <div className="border-t border-zinc-200 pt-3">
                 <RecordRefundForm
                   billId={order.billId}
                   amountPaid={order.amountPaid}
@@ -198,6 +280,7 @@ export default async function OrderReceiptPage({
           </CardContent>
         </Card>
       </div>
+      </div>{/* end screen view */}
     </div>
   );
 }
@@ -213,10 +296,48 @@ function Row({
 }) {
   return (
     <div
-      className={`flex justify-between ${bold ? 'font-semibold' : 'text-muted-foreground'}`}
+      className={`flex justify-between ${bold ? 'font-semibold text-zinc-900' : 'text-zinc-500'}`}
     >
       <span>{label}</span>
-      <span className={bold ? '' : 'text-foreground'}>{value}</span>
+      <span className={bold ? '' : 'text-zinc-900'}>{value}</span>
+    </div>
+  );
+}
+
+// One line per payment / refund in the Summary card. Refunds show in red
+// with a leading minus so the running net is clear at a glance.
+function ReceiptRow({
+  rcpt,
+}: {
+  rcpt: import('@/db/read/orders').OrderReceipt;
+}) {
+  const isRefund = rcpt.kind === 'refund';
+  const dateLabel = rcpt.date ? fmtIST(rcpt.date, 'date') : '—';
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="flex-1 truncate">
+        <span className="text-zinc-500">{dateLabel}</span>
+        <span className="mx-1 text-zinc-300">·</span>
+        <span className="text-zinc-900">{rcpt.method ?? 'Cash'}</span>
+        {rcpt.reference && (
+          <>
+            <span className="mx-1 text-zinc-300">·</span>
+            <span className="font-mono text-zinc-600">{rcpt.reference}</span>
+          </>
+        )}
+        {isRefund && (
+          <span className="ml-1.5 rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-700">
+            refund
+          </span>
+        )}
+      </span>
+      <span
+        className={
+          isRefund ? 'font-medium text-red-700' : 'font-medium text-zinc-900'
+        }
+      >
+        {isRefund ? '− ' : ''}₹{rcpt.amount.toLocaleString('en-IN')}
+      </span>
     </div>
   );
 }

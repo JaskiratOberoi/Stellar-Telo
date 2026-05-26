@@ -1,19 +1,19 @@
 import type { AuthRow, Capability, TeloRole } from '@/types/auth';
 
 /**
- * Telo capabilities — derived in two ways depending on whether a user has an
- * assigned Telo role (tbl_telo_user_role) or not:
+ * Telo capabilities are role-based. The role itself comes from one of two
+ * places:
  *
- * 1. **Role present**  → `ROLE_CAPS[role]` is the authoritative cap set.
- *    Tweak per-role permissions here and redeploy (per the platform
- *    decision: defaults in code, admin panel only assigns roles).
- * 2. **Role absent**   → fall back to the legacy LIS-derived mapping
- *    (`deriveLisCaps`) so existing logins continue working exactly as before.
- * 3. **Bootstrap**     → an LIS Super Admin (usertypeid=1) with no Telo role
- *    row is implicitly treated as Telo `super_admin`, so the Admin panel is
- *    always reachable. Once they get an explicit row, that wins.
+ * 1. **Explicit assignment** (`tbl_telo_user_role`) — set by a Telo Super
+ *    Admin via the Admin panel. Highest precedence.
+ * 2. **Implicit (derived from LIS usertypeid)** — every login that lacks an
+ *    explicit row gets a Telo role derived in code from its
+ *    `tbl_med_user_master.usertypeid` via `LIS_TO_TELO_ROLE_MAP` below.
+ *    No DB writes; nothing in the LIS schema changes.
  *
- * Deny-by-default within `ROLE_CAPS`: a role earns a capability only if listed.
+ * Tweak the per-role permission set in `ROLE_CAPS` or the per-LIS-role
+ * mapping in `LIS_TO_TELO_ROLE_MAP` and redeploy. The Admin panel still
+ * lets you override on a per-user basis without code changes.
  */
 
 export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
@@ -30,6 +30,7 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:view',
     'rate:manage',
     'balance:view',
+    'dashboard:view',
   ],
   admin: [
     // Everything super_admin has EXCEPT user:manage.
@@ -44,6 +45,7 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:view',
     'rate:manage',
     'balance:view',
+    'dashboard:view',
   ],
   billing: [
     'order:create',
@@ -56,9 +58,11 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'payment:capture',
     'rate:view',
     'balance:view',
+    'dashboard:view',
   ],
   technician: [
-    // Only the New Order worklist — open existing orders to add SIDs.
+    // Strictly the New Order worklist — open existing orders to add SIDs.
+    // No dashboard:view → revenue KPIs are hidden and / lands on /orders/new.
     'order:accession',
     'order:view',
     'patient:view',
@@ -70,60 +74,64 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'bill:view',
     'rate:view',
     'balance:view',
+    'dashboard:view',
   ],
 };
 
-/** Resolve caps for an explicitly-assigned Telo role. */
+/**
+ * Map every LIS `tbl_med_usertypes.id` to its Telo role. IDs not listed
+ * default to `'viewer'` — the safest fallback for an unknown LIS role.
+ *
+ * Source: `tbl_med_usertypes` snapshot. Numbers are the LIS `id`s.
+ */
+export const LIS_TO_TELO_ROLE_MAP: Record<number, TeloRole> = {
+  1: 'super_admin', // Super Admin
+  5: 'admin', // Admin
+  26: 'admin', // Director
+  28: 'admin', // BAS ADMIN
+  32: 'admin', // SALES ADMIN
+  2: 'billing', // Client
+  7: 'billing', // Sub Client
+  12: 'billing', // CLIENT INVOICE
+  29: 'billing', // WALKIN CODES
+  33: 'billing', // ENTRY
+  4: 'technician', // Technician
+  9: 'technician', // Molecular
+  16: 'technician', // PHLEBOTMIST
+  17: 'technician', // HISTO TECH
+  18: 'technician', // AUTHORISED
+  20: 'technician', // ACCESSIONING
+  25: 'technician', // SPL MOLECULR
+  30: 'technician', // TECH ONLY
+  34: 'technician', // HLD ACCESSION
+  // Everything else (Doctor, Sales, Reporting variants, Accounts, RSM, …)
+  // → viewer by default. Override per-user from the Admin panel if needed.
+};
+
+/** Resolve caps for a given Telo role. */
 export function deriveCapsForRole(role: TeloRole): Capability[] {
   return [...ROLE_CAPS[role]];
 }
 
-/** Legacy LIS-derived capability set — used when no Telo role is assigned. */
-function deriveLisCaps(row: AuthRow): Capability[] {
-  const caps = new Set<Capability>();
-  const t = row.usertype_id ?? -1;
-
-  // tbl_med_usertypes ids
-  const SUPER_ADMIN = 1;
-  const ORDER_ROLES = new Set<number>([2, 7, 12]); // Client, Sub Client, CLIENT INVOICE
-  const VIEW_ROLES = new Set<number>([2, 7, 8, 12]); // + CLIENT REPORTING
-
-  if (t === SUPER_ADMIN) {
-    return [...ROLE_CAPS.super_admin];
-  }
-
-  if (ORDER_ROLES.has(t)) {
-    caps.add('order:create');
-    caps.add('order:accession');
-    caps.add('order:view');
-    caps.add('patient:create');
-    caps.add('payment:capture');
-  }
-  if (VIEW_ROLES.has(t)) {
-    caps.add('bill:view');
-    caps.add('balance:view');
-    caps.add('order:view');
-  }
-
-  if (row.cap_discount && caps.has('order:create')) caps.add('order:discount');
-  if (row.cap_patient_details) caps.add('patient:view');
-
-  return [...caps];
+/** Derive a Telo role from an LIS usertypeid (always returns one). */
+export function lisUsertypeToTeloRole(
+  lisUsertypeId: number | null | undefined,
+): TeloRole {
+  if (lisUsertypeId == null) return 'viewer';
+  return LIS_TO_TELO_ROLE_MAP[lisUsertypeId] ?? 'viewer';
 }
 
 /**
- * Main entry — picks the right derivation:
- *   teloRole assigned → ROLE_CAPS[role]
- *   otherwise, LIS Super Admin (usertypeid=1) → bootstrap super_admin
- *   otherwise, legacy LIS-derived caps.
+ * Main entry — explicit assignment wins; otherwise derive from LIS
+ * usertypeid via the in-code map. AuthRow's per-user security bits are no
+ * longer used for capability shaping — the role is the source of truth.
  */
 export function deriveCapabilities(
   row: AuthRow,
   teloRole: TeloRole | null,
 ): Capability[] {
-  if (teloRole) return deriveCapsForRole(teloRole);
-  if (row.usertype_id === 1) return deriveCapsForRole('super_admin');
-  return deriveLisCaps(row);
+  const effective = teloRole ?? lisUsertypeToTeloRole(row.usertype_id);
+  return deriveCapsForRole(effective);
 }
 
 export function hasCapability(caps: Capability[], needed: Capability): boolean {

@@ -64,17 +64,17 @@ export function OrdersLive({ initial }: { initial: RecentFeed }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1 rounded-md border bg-muted/30 p-1">
+        <div className="flex items-center gap-1 rounded-lg border border-white/5 bg-card p-1">
           {VIEWS.map((v) => (
             <button
               key={v.id}
               type="button"
               onClick={() => setView(v.id)}
               className={
-                'rounded px-3 py-1 text-xs font-medium transition-colors ' +
+                'rounded px-3 py-1 text-xs font-medium transition-all duration-150 ' +
                 (view === v.id
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground')
+                  ? 'bg-primary/20 text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5')
               }
               title={v.hint}
             >
@@ -91,7 +91,7 @@ export function OrdersLive({ initial }: { initial: RecentFeed }) {
           <span className="flex items-center gap-1.5">
             <span
               className={`inline-block h-2 w-2 rounded-full ${
-                live ? 'animate-pulse bg-green-500' : 'bg-muted-foreground/40'
+                live ? 'animate-pulse bg-secondary' : 'bg-muted-foreground/40'
               }`}
             />
             {live ? 'Live' : 'Paused'} · updated {updated} IST

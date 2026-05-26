@@ -10,10 +10,13 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       {/* suppressHydrationWarning: some browser extensions inject attributes
           (e.g. cz-shortcut-listen) onto <body> before React hydrates. */}
-      <body className="min-h-screen antialiased" suppressHydrationWarning>
+      <body
+        className="min-h-screen font-sans antialiased bg-background text-foreground"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

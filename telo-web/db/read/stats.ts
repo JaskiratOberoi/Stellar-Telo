@@ -1,5 +1,6 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
+import { getReceiptsInPeriod } from '@/db/read/receipts';
 
 export interface DayStats {
   date: string; // YYYY-MM-DD the stats are for
@@ -7,7 +8,14 @@ export interface DayStats {
   patients: number;
   registrations: number;
   revenue: number;
+  /** Money received on `date` (keyed by receipt date, not bill date). */
   collected: number;
+  /** Cash subset of `collected`. */
+  cashCollected: number;
+  /** Non-cash subset of `collected` (UPI / Card / Cheque / Online / Credit). */
+  otherCollected: number;
+  /** Refunds paid out on `date`. */
+  refunded: number;
   outstanding: number;
   discount: number;
   byStatus: { status: string; count: number }[];
@@ -17,7 +25,8 @@ export interface DayStats {
 
 const EMPTY = (date: string): DayStats => ({
   date, bills: 0, patients: 0, registrations: 0, revenue: 0,
-  collected: 0, outstanding: 0, discount: 0, byStatus: [], trend: [],
+  collected: 0, cashCollected: 0, otherCollected: 0, refunded: 0,
+  outstanding: 0, discount: 0, byStatus: [], trend: [],
   fetchedAt: new Date().toISOString(),
 });
 
@@ -41,6 +50,12 @@ export async function getStats(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return EMPTY(date);
   const unrestricted = ids.length > 1000;
+
+  // Collections (Cash/Other/Refund) come from the receipts table keyed by
+  // `recd_date`, NOT from b.amount_paid keyed by bill_date. A payment
+  // recorded today against an older bill belongs in today's KPIs, not in
+  // the older bill's day.
+  const receiptsPromise = getReceiptsInPeriod(scope, date, date);
 
   return withRetry(async () => {
     const pool = await getPool();
@@ -68,7 +83,6 @@ export async function getStats(
         (SELECT COUNT(*) FROM dbo.tbl_billing_patient_detail b ${bF}) AS bills,
         (SELECT COUNT(DISTINCT b.patientname) FROM dbo.tbl_billing_patient_detail b ${bF}) AS patients,
         (SELECT ISNULL(SUM(b.amount),0) FROM dbo.tbl_billing_patient_detail b ${bF}) AS revenue,
-        (SELECT ISNULL(SUM(b.amount_paid),0) FROM dbo.tbl_billing_patient_detail b ${bF}) AS collected,
         (SELECT ISNULL(SUM(b.Balance),0) FROM dbo.tbl_billing_patient_detail b ${bF}) AS outstanding,
         (SELECT ISNULL(SUM(b.discount_amount),0) FROM dbo.tbl_billing_patient_detail b ${bF}) AS discount,
         (SELECT COUNT(*) FROM dbo.tbl_med_mcc_patient_master p ${rF}) AS registrations;
@@ -85,6 +99,7 @@ export async function getStats(
       ${tF}
       GROUP BY CAST(b.bill_date AS DATE) ORDER BY 1;
     `);
+    const receipts = await receiptsPromise;
 
     const sets = r.recordsets as unknown as [
       Record<string, number>[],
@@ -119,7 +134,11 @@ export async function getStats(
       patients: Number(k.patients ?? 0),
       registrations: Number(k.registrations ?? 0),
       revenue: Number(k.revenue ?? 0),
-      collected: Number(k.collected ?? 0),
+      // Cash-flow KPIs — keyed off recd_date (see receipts.ts invariant).
+      collected: receipts.collected,
+      cashCollected: receipts.cashCollected,
+      otherCollected: receipts.otherCollected,
+      refunded: receipts.refunded,
       outstanding: Number(k.outstanding ?? 0),
       discount: Number(k.discount ?? 0),
       byStatus,

@@ -98,8 +98,8 @@ export function CreatableCombobox({
         autoComplete="off"
         disabled={disabled}
         className={cn(
-          'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          disabled && 'cursor-not-allowed bg-muted/40 text-muted-foreground',
+          'flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60',
+          disabled && 'cursor-not-allowed opacity-50 text-muted-foreground',
         )}
         placeholder={placeholder}
         value={display}
@@ -144,7 +144,7 @@ export function CreatableCombobox({
         }}
       />
       {open && (filtered.length > 0 || showAddNew) && (
-        <ul className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-background shadow-md">
+        <ul className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-white/10 bg-card shadow-xl">
           {filtered.map((i, idx) => (
             <li key={i.id}>
               <button
@@ -156,7 +156,7 @@ export function CreatableCombobox({
                 }}
                 className={cn(
                   'flex w-full items-center justify-between px-3 py-2 text-left text-sm',
-                  idx === hi ? 'bg-accent' : 'hover:bg-accent',
+                  idx === hi ? 'bg-white/10' : 'hover:bg-white/5',
                 )}
               >
                 <span>{i.name ?? i.code}</span>
@@ -177,7 +177,7 @@ export function CreatableCombobox({
                 }}
                 className={cn(
                   'flex w-full items-center justify-between border-t px-3 py-2 text-left text-sm',
-                  addNewIdx === hi ? 'bg-accent' : 'hover:bg-accent',
+                  addNewIdx === hi ? 'bg-white/10' : 'hover:bg-white/5',
                 )}
               >
                 <span>

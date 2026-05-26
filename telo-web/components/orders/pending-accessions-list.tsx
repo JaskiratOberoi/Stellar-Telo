@@ -6,6 +6,7 @@ import { getPendingAccessions, type PendingAccessionsFeed } from '@/actions/orde
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fmtIST } from '@/lib/datetime';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -89,26 +90,38 @@ export function PendingAccessionsList({
             </TableRow>
           ) : (
             rows.map((o) => (
-              <TableRow key={o.billId}>
+              <TableRow
+                key={o.billId}
+                className="group cursor-pointer transition-transform hover:-translate-y-px"
+              >
                 <TableCell>
                   <Link
                     href={`/orders/new/${o.billId}`}
-                    className="font-mono text-xs underline"
+                    className="font-mono text-xs underline underline-offset-2"
                   >
                     {o.billNumber ?? o.billId}
                   </Link>
                 </TableCell>
                 <TableCell>{fmtIST(o.billDate)}</TableCell>
                 <TableCell>{o.patientName ?? '—'}</TableCell>
-                <TableCell className="font-mono text-xs">
+                <TableCell className="font-mono text-xs text-muted-foreground">
                   {o.mccCode ?? '—'}
                 </TableCell>
                 <TableCell className="text-center">
-                  <span className="rounded bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  <span
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      o.haveGroups >= o.requiredGroups
+                        ? 'bg-secondary/15 text-secondary'
+                        : 'bg-amber-500/15 text-amber-400',
+                    )}
+                  >
                     {o.haveGroups}/{o.requiredGroups}
                   </span>
                 </TableCell>
-                <TableCell className="text-right">₹{o.total}</TableCell>
+                <TableCell className="text-right font-medium">
+                  ₹{o.total}
+                </TableCell>
               </TableRow>
             ))
           )}
@@ -120,7 +133,7 @@ export function PendingAccessionsList({
         <Link
           href="/orders/new/create"
           aria-label="Register new order"
-          className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-3xl leading-none text-primary-foreground shadow-lg hover:opacity-90"
+          className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl font-light leading-none text-primary-foreground shadow-xl shadow-primary/30 transition-all duration-200 hover:scale-105 active:scale-95"
         >
           +
         </Link>

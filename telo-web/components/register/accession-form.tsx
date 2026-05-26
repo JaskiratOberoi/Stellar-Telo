@@ -33,7 +33,7 @@ export function AccessionForm({
   const [status, setStatus] = useState<Record<number, SidStatus>>({});
 
   if (!mounted) {
-    return <div className="h-40 animate-pulse rounded-xl border bg-muted/40" />;
+    return <div className="h-40 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />;
   }
 
   const pendingGroups = groups.filter((g) => g.existingSid == null);

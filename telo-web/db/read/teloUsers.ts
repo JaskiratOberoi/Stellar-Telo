@@ -41,6 +41,10 @@ export interface TeloUserRow {
   lisUsertypeName: string | null;
   teloRole: TeloRole | null;
   assignedAt: string | null;
+  /** True if `tbl_med_user_master.createdby` starts with `'telo:'` — Telo
+   *  is the only writer that uses that prefix (see
+   *  `usp_telo_admin_create_user`). LIS-created rows never carry it. */
+  createdByTelo: boolean;
 }
 
 /** Admin panel listing — LIS users joined to their Telo role assignment. */
@@ -58,6 +62,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lisUsertypeName: string | null;
       teloRole: string | null;
       assignedAt: Date | null;
+      createdByTelo: number; // 0/1 from CASE
     }>(`
       SELECT u.id, u.Username AS username,
              u.firstname AS firstName, u.lastname AS lastName,
@@ -65,7 +70,8 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
              u.usertypeid AS lisUsertypeId,
              ut.Name AS lisUsertypeName,
              r.role AS teloRole,
-             r.assigned_at AS assignedAt
+             r.assigned_at AS assignedAt,
+             CASE WHEN u.createdby LIKE 'telo:%' THEN 1 ELSE 0 END AS createdByTelo
       FROM dbo.tbl_med_user_master u
       LEFT JOIN dbo.tbl_med_usertypes ut ON ut.id = u.usertypeid
       LEFT JOIN dbo.tbl_telo_user_role r ON r.user_id = u.id
@@ -88,6 +94,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lisUsertypeName: x.lisUsertypeName?.trim() ?? null,
       teloRole: toRole(x.teloRole),
       assignedAt: x.assignedAt ? x.assignedAt.toISOString() : null,
+      createdByTelo: Number(x.createdByTelo) === 1,
     }));
   });
 }

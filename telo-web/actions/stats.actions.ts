@@ -11,7 +11,8 @@ export async function getDashboardStats(dateISO?: string): Promise<DayStats> {
   if (!user) {
     return {
       date: d, bills: 0, patients: 0, registrations: 0, revenue: 0,
-      collected: 0, outstanding: 0, discount: 0, byStatus: [], trend: [],
+      collected: 0, cashCollected: 0, otherCollected: 0, refunded: 0,
+      outstanding: 0, discount: 0, byStatus: [], trend: [],
       fetchedAt: new Date().toISOString(),
     };
   }

@@ -34,8 +34,7 @@ export default async function CatalogPage({
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Catalog</h1>
         <p className="text-muted-foreground">
-          {all.length.toLocaleString()} active tests &amp; profiles · prices
-          shown are list/MRP (per-centre rate is applied at checkout)
+          {all.length.toLocaleString()} active tests &amp; profiles · MRP pricing
         </p>
       </div>
 

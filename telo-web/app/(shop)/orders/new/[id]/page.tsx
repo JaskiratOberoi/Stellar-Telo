@@ -116,7 +116,7 @@ export default async function AccessionPage({
         </CardHeader>
         <CardContent className="p-4 pt-0">
           {complete ? (
-            <p className="rounded-md border border-green-600/30 bg-green-500/10 px-3 py-2 text-sm text-green-700">
+            <p className="rounded-md border border-secondary/30 bg-secondary/10 px-3 py-2 text-sm text-secondary">
               All sample types are accessioned for this order.
             </p>
           ) : (

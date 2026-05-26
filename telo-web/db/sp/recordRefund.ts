@@ -1,6 +1,16 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
 
+/*
+ * NO-BACKDATE INVARIANT — see db/sp/recordReceipt.ts for the full rationale.
+ * `recd_date` on the refund row is set by GETDATE() inside
+ * dbo.usp_telo_record_refund (db/sql/81_usp_telo_record_refund.sql). Do NOT
+ * add a date parameter to this wrapper: the daily-refund KPI on the
+ * dashboard / accounts page keys off `recd_date` (see db/read/receipts.ts),
+ * and shifting refund dates would corrupt period reconciliation just like
+ * payment backdating would.
+ */
+
 export interface RecordRefundResult {
   ok: boolean;
   errorCode: string | null;

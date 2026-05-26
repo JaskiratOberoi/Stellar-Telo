@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   registerOrder,
   searchCatalogAction,
@@ -11,6 +12,7 @@ import {
   type PreviewResult,
   type RefDataForMcc,
 } from '@/actions/register.actions';
+import { removeFromCart } from '@/actions/cart.actions';
 import type { SampleGroup } from '@/db/sp/previewSampleGroups';
 import { PAY_METHODS } from '@/lib/payment-methods';
 import type { ScopedMcc } from '@/db/read/mccUnits';
@@ -36,7 +38,7 @@ import {
 const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr'];
 const initial: RegisterState = { error: null };
 const sel =
-  'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm';
+  'h-9 w-full rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
 
 type Picked = { id: number; kind: 'test' | 'profile'; code: string; name: string };
 
@@ -69,7 +71,13 @@ const DEFAULTS: Fields = {
   discountAmount: '0',
 };
 
-export function RegisterForm({ units }: { units: ScopedMcc[] }) {
+export function RegisterForm({
+  units,
+  initialItems = [],
+}: {
+  units: ScopedMcc[];
+  initialItems?: { id: number; kind: 'test' | 'profile'; code: string; name: string }[];
+}) {
   // Render the form CLIENT-ONLY: browser extensions (e.g. Shark form-filler)
   // inject custom wrappers/attrs into the SSR HTML before React hydrates,
   // producing a new tree mismatch every time we patch an old one. The actual
@@ -78,6 +86,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
   const [pageMounted, setPageMounted] = useState(false);
   useEffect(() => setPageMounted(true), []);
 
+  const router = useRouter();
   const [state, action, pending] = useActionState(registerOrder, initial);
 
   const [mcc, setMcc] = useState<number | ''>(
@@ -99,11 +108,15 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [clinicalFileName, setClinicalFileName] = useState<string | null>(null);
 
-  // Ref. doctor / Ref. customer use structured CreatableValue state — picked
-  // existing id or fresh name. Serialized into refDoctorJson/refCustomerJson
-  // hidden inputs at submit.
+  // Ref. doctor uses structured CreatableValue state — picked existing id or
+  // fresh name. Serialized into refDoctorJson at submit.
   const [refDoctor, setRefDoctor] = useState<CreatableValue>(null);
-  const [refCustomer, setRefCustomer] = useState<CreatableValue>(null);
+  // MRD + (IPD/OPD/ICU) is now a plain text field — operators type the
+  // patient's MRD and visit-type together (e.g. "MRD-12345 OPD"). At submit
+  // the value is wrapped as { kind: 'new', name } so the existing server
+  // action (which writes to tbl_billing_patient_detail.ref_customer) works
+  // unchanged.
+  const [refCustomerText, setRefCustomerText] = useState('');
 
   // Per-MCC referrer lists. Every doctor/customer in Noble is owned by exactly
   // one MCC via pcc_code → mcc_unit_master.id, so the combobox must only show
@@ -118,13 +131,13 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
     if (mcc === '') {
       setRefData(null);
       setRefDoctor(null);
-      setRefCustomer(null);
+      setRefCustomerText('');
       return;
     }
     // Clear any prior selection — a doctor mapped to MCC A must not silently
-    // carry over to MCC B.
+    // carry over to MCC B. MRD is patient-specific so we clear it too.
     setRefDoctor(null);
-    setRefCustomer(null);
+    setRefCustomerText('');
     const cached = refCache.current.get(Number(mcc));
     if (cached) {
       setRefData(cached);
@@ -149,13 +162,8 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
     code: d.code ?? '',
     name: d.name,
   }));
-  const customersItems = (refData?.customers ?? []).map((c) => ({
-    id: c.id,
-    code: c.code ?? '',
-    name: c.name,
-  }));
 
-  const [picked, setPicked] = useState<Picked[]>([]);
+  const [picked, setPicked] = useState<Picked[]>(initialItems);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CatalogItem[]>([]);
   const [preview, setPreview] = useState<PreviewResult>({ lines: [], total: 0 });
@@ -237,8 +245,8 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
   if (!pageMounted) {
     return (
       <div className="grid gap-4 text-sm lg:grid-cols-2">
-        <div className="h-96 animate-pulse rounded-xl border bg-muted/40" />
-        <div className="h-96 animate-pulse rounded-xl border bg-muted/40" />
+        <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />
+        <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />
       </div>
     );
   }
@@ -252,6 +260,16 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
   }
   function remove(id: number, kind: string) {
     setPicked((p) => p.filter((x) => !(x.id === id && x.kind === kind)));
+    // If this item came from the catalog cart, remove it there too so the
+    // nav badge (server-rendered) reflects the real cart count.
+    const wasFromCart = initialItems.some(
+      (i) => i.id === id && i.kind === kind,
+    );
+    if (wasFromCart) {
+      removeFromCart(id, kind as 'test' | 'profile').then(() =>
+        router.refresh(),
+      );
+    }
   }
 
   return (
@@ -266,7 +284,11 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
       <input
         type="hidden"
         name="refCustomerJson"
-        value={refCustomer ? JSON.stringify(refCustomer) : ''}
+        value={
+          refCustomerText.trim()
+            ? JSON.stringify({ kind: 'new', name: refCustomerText.trim() })
+            : ''
+        }
       />
       <input
         type="hidden"
@@ -295,7 +317,15 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
               value={mcc}
               onChange={setMcc}
               placeholder="Type client code or name…"
+              // Client accounts mapped to a single MCC: pre-selected + locked.
+              disabled={units.length === 1}
             />
+            {units.length === 1 && (
+              <p className="text-[11px] text-secondary/80">
+                Locked to your Client code — you can only place orders for{' '}
+                <span className="font-semibold text-secondary">{units[0].code}</span>.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2">
@@ -425,28 +455,19 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
               )}
             </div>
             <div className="space-y-0.5">
-              <Label htmlFor="refCustomer">Ref. customer</Label>
-              <CreatableCombobox
+              <Label htmlFor="refCustomer">MRD + (IPD/OPD/ICU)</Label>
+              <Input
                 id="refCustomer"
-                items={customersItems}
-                value={refCustomer}
-                onChange={setRefCustomer}
+                value={refCustomerText}
+                onChange={(e) => setRefCustomerText(e.target.value)}
                 placeholder={
                   mcc === ''
                     ? 'Select a Client code first'
-                    : refDataLoading
-                      ? 'Loading…'
-                      : customersItems.length === 0
-                        ? 'No customers on file — type to add'
-                        : 'Search or add new customer…'
+                    : 'e.g. MRD-12345 OPD'
                 }
+                maxLength={100}
                 disabled={mcc === ''}
               />
-              {mcc !== '' && !refDataLoading && customersItems.length === 0 && (
-                <p className="text-[11px] text-muted-foreground">
-                  No referrers on file for this Client yet — type a name to add one.
-                </p>
-              )}
             </div>
           </div>
 
@@ -474,7 +495,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
               onChange={(e) =>
                 setClinicalFileName(e.target.files?.[0]?.name ?? null)
               }
-              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded file:border file:border-input file:bg-transparent file:px-2 file:py-1 file:text-xs file:text-foreground hover:file:bg-accent"
+              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded file:border file:border-white/10 file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground hover:file:bg-white/10"
             />
             {clinicalFileName && (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -541,8 +562,31 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
           <CardTitle className="text-base">Tests &amp; profiles</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2.5 p-4 pt-0">
+          {initialItems.length > 0 && picked.length > 0 && picked.every(p => initialItems.some(i => i.id === p.id && i.kind === p.kind)) && (
+            <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+              <span>
+                <span className="font-semibold">{initialItems.length} test{initialItems.length === 1 ? '' : 's'}</span> pre-loaded from Catalog
+              </span>
+              <button
+                type="button"
+                className="underline opacity-70 hover:opacity-100"
+                onClick={() => {
+                  setPicked([]);
+                  // Remove every pre-loaded item from the Redis cart and
+                  // refresh the nav badge.
+                  Promise.all(
+                    initialItems.map((i) =>
+                      removeFromCart(i.id, i.kind as 'test' | 'profile'),
+                    ),
+                  ).then(() => router.refresh());
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
           {mcc === '' && (
-            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
               Select a Client code before registering — rates shown are MRP.
             </p>
           )}
@@ -552,13 +596,13 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
             onChange={(e) => setQ(e.target.value)}
           />
           {results.length > 0 && (
-            <div className="max-h-48 overflow-auto rounded-md border">
+            <div className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-card">
               {results.map((r) => (
                 <button
                   type="button"
                   key={`${r.kind}-${r.id}`}
                   onClick={() => add(r)}
-                  className="flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-accent"
+                  className="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-white/5"
                 >
                   <span>
                     <span className="font-mono text-xs">{r.code}</span>{' '}
@@ -574,8 +618,8 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
             </div>
           )}
 
-          <div className="rounded-md border">
-            <div className="border-b bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+          <div className="rounded-lg border border-white/5 bg-card">
+            <div className="border-b border-white/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
               Selected ({picked.length})
             </div>
             {picked.length === 0 ? (
@@ -590,7 +634,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="flex items-center justify-between border-b px-3 py-2 text-sm last:border-0"
+                    className="flex items-center justify-between border-b border-white/5 px-3 py-2 text-sm last:border-0"
                   >
                     <span>
                       <span className="font-mono text-xs">{it.code}</span>{' '}
@@ -610,7 +654,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                 );
               })
             )}
-            <div className="flex items-center justify-between border-t px-3 py-2 text-sm font-semibold">
+            <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-sm font-semibold">
               <span>Total</span>
               <span>₹{preview.total}</span>
             </div>
@@ -621,7 +665,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Sample IDs · {groups.length} barcode{groups.length === 1 ? '' : 's'} needed
               </p>
-              <p className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-[11px] text-blue-700">
+              <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
                 Optional — leave blank and the lab technician adds them later
                 from the New Order worklist.
               </p>
@@ -727,19 +771,19 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
             }));
 
             return (
-              <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="card-light space-y-3 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide opacity-50">
                   Review — confirm to register
                 </p>
 
-                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                  <span className="text-muted-foreground">Client</span>
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm text-zinc-800">
+                  <span className="text-zinc-500">Client</span>
                   <span>
                     {mccUnit
                       ? `${mccUnit.name ?? mccUnit.code} (${mccUnit.code})`
                       : '—'}
                   </span>
-                  <span className="text-muted-foreground">Patient</span>
+                  <span className="text-zinc-500">Patient</span>
                   <span>
                     {f.title ? `${f.title} ` : ''}
                     {f.name || '—'}
@@ -752,18 +796,18 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                   </span>
                   {f.mobile && (
                     <>
-                      <span className="text-muted-foreground">Mobile</span>
+                      <span className="text-zinc-500">Mobile</span>
                       <span>{f.mobile}</span>
                     </>
                   )}
                   {refDoctor && (
                     <>
-                      <span className="text-muted-foreground">Ref. doctor</span>
+                      <span className="text-zinc-500">Ref. doctor</span>
                       <span>
                         {refDoctor.kind === 'new' ? (
                           <>
                             {refDoctor.name}{' '}
-                            <span className="ml-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-blue-700">
+                            <span className="ml-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
                               new
                             </span>
                           </>
@@ -773,32 +817,21 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                       </span>
                     </>
                   )}
-                  {refCustomer && (
+                  {refCustomerText.trim() && (
                     <>
-                      <span className="text-muted-foreground">Ref. customer</span>
-                      <span>
-                        {refCustomer.kind === 'new' ? (
-                          <>
-                            {refCustomer.name}{' '}
-                            <span className="ml-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-blue-700">
-                              new
-                            </span>
-                          </>
-                        ) : (
-                          refData?.customers.find((c) => c.id === refCustomer.id)?.name ?? '—'
-                        )}
-                      </span>
+                      <span className="text-zinc-500">MRD + visit</span>
+                      <span>{refCustomerText.trim()}</span>
                     </>
                   )}
                   {clinicalFileName && (
                     <>
-                      <span className="text-muted-foreground">Clinical PDF</span>
+                      <span className="text-zinc-500">Clinical PDF</span>
                       <span className="truncate">{clinicalFileName}</span>
                     </>
                   )}
-                  <span className="text-muted-foreground">Tests</span>
+                  <span className="text-zinc-500">Tests</span>
                   <span>{picked.length} item(s) · ₹{preview.total}</span>
-                  <span className="text-muted-foreground">Payment</span>
+                  <span className="text-zinc-500">Payment</span>
                   <span>
                     {f.paymentType} · paid ₹{f.receiptAmount || 0}
                     {Number(f.discountAmount) > 0
@@ -808,7 +841,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                 </div>
 
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-zinc-500">
                     Sample IDs ·{' '}
                     {sidsByGroup.filter((s) => s.vailid).length}/{groups.length}{' '}
                     entered
@@ -816,7 +849,7 @@ export function RegisterForm({ units }: { units: ScopedMcc[] }) {
                   {sidsByGroup.map(({ group, vailid }) => (
                     <div
                       key={group.sampleTypeId}
-                      className="flex items-baseline justify-between gap-2 rounded border bg-background px-2 py-1 text-sm"
+                      className="flex items-baseline justify-between gap-2 rounded border border-black/10 bg-black/5 px-2 py-1 text-sm"
                     >
                       <span>
                         <span className="font-medium">

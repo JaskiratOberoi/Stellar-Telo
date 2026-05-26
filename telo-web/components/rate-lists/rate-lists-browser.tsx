@@ -77,7 +77,7 @@ export function RateListsBrowser({
             type="button"
             onClick={() => setOpen((v) => !v)}
             aria-label="Create rate list"
-            className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl text-primary-foreground shadow-lg hover:opacity-90"
+            className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl font-light text-primary-foreground shadow-xl shadow-primary/30 transition-all duration-200 hover:scale-105 active:scale-95"
           >
             {open ? '×' : '+'}
           </button>

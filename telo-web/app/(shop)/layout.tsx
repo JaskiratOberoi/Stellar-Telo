@@ -1,9 +1,8 @@
-import Link from 'next/link';
 import { requireSession } from '@/auth/session';
-import { signOut } from '@/auth/config';
 import { hasCapability } from '@/auth/rbac';
-import { Button } from '@/components/ui/button';
 import type { Capability } from '@/types/auth';
+import { ShopNav } from '@/components/layout/shop-nav';
+import { getCart } from '@/db/cartStore';
 
 interface NavItem {
   href: string;
@@ -12,15 +11,20 @@ interface NavItem {
 }
 
 // One source of truth for nav visibility per Telo role (via capabilities).
+// Focused billing mode — Orders, Rate lists, Patients tabs are hidden globally.
+// The corresponding pages also redirect to /dashboard so URL-typing closes the
+// door too. Un-comment + remove the redirects to re-enable.
 const NAV: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', cap: null },
+  { href: '/dashboard', label: 'Dashboard', cap: 'dashboard:view' },
   { href: '/orders/new', label: 'New order', cap: 'order:view' },
   { href: '/catalog', label: 'Catalog', cap: 'patient:create' },
-  { href: '/patient', label: 'Patients', cap: 'patient:view' },
-  { href: '/orders', label: 'Orders', cap: 'order:view' },
-  { href: '/rate-lists', label: 'Rate lists', cap: 'rate:view' },
+  // { href: '/patient', label: 'Patients', cap: 'patient:view' },
+  // { href: '/orders', label: 'Orders', cap: 'order:view' },
+  // { href: '/rate-lists', label: 'Rate lists', cap: 'rate:view' },
   { href: '/balances', label: 'Accounts', cap: 'balance:view' },
-  { href: '/admin/users', label: 'Admin', cap: 'user:manage' },
+  // href: '/admin' so the active-link indicator covers /admin/users AND
+  // /admin/invoice (ShopNav uses pathname.startsWith(href)).
+  { href: '/admin', label: 'Admin', cap: 'user:manage' },
 ];
 
 export default async function ShopLayout({
@@ -34,49 +38,33 @@ export default async function ShopLayout({
     (n) => n.cap == null || hasCapability(user.caps, n.cap),
   );
 
+  const navLinks = visible.filter((n) => n.href !== '/dashboard');
+  const roleName =
+    user.teloRole
+      ? user.teloRole.replace('_', ' ')
+      : user.usertypeName ?? null;
+
+  // Cart count for the "New order" badge — only relevant for order:create users.
+  const cartCount = hasCapability(user.caps, 'order:create')
+    ? (await getCart(user.uid)).items.length
+    : 0;
+
+  // User's "home" — Dashboard for everyone except Technicians, who land
+  // directly on the New Order worklist. The Telo brand mark navigates here.
+  const homeHref = hasCapability(user.caps, 'dashboard:view')
+    ? '/dashboard'
+    : '/orders/new';
+
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="container flex h-14 items-center justify-between">
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/dashboard" className="font-semibold">
-              Telo
-            </Link>
-            {visible
-              .filter((n) => n.href !== '/dashboard')
-              .map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {n.label}
-                </Link>
-              ))}
-          </nav>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-muted-foreground">
-              {user.name}
-              {user.teloRole
-                ? ` · ${user.teloRole.replace('_', ' ')}`
-                : user.usertypeName
-                  ? ` · ${user.usertypeName}`
-                  : ''}
-            </span>
-            <form
-              action={async () => {
-                'use server';
-                await signOut({ redirectTo: '/login' });
-              }}
-            >
-              <Button variant="outline" size="sm" type="submit">
-                Sign out
-              </Button>
-            </form>
-          </div>
-        </div>
-      </header>
-      <main className="container py-4">{children}</main>
+    <div className="min-h-screen bg-background">
+      <ShopNav
+        userName={user.name}
+        roleName={roleName}
+        links={navLinks}
+        cartCount={cartCount}
+        homeHref={homeHref}
+      />
+      <main className="container py-6 print:p-0 print:max-w-none">{children}</main>
     </div>
   );
 }

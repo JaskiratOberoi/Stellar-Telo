@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { checkSid } from '@/actions/register.actions';
 import type { SampleGroup } from '@/db/sp/previewSampleGroups';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+/** Returns true if the string contains only digits (or is empty). */
+function isNumericOnly(v: string) {
+  return /^\d*$/.test(v);
+}
 
 export type SidStatus = 'idle' | 'checking' | 'available' | 'taken';
 
@@ -33,6 +38,7 @@ export function SidField({
 }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seq = useRef(0);
+  const [formatError, setFormatError] = useState(false);
 
   useEffect(() => {
     if (locked) return;
@@ -59,25 +65,25 @@ export function SidField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, locked]);
 
-  const bad = !locked && (status === 'taken' || clientDup);
-  const ok = locked || (status === 'available' && !clientDup);
+  const bad = !locked && (status === 'taken' || clientDup || formatError);
+  const ok = locked || (status === 'available' && !clientDup && !formatError);
   return (
-    <div className="space-y-1 rounded-md border p-3">
+    <div className="space-y-1 rounded-lg border border-white/5 bg-card p-3">
       <div className="flex items-baseline justify-between gap-2">
         <Label className="text-sm font-medium">
           {group.sampleTypeName}
           {group.sampleTypeId === -1 && (
-            <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700">
+            <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-400">
               unspecified
             </span>
           )}
           {group.requiresSplit && (
-            <span className="ml-2 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-blue-700">
+            <span className="ml-2 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
               split
             </span>
           )}
           {locked && (
-            <span className="ml-2 rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-700">
+            <span className="ml-2 rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-secondary">
               accessioned
             </span>
           )}
@@ -88,32 +94,57 @@ export function SidField({
       </div>
       <Input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (!isNumericOnly(raw)) {
+            // Show error but don't propagate the invalid character.
+            setFormatError(true);
+            return;
+          }
+          setFormatError(false);
+          onChange(raw);
+        }}
+        onPaste={(e) => {
+          // Intercept pastes — strip non-digits rather than rejecting outright.
+          e.preventDefault();
+          const pasted = e.clipboardData.getData('text');
+          const numeric = pasted.replace(/\D/g, '');
+          const hadInvalid = numeric.length < pasted.trim().length;
+          if (hadInvalid) setFormatError(true);
+          else setFormatError(false);
+          if (numeric) onChange(numeric);
+        }}
         placeholder={`Scan/enter SID for ${group.sampleTypeName}`}
+        inputMode="numeric"
         maxLength={50}
         disabled={locked}
         readOnly={locked}
         className={
           bad
-            ? 'border-destructive focus-visible:ring-destructive'
+            ? 'border-destructive/60 focus-visible:ring-destructive/60'
             : ok
-              ? 'border-green-600 focus-visible:ring-green-600'
+              ? 'border-secondary/60 focus-visible:ring-secondary/60'
               : undefined
         }
         aria-invalid={bad}
       />
-      {!locked && status === 'checking' && (
+      {!locked && formatError && (
+        <p className="text-xs text-destructive">
+          ✗ Sample IDs must contain digits only — no letters or symbols.
+        </p>
+      )}
+      {!locked && !formatError && status === 'checking' && (
         <p className="text-xs text-muted-foreground">Checking…</p>
       )}
-      {!locked && status === 'available' && !clientDup && (
-        <p className="text-xs text-green-600">✓ Available</p>
+      {!locked && !formatError && status === 'available' && !clientDup && (
+        <p className="text-xs text-secondary">✓ Available</p>
       )}
-      {!locked && status === 'taken' && !clientDup && (
+      {!locked && !formatError && status === 'taken' && !clientDup && (
         <p className="text-xs text-destructive">
           ✗ This Sample ID already exists in Noble — use a different one.
         </p>
       )}
-      {!locked && clientDup && (
+      {!locked && !formatError && clientDup && (
         <p className="text-xs text-destructive">
           ✗ This Sample ID is also entered in another field above.
         </p>

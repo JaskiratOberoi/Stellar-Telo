@@ -4,44 +4,50 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    /* Dark palette — default (no light/dark toggle needed) */
+    --background: 0 0% 6%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 238 25% 43%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 34 45% 60%;
+    --secondary-foreground: 0 0% 6%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 218 11% 65%;
+    --accent: 238 25% 43%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 16%;
+    --input: 0 0% 10%;
+    --ring: 238 25% 43%;
+    --radius: 0.875rem;
   }
 
+  /* .dark is an alias of :root — keeps next-themes compatible */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 0 0% 6%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 238 25% 43%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 34 45% 60%;
+    --secondary-foreground: 0 0% 6%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 218 11% 65%;
+    --accent: 238 25% 43%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 16%;
+    --input: 0 0% 10%;
+    --ring: 238 25% 43%;
   }
 }
 
@@ -51,5 +57,90 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* White highlight card — KPI tiles, selected-row states */
+  .card-light {
+    background-color: #ffffff;
+    color: #0f0f0f;
+    border-radius: 1rem;
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Tan accent card — single emphasised KPI per page */
+  .card-accent {
+    @apply bg-secondary text-secondary-foreground rounded-2xl;
+  }
+}
+
+/* ─── Print / PDF ─────────────────────────────────────────────────────────── */
+@page {
+  size: A4 portrait;
+  margin: 14mm 16mm;
+}
+
+@media print {
+  /* Reset CSS vars to a crisp light palette so every Tailwind class renders
+     correctly on white paper without needing print: prefixes everywhere. */
+  :root,
+  .dark {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 5%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 5%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 5%;
+    --primary: 238 25% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 34 45% 45%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 238 25% 35%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 358 75% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 80%;
+    --input: 0 0% 98%;
+    --ring: 238 25% 35%;
+  }
+
+  /* Hide everything except the receipt content */
+  .print\:hidden,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Two-mode invoice selection:
+     html.print-lab  → show only [data-invoice="lab"]
+     html.print-bill → show only [data-invoice="bill"]
+     Default (no class) → same as print-lab for plain window.print() calls.  */
+  [data-invoice="bill"] {
+    display: none !important;
+  }
+  html.print-bill [data-invoice="lab"] {
+    display: none !important;
+  }
+  html.print-bill [data-invoice="bill"] {
+    display: block !important;
+  }
+
+  /* Ensure backgrounds render (Chrome needs this) */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  /* Prevent cards / tables from being clipped at page breaks */
+  .card,
+  table {
+    break-inside: avoid;
   }
 }

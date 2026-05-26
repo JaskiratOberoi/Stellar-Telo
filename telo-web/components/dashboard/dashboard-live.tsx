@@ -5,8 +5,9 @@ import { getDashboardStats } from '@/actions/stats.actions';
 import type { DayStats } from '@/db/read/stats';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { fmtIST } from '@/lib/datetime';
+import { cn } from '@/lib/utils';
 
 const POLL_MS = 30_000;
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
@@ -17,19 +18,12 @@ const shiftISO = (iso: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1 text-2xl font-bold tracking-tight">{value}</p>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
-}
+const STATUS_COLORS: Record<string, string> = {
+  Authorized: 'bg-secondary/15 text-secondary',
+  'In progress': 'bg-primary/15 text-primary',
+  Tested: 'bg-white/10 text-foreground',
+  Printed: 'bg-white/10 text-foreground',
+};
 
 export function DashboardLive({ initial }: { initial: DayStats }) {
   const [s, setS] = useState<DayStats>(initial);
@@ -38,7 +32,6 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
   const isToday = date === todayISO();
-
 
   const load = useCallback(async (d: string) => {
     const my = ++seq.current;
@@ -68,6 +61,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
 
   return (
     <div className="space-y-4">
+      {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Input
@@ -111,11 +105,12 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span
-              className={`inline-block h-2 w-2 rounded-full ${
+              className={cn(
+                'inline-block h-2 w-2 rounded-full',
                 isToday && live
-                  ? 'animate-pulse bg-green-500'
-                  : 'bg-muted-foreground/40'
-              }`}
+                  ? 'animate-pulse bg-secondary'
+                  : 'bg-muted-foreground/40',
+              )}
             />
             {isToday ? (live ? 'Live' : 'Paused') : 'Snapshot'} ·{' '}
             {fmtIST(s.fetchedAt, 'time')} IST
@@ -140,16 +135,35 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         </div>
       </div>
 
+      {/* KPI tiles */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Revenue" value={inr(s.revenue)} hint={`${s.bills} bills`} />
-        <Stat label="Collected" value={inr(s.collected)} />
-        <Stat
+        <KpiCard
+          variant="accent"
+          label="Revenue"
+          value={inr(s.revenue)}
+          hint={`${s.bills} bill${s.bills === 1 ? '' : 's'}`}
+        />
+        <KpiCard
+          variant="light"
+          label="Collected"
+          value={inr(s.collected)}
+        />
+        <KpiCard
+          variant="light"
           label="Outstanding"
           value={inr(s.outstanding)}
           hint={s.discount ? `${inr(s.discount)} discount` : undefined}
         />
-        <Stat label="Patients billed" value={s.patients.toLocaleString('en-IN')} />
-        <Stat
+        <KpiCard
+          variant="light"
+          label="Patients billed"
+          value={s.patients.toLocaleString('en-IN')}
+        />
+      </div>
+
+      {/* Secondary stats row */}
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <KpiCard
           label="Registrations"
           value={s.registrations.toLocaleString('en-IN')}
           hint="samples registered"
@@ -157,7 +171,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         {['Authorized', 'Printed', 'Tested'].map((st) => {
           const row = s.byStatus.find((b) => b.status === st);
           return (
-            <Stat
+            <KpiCard
               key={st}
               label={st}
               value={(row?.count ?? 0).toLocaleString('en-IN')}
@@ -166,60 +180,65 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         })}
       </div>
 
+      {/* Charts row */}
       <div className="grid gap-3 lg:grid-cols-2">
-        <Card>
-          <CardContent className="p-4">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Revenue · 7 days ending {date}
-            </p>
-            <div className="flex h-32 items-end gap-2">
-              {s.trend.map((t) => (
+        {/* Revenue trend bar chart */}
+        <div className="rounded-xl border border-white/5 bg-card p-4">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Revenue · 7 days ending {date}
+          </p>
+          <div className="flex h-32 items-end gap-2">
+            {s.trend.map((t) => (
+              <div
+                key={t.date}
+                className="flex flex-1 flex-col items-center gap-1"
+                title={`${t.date}: ${inr(t.revenue)}`}
+              >
                 <div
-                  key={t.date}
-                  className="flex flex-1 flex-col items-center gap-1"
-                  title={`${t.date}: ${inr(t.revenue)}`}
+                  className={cn(
+                    'w-full rounded-t transition-all duration-300',
+                    t.date === date
+                      ? 'bg-primary shadow-lg shadow-primary/30'
+                      : 'bg-primary/30',
+                  )}
+                  style={{
+                    height: `${Math.max(2, (t.revenue / maxRev) * 100)}%`,
+                  }}
+                />
+                <span className="text-[10px] text-muted-foreground">
+                  {t.date.slice(5)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Samples by status */}
+        <div className="rounded-xl border border-white/5 bg-card p-4">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Samples by status
+          </p>
+          {s.byStatus.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No samples.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {s.byStatus.map((b) => (
+                <span
+                  key={b.status}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-sm font-medium transition-colors duration-200',
+                    STATUS_COLORS[b.status] ?? 'bg-white/10 text-foreground',
+                  )}
                 >
-                  <div
-                    className={`w-full rounded-t ${
-                      t.date === date ? 'bg-primary' : 'bg-primary/40'
-                    }`}
-                    style={{
-                      height: `${Math.max(2, (t.revenue / maxRev) * 100)}%`,
-                    }}
-                  />
-                  <span className="text-[10px] text-muted-foreground">
-                    {t.date.slice(5)}
+                  {b.status}:{' '}
+                  <span className="font-bold">
+                    {b.count.toLocaleString('en-IN')}
                   </span>
-                </div>
+                </span>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Samples by status
-            </p>
-            {s.byStatus.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No samples.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {s.byStatus.map((b) => (
-                  <span
-                    key={b.status}
-                    className="rounded-md border bg-muted/40 px-2.5 py-1 text-sm"
-                  >
-                    {b.status}:{' '}
-                    <span className="font-semibold">
-                      {b.count.toLocaleString('en-IN')}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
     </div>
   );

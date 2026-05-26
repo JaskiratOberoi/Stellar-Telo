@@ -1,6 +1,27 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * NO-BACKDATE INVARIANT
+ * ─────────────────────────────────────────────────────────────────────────
+ * `recd_date` on tbl_billing_patient_amount_receipt is set by SQL Server's
+ * GETDATE() inside dbo.usp_telo_record_receipt — see the INSERT in
+ * db/sql/80_usp_telo_record_receipt.sql. This wrapper deliberately does NOT
+ * expose a date parameter.
+ *
+ * Daily collection reports (`db/read/receipts.ts`, consumed by the
+ * dashboard, accounts page, and printed account statement) key off
+ * `recd_date` to answer "what came in today". If a date parameter is ever
+ * added here, an operator could backdate a cash receipt and shift money
+ * between days' books — a financial-integrity bug.
+ *
+ * If a backdate is ever genuinely required (e.g. fixing a data-entry
+ * mistake), route it through a separate admin-only SP with its own RBAC
+ * capability and a permanent audit-log entry — do NOT extend this one.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
 export interface RecordReceiptResult {
   ok: boolean;
   errorCode: string | null;

@@ -4,6 +4,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
+import { getCart } from '@/db/cartStore';
 import { RegisterForm } from '@/components/register/register-form';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,10 @@ export default async function NewOrderCreatePage() {
   if (!hasCapability(user.caps, 'order:create')) redirect('/dashboard');
 
   const scope = await getMccScope(user.uid);
-  const units = await fetchScopedMccUnits(scope);
+  const [units, cart] = await Promise.all([
+    fetchScopedMccUnits(scope),
+    getCart(user.uid),
+  ]);
 
   return (
     <div className="space-y-3">
@@ -28,7 +32,7 @@ export default async function NewOrderCreatePage() {
           ← Worklist
         </Link>
       </div>
-      <RegisterForm units={units} />
+      <RegisterForm units={units} initialItems={cart.items} />
     </div>
   );
 }

@@ -8,6 +8,31 @@ export interface ScopedMcc {
 }
 
 /**
+ * Every active MCC unit. Returned to admin/user-management so a Super Admin
+ * can assign a client-code scope when onboarding a new user. ~1.7k rows —
+ * acceptable to ship in the admin overview payload (the search picker filters
+ * client-side).
+ */
+export async function fetchAllActiveMccs(): Promise<ScopedMcc[]> {
+  return withRetry(async () => {
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .query<{ id: number; code: string; name: string | null }>(`
+        SELECT id, MCCUnitCode AS code, MCCUnitName AS name
+        FROM dbo.tbl_med_mcc_unit_master
+        WHERE IsActive = 1
+        ORDER BY MCCUnitName
+      `);
+    return r.recordset.map((x) => ({
+      id: x.id,
+      code: (x.code ?? '').trim(),
+      name: x.name ? x.name.trim() : null,
+    }));
+  });
+}
+
+/**
  * Resolve the user's in-scope MCC unit ids to display rows. Scope is by unit
  * id (the mapping table's mcc_code); Listec's /api/mcc-units keys by code, so
  * we read id/code/name straight from tbl_med_mcc_unit_master here.

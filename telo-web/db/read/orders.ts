@@ -26,14 +26,35 @@ export interface OrderSample {
   status: string | null;
 }
 
+/**
+ * One row from `tbl_billing_patient_amount_receipt` for a bill — either a
+ * payment (kind='payment', from `receive_status='1'`) or a refund
+ * (kind='refund', from `receive_status='2'`). `reference` carries the
+ * transaction number / cheque no / UPI UTR — stored in the LIS's
+ * `card_number` column (column name is legacy, the value is generic).
+ */
+export interface OrderReceipt {
+  date: string | null;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  kind: 'payment' | 'refund';
+}
+
 export interface OrderDetail extends OrderSummary {
   age: number | null;
   gender: number | null;
   mobile: string | null;
+  email: string | null;
+  refDoctorName: string | null;
+  refCustomerName: string | null; // carries the MRD + (IPD/OPD/ICU) text
+  paymentType: string | null;
+  clinicalHistory: string | null;
   discount: number;
   amountPaid: number;
   lines: OrderLine[];
   samples: OrderSample[];
+  receipts: OrderReceipt[];
   patientId: number | null;
 }
 
@@ -156,6 +177,11 @@ export async function getOrder(
       age: number | null;
       gender: number | null;
       mobile: string | null;
+      email: string | null;
+      refDoctorName: string | null;
+      refCustomerName: string | null;
+      paymentType: string | null;
+      clinicalHistory: string | null;
       discount: number;
       amountPaid: number;
       patientId: number | null;
@@ -163,11 +189,19 @@ export async function getOrder(
       SELECT b.id AS billId, b.bill_number AS billNumber,
              b.bill_date AS billDate, b.patientname AS patientName,
              b.mcc_code AS mccCode, b.amount AS amount, b.Balance AS balance,
-             b.age, b.gender, b.mobile_number AS mobile,
+             b.age, b.gender, b.mobile_number AS mobile, b.email,
+             b.payment_type AS paymentType,
+             d.doctor_name AS refDoctorName,
+             c.customer_name AS refCustomerName,
+             p.Clinical_History AS clinicalHistory,
              b.discount_amount AS discount, b.amount_paid AS amountPaid,
              -- Telo writes patient_id into medid so we can join bill→patient.
              TRY_CONVERT(INT, b.medid) AS patientId
       FROM dbo.tbl_billing_patient_detail b
+      LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
+      LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
+      LEFT JOIN dbo.tbl_med_mcc_patient_master p
+            ON p.id = TRY_CONVERT(INT, b.medid)
       WHERE b.id = @bid ${scopeClause}
     `);
     const h = head.recordset[0];
@@ -186,6 +220,34 @@ export async function getOrder(
       WHERE billid = @bid
       ORDER BY id
     `);
+
+    // Per-bill payment + refund history. `card_number` carries the txn
+    // ref / cheque no / UPI UTR set by usp_telo_record_receipt and the
+    // refund SP — the LIS column name is legacy, the value is generic.
+    const rcReq = pool.request().input('bid', sql.Int, billId);
+    const rcr = await rcReq.query<{
+      date: Date | null;
+      amount: number;
+      method: string | null;
+      reference: string | null;
+      status: string | null;
+    }>(`
+      SELECT recd_date AS date,
+             amount,
+             pay_mode AS method,
+             card_number AS reference,
+             receive_status AS status
+      FROM dbo.tbl_billing_patient_amount_receipt
+      WHERE bill_id = @bid
+      ORDER BY id
+    `);
+    const receipts: OrderReceipt[] = rcr.recordset.map((x) => ({
+      date: x.date ? x.date.toISOString() : null,
+      amount: Number(x.amount ?? 0),
+      method: x.method?.trim() || null,
+      reference: x.reference?.trim() || null,
+      kind: x.status === '2' ? 'refund' : 'payment',
+    }));
 
     // Samples: only available for Telo-created orders (patient_id in medid).
     let samples: OrderSample[] = [];
@@ -230,6 +292,11 @@ export async function getOrder(
       age: h.age,
       gender: h.gender,
       mobile: h.mobile,
+      email: h.email?.trim() || null,
+      refDoctorName: h.refDoctorName?.trim() || null,
+      refCustomerName: h.refCustomerName?.trim() || null,
+      paymentType: h.paymentType?.trim() || null,
+      clinicalHistory: h.clinicalHistory?.trim() || null,
       discount: Number(h.discount ?? 0),
       amountPaid: Number(h.amountPaid ?? 0),
       patientId: h.patientId,
@@ -240,6 +307,7 @@ export async function getOrder(
         amount: Number(x.amount ?? 0),
       })),
       samples,
+      receipts,
     };
   });
 }

@@ -1,5 +1,6 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
+import { getReceiptsInPeriod } from '@/db/read/receipts';
 
 /** One per-MCC row of the LIS-style accounts rollup, scoped to Telo bills. */
 export interface AccountsRow {
@@ -26,6 +27,13 @@ export interface PendingBillRow {
   amount: number;
   amountPaid: number;
   balance: number;
+  doctorName: string | null;
+  customerName: string | null;
+  paymentType: string | null;
+  /** Patient's age at the time of the bill (Telo writes the registration value). */
+  age: number | null;
+  /** Age unit code: 1 Years, 2 Months, 3 Days (matches tbl_med_mcc_patient_master.age_type). */
+  ageType: number | null;
 }
 
 function scopeParams(req: sql.Request, scope: number[]): string {
@@ -66,6 +74,15 @@ export async function summarizeTeloAccounts(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const unrestricted = ids.length > 1000;
+
+  // Per-MCC receipts in the same window — keyed off recd_date so a payment
+  // recorded today rolls up into today's MCC row even if the bill itself
+  // was issued days ago. See receipts.ts for the no-backdate invariant.
+  const receiptsPromise = getReceiptsInPeriod(scope, fromIso, toIso, {
+    byMcc: true,
+    mccId: filters.mccId ?? undefined,
+  });
+
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
@@ -89,6 +106,10 @@ export async function summarizeTeloAccounts(
     } else if (filters.paymentMode === 'cash') {
       paymentClause = `AND (b.payment_type IS NULL OR b.payment_type NOT LIKE '%CREDIT%')`;
     }
+    // bill_date-keyed roll-up: bills issued in window, what they total,
+    // their discount, and current outstanding balance (Balance is a column
+    // on the bill row that reflects "as of now"). Money received / refunded
+    // in the window is now sourced from the receipts table — see merge below.
     const r = await req.query<{
       mccId: number;
       mccCode: string | null;
@@ -97,8 +118,6 @@ export async function summarizeTeloAccounts(
       charges: number;
       discount: number;
       net: number;
-      received: number;
-      refund: number;
       payingBalance: number;
       creditBalance: number;
       balance: number;
@@ -111,8 +130,6 @@ export async function summarizeTeloAccounts(
         SUM(b.amount) AS charges,
         SUM(ISNULL(b.discount_amount, 0)) AS discount,
         SUM(b.amount - ISNULL(b.discount_amount, 0)) AS net,
-        SUM(ISNULL(b.amount_paid, 0)) AS received,
-        SUM(ISNULL(rf.refund, 0)) AS refund,
         SUM(CASE
               WHEN b.payment_type IS NULL
                 OR b.payment_type NOT LIKE '%CREDIT%'
@@ -125,14 +142,6 @@ export async function summarizeTeloAccounts(
         SUM(ISNULL(b.Balance, 0)) AS balance
       FROM dbo.tbl_billing_patient_detail b
       JOIN dbo.tbl_med_mcc_unit_master m ON m.id = b.mcc_code
-      OUTER APPLY (
-        -- Per-bill refund total: receipts marked with receive_status='2' by
-        -- usp_telo_record_refund. Informational column (Telo's amount_paid
-        -- already nets refunds, so Net - Received = Balance still holds).
-        SELECT SUM(rcpt.amount) AS refund
-        FROM dbo.tbl_billing_patient_amount_receipt rcpt
-        WHERE rcpt.bill_id = b.id AND rcpt.receive_status = '2'
-      ) rf
       WHERE b.addedby LIKE 'telo:%'
         AND b.bill_date >= @from
         AND b.bill_date <  DATEADD(day, 1, @to)
@@ -141,20 +150,41 @@ export async function summarizeTeloAccounts(
       GROUP BY m.id, m.MCCUnitCode, m.MCCUnitName
       ORDER BY SUM(ISNULL(b.Balance, 0)) DESC, m.MCCUnitCode
     `);
-    return r.recordset.map((x) => ({
-      mccId: x.mccId,
-      mccCode: (x.mccCode ?? '').trim(),
-      mccName: x.mccName ? x.mccName.trim() : null,
-      bills: Number(x.bills ?? 0),
-      charges: Number(x.charges ?? 0),
-      discount: Number(x.discount ?? 0),
-      net: Number(x.net ?? 0),
-      received: Number(x.received ?? 0),
-      refund: Number(x.refund ?? 0),
-      payingBalance: Number(x.payingBalance ?? 0),
-      creditBalance: Number(x.creditBalance ?? 0),
-      balance: Number(x.balance ?? 0),
-    }));
+
+    const receipts = await receiptsPromise;
+    const receiptsByMcc = receipts.byMcc ?? new Map();
+
+    // Union of MCCs: those that had bills issued in the window AND those
+    // that had receipts in the window (e.g. only late payments on bills
+    // older than @from). The "billed" view is the lead, but a row with
+    // received > 0 / refund > 0 from receipts-only is included too.
+    const rowsByMcc = new Map<number, AccountsRow>();
+    for (const x of r.recordset) {
+      const rc = receiptsByMcc.get(x.mccId);
+      rowsByMcc.set(x.mccId, {
+        mccId: x.mccId,
+        mccCode: (x.mccCode ?? '').trim(),
+        mccName: x.mccName ? x.mccName.trim() : null,
+        bills: Number(x.bills ?? 0),
+        charges: Number(x.charges ?? 0),
+        discount: Number(x.discount ?? 0),
+        net: Number(x.net ?? 0),
+        received: rc?.collected ?? 0,
+        refund: rc?.refunded ?? 0,
+        payingBalance: Number(x.payingBalance ?? 0),
+        creditBalance: Number(x.creditBalance ?? 0),
+        balance: Number(x.balance ?? 0),
+      });
+    }
+    // Payments-only MCCs (no bills issued in window). We don't have an
+    // MCCUnitCode/Name for these without a second lookup; skip them rather
+    // than show a half-empty row. The current accounts page presents one
+    // row per MCC that issued bills in the window, which matches the LIS
+    // "Total" modal semantics. A future "Receipts" view can surface these.
+
+    return Array.from(rowsByMcc.values()).sort(
+      (a, b) => b.balance - a.balance || a.mccCode.localeCompare(b.mccCode),
+    );
   });
 }
 
@@ -190,14 +220,26 @@ export async function listTeloBillsForMcc(
         amount: number;
         amountPaid: number;
         balance: number;
+        doctorName: string | null;
+        customerName: string | null;
+        paymentType: string | null;
+        age: number | null;
+        ageType: string | null;
       }>(`
         SELECT
           b.id AS billId, b.bill_number AS billNumber,
           b.bill_date AS billDate, b.patientname AS patientName,
           TRY_CONVERT(INT, b.medid) AS patientId,
           b.amount AS amount, b.amount_paid AS amountPaid,
-          b.Balance AS balance
+          b.Balance AS balance,
+          d.doctor_name AS doctorName,
+          c.customer_name AS customerName,
+          b.payment_type AS paymentType,
+          b.age AS age,
+          b.age_type AS ageType
         FROM dbo.tbl_billing_patient_detail b
+        LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
+        LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
         WHERE b.addedby LIKE 'telo:%'
           AND b.mcc_code = @mcc
           AND b.bill_date >= @from
@@ -213,6 +255,15 @@ export async function listTeloBillsForMcc(
       amount: Number(x.amount ?? 0),
       amountPaid: Number(x.amountPaid ?? 0),
       balance: Number(x.balance ?? 0),
+      doctorName: x.doctorName ? x.doctorName.trim() : null,
+      customerName: x.customerName ? x.customerName.trim() : null,
+      paymentType: x.paymentType ? x.paymentType.trim() : null,
+      age: x.age,
+      // age_type is stored as VARCHAR(10) on the bill — parse to int.
+      ageType:
+        x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
+          ? Number(String(x.ageType).trim())
+          : null,
     }));
   });
 }

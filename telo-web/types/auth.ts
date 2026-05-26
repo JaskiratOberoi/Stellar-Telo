@@ -22,7 +22,8 @@ export type Capability =
   | 'payment:capture'
   | 'rate:view'
   | 'rate:manage'
-  | 'balance:view';
+  | 'balance:view'
+  | 'dashboard:view';    // Revenue KPIs / live dashboard (not for Technicians)
 
 /** Raw row shape returned by dbo.usp_telo_authenticate. */
 export interface AuthRow {

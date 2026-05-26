@@ -6,6 +6,8 @@ import {
   setRoleAction,
   resetPasswordAction,
   setActiveAction,
+  updateUserAction,
+  getEditableUserScope,
   type AdminFormState,
   type AdminOverview,
 } from '@/actions/admin.actions';
@@ -21,11 +23,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { TeloRole } from '@/types/auth';
+import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { fmtIST } from '@/lib/datetime';
+import { Combobox } from '@/components/ui/combobox';
+import type { ScopedMcc } from '@/db/read/mccUnits';
 
 const initial: AdminFormState = { error: null, ok: false };
 const sel =
-  'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm';
+  'h-9 w-full rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
 
 const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
@@ -50,6 +55,7 @@ export function UserManagement({
   const [roleFilter, setRoleFilter] = useState<TeloRole | 'unassigned' | 'all'>(
     'all',
   );
+  const [lisRoleFilter, setLisRoleFilter] = useState<number | 'all'>('all');
   const [activeFilter, setActiveFilter] = useState<
     'active' | 'inactive' | 'all'
   >('active');
@@ -60,30 +66,37 @@ export function UserManagement({
   // Reset to page 1 whenever any filter changes.
   useEffect(() => {
     setPage(1);
-  }, [q, roleFilter, activeFilter]);
+  }, [q, roleFilter, lisRoleFilter, activeFilter]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return overview.users.filter((u) => {
       if (activeFilter === 'active' && !u.isActive) return false;
       if (activeFilter === 'inactive' && u.isActive) return false;
+      if (lisRoleFilter !== 'all' && u.lisUsertypeId !== lisRoleFilter)
+        return false;
+      // Telo role filter matches on the EFFECTIVE role — explicit row, else
+      // derived from the LIS usertypeid. 'unassigned' = no explicit row.
       if (roleFilter === 'unassigned' && u.teloRole != null) return false;
       if (
         roleFilter !== 'all' &&
         roleFilter !== 'unassigned' &&
-        u.teloRole !== roleFilter
+        (u.teloRole ?? lisUsertypeToTeloRole(u.lisUsertypeId)) !== roleFilter
       )
         return false;
       if (!needle) return true;
+      const effective =
+        u.teloRole ?? lisUsertypeToTeloRole(u.lisUsertypeId);
       return (
         u.username.toLowerCase().includes(needle) ||
         (u.firstName ?? '').toLowerCase().includes(needle) ||
         (u.lastName ?? '').toLowerCase().includes(needle) ||
         (u.email ?? '').toLowerCase().includes(needle) ||
-        (u.teloRole ?? '').toLowerCase().includes(needle)
+        effective.toLowerCase().includes(needle) ||
+        (u.lisUsertypeName ?? '').toLowerCase().includes(needle)
       );
     });
-  }, [overview.users, q, roleFilter, activeFilter]);
+  }, [overview.users, q, roleFilter, lisRoleFilter, activeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -91,7 +104,7 @@ export function UserManagement({
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   if (!mounted) {
-    return <div className="h-96 animate-pulse rounded-xl border bg-muted/40" />;
+    return <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />;
   }
 
   return (
@@ -99,7 +112,7 @@ export function UserManagement({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="flex flex-wrap items-end gap-2">
           <div className="space-y-0.5">
-            <Label className="text-xs text-muted-foreground">Search</Label>
+            <Label className="block text-xs text-muted-foreground">Search</Label>
             <Input
               placeholder="Username, name, email, role…"
               value={q}
@@ -109,7 +122,7 @@ export function UserManagement({
             />
           </div>
           <div className="space-y-0.5">
-            <Label className="text-xs text-muted-foreground">Telo role</Label>
+            <Label className="block text-xs text-muted-foreground">Telo role</Label>
             <select
               value={roleFilter}
               onChange={(e) =>
@@ -128,7 +141,27 @@ export function UserManagement({
             </select>
           </div>
           <div className="space-y-0.5">
-            <Label className="text-xs text-muted-foreground">Status</Label>
+            <Label className="block text-xs text-muted-foreground">LIS role</Label>
+            <select
+              value={lisRoleFilter === 'all' ? 'all' : String(lisRoleFilter)}
+              onChange={(e) =>
+                setLisRoleFilter(
+                  e.target.value === 'all' ? 'all' : Number(e.target.value),
+                )
+              }
+              suppressHydrationWarning
+              className={sel + ' h-8 w-48'}
+            >
+              <option value="all">All LIS roles</option>
+              {overview.lisUsertypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-0.5">
+            <Label className="block text-xs text-muted-foreground">Status</Label>
             <select
               value={activeFilter}
               onChange={(e) =>
@@ -183,6 +216,7 @@ export function UserManagement({
                 key={u.id}
                 user={u}
                 isSelf={u.id === currentUid}
+                allMccs={overview.allMccs}
               />
             ))
           )}
@@ -239,6 +273,7 @@ export function UserManagement({
       {createOpen && (
         <CreateUserPanel
           lisUsertypes={overview.lisUsertypes}
+          allMccs={overview.allMccs}
           onClose={() => setCreateOpen(false)}
         />
       )}
@@ -249,11 +284,15 @@ export function UserManagement({
 function UserRow({
   user,
   isSelf,
+  allMccs,
 }: {
   user: AdminOverview['users'][number];
   isSelf: boolean;
+  allMccs: ScopedMcc[];
 }) {
-  const [openRow, setOpenRow] = useState<null | 'role' | 'password'>(null);
+  const [openRow, setOpenRow] = useState<
+    null | 'role' | 'password' | 'edit'
+  >(null);
 
   return (
     <>
@@ -273,24 +312,41 @@ function UserRow({
         </TableCell>
         <TableCell>
           {user.teloRole ? (
-            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
               {labelFor(user.teloRole)}
             </span>
           ) : (
-            <span className="text-xs italic text-muted-foreground">
-              (bootstrap)
+            <span
+              className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+              title="Derived from the LIS user type — no explicit Telo role assigned yet."
+            >
+              {labelFor(lisUsertypeToTeloRole(user.lisUsertypeId))}
+              <span className="ml-1 opacity-60 italic">(from LIS)</span>
             </span>
           )}
         </TableCell>
         <TableCell className="text-center">
           {user.isActive ? (
-            <span className="text-xs text-green-700">Yes</span>
+            <span className="text-xs text-secondary">Yes</span>
           ) : (
             <span className="text-xs text-destructive">No</span>
           )}
         </TableCell>
         <TableCell>
           <div className="flex flex-wrap gap-1.5 text-xs">
+            {/* Edit is Telo-only — see updateUserAction guard. */}
+            {user.createdByTelo && (
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenRow(openRow === 'edit' ? null : 'edit')
+                }
+                className="text-primary hover:underline"
+                title="Edit name, email, and client-code scope"
+              >
+                Edit
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setOpenRow(openRow === 'role' ? null : 'role')}
@@ -315,9 +371,20 @@ function UserRow({
           </div>
         </TableCell>
       </TableRow>
+      {openRow === 'edit' && user.createdByTelo && (
+        <TableRow>
+          <TableCell colSpan={6} className="bg-white/[0.03]">
+            <EditUserForm
+              user={user}
+              allMccs={allMccs}
+              onDone={() => setOpenRow(null)}
+            />
+          </TableCell>
+        </TableRow>
+      )}
       {openRow === 'role' && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-muted/30">
+          <TableCell colSpan={6} className="bg-white/[0.03]">
             <SetRoleForm
               userId={user.id}
               current={user.teloRole}
@@ -328,7 +395,7 @@ function UserRow({
       )}
       {openRow === 'password' && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-muted/30">
+          <TableCell colSpan={6} className="bg-white/[0.03]">
             <ResetPasswordForm
               userId={user.id}
               username={user.username}
@@ -396,6 +463,205 @@ function SetRoleForm({
       {state.error && (
         <span className="text-xs text-destructive">{state.error}</span>
       )}
+    </form>
+  );
+}
+
+function EditUserForm({
+  user,
+  allMccs,
+  onDone,
+}: {
+  user: AdminOverview['users'][number];
+  allMccs: ScopedMcc[];
+  onDone: () => void;
+}) {
+  const [state, action, pending] = useActionState(updateUserAction, initial);
+  const [firstName, setFirstName] = useState(user.firstName ?? '');
+  const [lastName, setLastName] = useState(user.lastName ?? '');
+  const [email, setEmail] = useState(user.email ?? '');
+  const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
+  const [pickerValue, setPickerValue] = useState<number | ''>('');
+  const [scopeLoading, setScopeLoading] = useState(true);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+
+  // Pull current MCC scope on mount — the listTeloUsers payload doesn't
+  // ship it (would be ~3.5k × N MCC IDs in the admin overview otherwise).
+  useEffect(() => {
+    let cancelled = false;
+    setScopeLoading(true);
+    setScopeError(null);
+    getEditableUserScope(user.id)
+      .then((r) => {
+        if (cancelled) return;
+        if (!r.ok) {
+          setScopeError(r.error ?? 'Could not load scope.');
+          return;
+        }
+        setPickedMccIds(r.mccIds);
+      })
+      .catch(() => {
+        if (!cancelled) setScopeError('Could not load scope.');
+      })
+      .finally(() => {
+        if (!cancelled) setScopeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id]);
+
+  useEffect(() => {
+    if (state.ok) onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.ok]);
+
+  const mccById = useMemo(() => {
+    const m = new Map<number, ScopedMcc>();
+    for (const x of allMccs) m.set(x.id, x);
+    return m;
+  }, [allMccs]);
+
+  const pickerItems = useMemo(
+    () => allMccs.filter((m) => !pickedMccIds.includes(m.id)),
+    [allMccs, pickedMccIds],
+  );
+
+  function addMcc(id: number | '') {
+    if (id === '' || pickedMccIds.includes(id)) return;
+    setPickedMccIds((p) => [...p, id]);
+    setPickerValue('');
+  }
+  function removeMcc(id: number) {
+    setPickedMccIds((p) => p.filter((x) => x !== id));
+  }
+
+  const effectiveRole =
+    user.teloRole ?? lisUsertypeToTeloRole(user.lisUsertypeId);
+  const scopeIsUnrestricted =
+    effectiveRole === 'super_admin' || effectiveRole === 'admin';
+
+  return (
+    <form action={action} className="space-y-3 py-2">
+      <input type="hidden" name="userId" value={user.id} />
+      <input
+        type="hidden"
+        name="mccIdsCsv"
+        value={pickedMccIds.join(',')}
+      />
+      <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-0.5">
+          <Label htmlFor={`fn-${user.id}`}>First name *</Label>
+          <Input
+            id={`fn-${user.id}`}
+            name="firstName"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            required
+            maxLength={100}
+          />
+        </div>
+        <div className="space-y-0.5">
+          <Label htmlFor={`ln-${user.id}`}>Last name</Label>
+          <Input
+            id={`ln-${user.id}`}
+            name="lastName"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            maxLength={100}
+          />
+        </div>
+        <div className="space-y-0.5">
+          <Label htmlFor={`em-${user.id}`}>Email</Label>
+          <Input
+            id={`em-${user.id}`}
+            name="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            maxLength={100}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Label>Client codes (MCC scope)</Label>
+        {scopeIsUnrestricted ? (
+          <p className="rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground">
+            {labelFor(effectiveRole)} accounts have{' '}
+            <span className="font-medium text-foreground">unrestricted</span>{' '}
+            MCC scope — assignments here only matter if the role is downgraded
+            later.
+          </p>
+        ) : scopeLoading ? (
+          <p className="text-xs text-muted-foreground">Loading scope…</p>
+        ) : scopeError ? (
+          <p className="text-xs text-destructive">{scopeError}</p>
+        ) : (
+          <>
+            {pickedMccIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {pickedMccIds.map((id) => {
+                  const m = mccById.get(id);
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs"
+                    >
+                      <span className="font-medium">{m?.name ?? id}</span>
+                      {m?.code && (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {m.code}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeMcc(id)}
+                        className="ml-0.5 text-muted-foreground hover:text-destructive"
+                        aria-label="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <Combobox
+              items={pickerItems}
+              value={pickerValue}
+              onChange={(id) => addMcc(id)}
+              placeholder={
+                pickedMccIds.length === 0
+                  ? `Search ${allMccs.length.toLocaleString('en-IN')} client codes…`
+                  : 'Add another client code…'
+              }
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Saving replaces this user&apos;s MCC scope with the chips above
+              (existing entries not shown are removed).
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Button type="submit" size="sm" disabled={pending || scopeLoading}>
+          {pending ? 'Saving…' : 'Save changes'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onDone}
+          disabled={pending}
+        >
+          Cancel
+        </Button>
+        {state.error && (
+          <span className="text-xs text-destructive">{state.error}</span>
+        )}
+      </div>
     </form>
   );
 }
@@ -482,12 +748,20 @@ function SetActiveButton({
 
 function CreateUserPanel({
   lisUsertypes,
+  allMccs,
   onClose,
 }: {
   lisUsertypes: AdminOverview['lisUsertypes'];
+  allMccs: ScopedMcc[];
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState(createUserAction, initial);
+  // Selected MCC IDs (ordered, no dupes). Super Admin / Admin get
+  // unrestricted scope from the LIS usertype anyway, so the picker is most
+  // relevant for Billing / Technician / Viewer roles.
+  const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
+  const [pickerValue, setPickerValue] = useState<number | ''>('');
+  const [teloRole, setTeloRole] = useState<TeloRole>('viewer');
 
   useEffect(() => {
     if (state.ok) onClose();
@@ -498,12 +772,37 @@ function CreateUserPanel({
   const defaultLisId =
     lisUsertypes.find((t) => t.id === 8)?.id ?? lisUsertypes[0]?.id ?? '';
 
+  // Lookup by id for chip labels. allMccs is ~1.7k rows — Map > linear find.
+  const mccById = useMemo(() => {
+    const m = new Map<number, ScopedMcc>();
+    for (const x of allMccs) m.set(x.id, x);
+    return m;
+  }, [allMccs]);
+
+  // Filter the picker so already-selected MCCs don't appear as options.
+  const pickerItems = useMemo(
+    () => allMccs.filter((m) => !pickedMccIds.includes(m.id)),
+    [allMccs, pickedMccIds],
+  );
+
+  function addMcc(id: number | '') {
+    if (id === '' || pickedMccIds.includes(id)) return;
+    setPickedMccIds((p) => [...p, id]);
+    setPickerValue(''); // reset picker for next add
+  }
+  function removeMcc(id: number) {
+    setPickedMccIds((p) => p.filter((x) => x !== id));
+  }
+
+  const scopeIsUnrestricted = teloRole === 'super_admin' || teloRole === 'admin';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <form
         action={action}
-        className="w-full max-w-md space-y-2.5 rounded-xl border bg-background p-4 shadow-lg"
+        className="w-full max-w-md space-y-2.5 rounded-2xl border border-white/5 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200"
       >
+        <input type="hidden" name="mccIdsCsv" value={pickedMccIds.join(',')} />
         <div className="flex items-baseline justify-between">
           <h2 className="text-base font-semibold">Onboard a new Telo user</h2>
           <button
@@ -556,7 +855,12 @@ function CreateUserPanel({
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label>Telo role *</Label>
-            <select name="teloRole" defaultValue="viewer" className={sel}>
+            <select
+              name="teloRole"
+              value={teloRole}
+              onChange={(e) => setTeloRole(e.target.value as TeloRole)}
+              className={sel}
+            >
               {ROLES.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
@@ -578,6 +882,64 @@ function CreateUserPanel({
               ))}
             </select>
           </div>
+        </div>
+
+        {/* ── Client-code (MCC) scope ───────────────────────────────── */}
+        <div className="space-y-1 pt-1">
+          <Label>Client codes (MCC scope)</Label>
+          {scopeIsUnrestricted ? (
+            <p className="rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground">
+              {ROLES.find((r) => r.value === teloRole)?.label} accounts have{' '}
+              <span className="font-medium text-foreground">unrestricted</span>{' '}
+              MCC scope — no selection needed.
+            </p>
+          ) : (
+            <>
+              {pickedMccIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {pickedMccIds.map((id) => {
+                    const m = mccById.get(id);
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs"
+                      >
+                        <span className="font-medium">{m?.name ?? id}</span>
+                        {m?.code && (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {m.code}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeMcc(id)}
+                          className="ml-0.5 text-muted-foreground hover:text-destructive"
+                          aria-label="Remove"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <Combobox
+                items={pickerItems}
+                value={pickerValue}
+                onChange={(id) => addMcc(id)}
+                placeholder={
+                  pickedMccIds.length === 0
+                    ? `Search ${allMccs.length.toLocaleString('en-IN')} client codes…`
+                    : 'Add another client code…'
+                }
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {pickedMccIds.length === 0
+                  ? 'Pick one or more client codes — the user will only see data for these centres.'
+                  : `${pickedMccIds.length} client code${pickedMccIds.length === 1 ? '' : 's'} assigned.`}
+              </p>
+            </>
+          )}
         </div>
 
         {state.error && (

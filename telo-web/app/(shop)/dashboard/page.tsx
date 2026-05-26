@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
+import { hasCapability } from '@/auth/rbac';
 import { getDashboardStats } from '@/actions/stats.actions';
 import { DashboardLive } from '@/components/dashboard/dashboard-live';
 import { getMccScope } from '@/auth/scope';
@@ -7,6 +9,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const user = await requireSession();
+  // Technicians don't see revenue KPIs — their home is the New Order
+  // worklist. The login flow points everyone at /dashboard; we bounce them
+  // here so any deep-link (URL bar, bookmark, "Back to home") also works.
+  if (!hasCapability(user.caps, 'dashboard:view')) redirect('/orders/new');
+
   const [stats, scope] = await Promise.all([
     getDashboardStats(),
     getMccScope(user.uid),

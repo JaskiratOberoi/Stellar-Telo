@@ -22,6 +22,7 @@ import {
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
 import type { CatalogItem } from '@/domain/catalog/catalog.types';
+import { clearCart } from '@/db/cartStore';
 
 export interface RefDataForMcc {
   doctors: RefEntity[];
@@ -150,7 +151,8 @@ const zeroInt = z.preprocess(
 
 const sidSchema = z.object({
   sampleTypeId: z.coerce.number().int(),
-  vailid: z.string().trim().min(1).max(50),
+  // SIDs are numeric-only barcodes — no letters or symbols.
+  vailid: z.string().trim().min(1).max(50).regex(/^\d+$/, 'Sample ID must contain digits only'),
 });
 
 // CreatableValue serialization for Ref. doctor / Ref. customer. Either picks
@@ -318,6 +320,8 @@ export async function registerOrder(
     if (refDoc?.kind === 'new' || refCust?.kind === 'new') {
       await invalidateRefDataCache(f.mcc);
     }
+    // Clear the catalog cart — items were consumed by this order.
+    await clearCart(user.uid);
   } catch (e) {
     if (isRedirectError(e)) throw e;
     if (e instanceof AppError) return { error: e.message };

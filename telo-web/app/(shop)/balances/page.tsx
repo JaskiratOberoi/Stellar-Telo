@@ -45,6 +45,13 @@ export default async function BalancesPage({
     : 'all';
 
   const scope = await getMccScope(user.uid);
+
+  // Single-MCC users (typical for a client account, e.g. medicare_test → ABC)
+  // skip the one-row rollup and land straight on their MCC's bill list. Date
+  // range carries over.
+  if (scope.length === 1) {
+    redirect(`/balances/${scope[0]}?from=${from}&to=${to}`);
+  }
   const [summary, mccs] = await Promise.all([
     getAccountsSummary({ from, to, mccId, paymentMode }),
     // Unrestricted users (>1000 MCCs) skip the dropdown — too long to pick from;
