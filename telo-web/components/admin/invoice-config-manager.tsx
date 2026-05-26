@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useActionState } from 'react';
+import { useMemo, useState, useActionState } from 'react';
 import {
   saveInvoiceConfigAction,
   type InvoiceConfigState,
@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+
+const PAGE_SIZE = 50;
 
 interface MccRow {
   mccId: number;
@@ -90,6 +92,11 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
   );
 }
 
+function rowHasConfig(row: MccRow): boolean {
+  const c = row.config;
+  return !!(c?.labName || c?.address || c?.phone || c?.email);
+}
+
 export function InvoiceConfigManager({
   rows,
   tableReady = true,
@@ -98,50 +105,123 @@ export function InvoiceConfigManager({
   tableReady?: boolean;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
+  const [q, setQ] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  // Sort once: configured rows first, then by name. Stable across renders.
+  const sorted = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const ac = rowHasConfig(a) ? 0 : 1;
+      const bc = rowHasConfig(b) ? 0 : 1;
+      if (ac !== bc) return ac - bc;
+      return (a.mccName ?? a.mccCode).localeCompare(b.mccName ?? b.mccCode);
+    });
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return sorted;
+    return sorted.filter(
+      (r) =>
+        (r.mccName ?? '').toLowerCase().includes(needle) ||
+        r.mccCode.toLowerCase().includes(needle) ||
+        String(r.mccId).includes(needle) ||
+        (r.config?.labName ?? '').toLowerCase().includes(needle),
+    );
+  }, [sorted, q]);
+
+  const visible = showAll ? filtered : filtered.slice(0, PAGE_SIZE);
+  const configuredCount = useMemo(() => rows.filter(rowHasConfig).length, [rows]);
 
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-4">
-        No client accounts in scope. Run the SQL migration (06_table_telo_mcc_invoice_config.sql) first if the table is missing.
+      <p className="py-4 text-sm text-muted-foreground">
+        {tableReady
+          ? 'No client accounts in scope for your account.'
+          : 'No client accounts in scope. Run the SQL migration (06_table_telo_mcc_invoice_config.sql) first if the table is missing.'}
       </p>
     );
   }
 
   return (
-    <div className="divide-y divide-white/5">
-      {rows.map((row) => {
-        const isOpen = editing === row.mccId;
-        const hasConfig = !!(row.config?.labName || row.config?.address || row.config?.phone || row.config?.email);
-        return (
-          <div key={row.mccId} className={cn('py-3 px-1', isOpen && 'bg-white/[0.02] rounded-lg px-3')}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-medium text-sm">
-                  {row.config?.labName ?? row.mccName ?? '—'}
-                </p>
-                <p className="text-xs text-muted-foreground font-mono">
-                  {row.mccCode} · ID {row.mccId}
-                </p>
-                {hasConfig && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {[row.config?.phone, row.config?.email].filter(Boolean).join(' · ')}
-                  </p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Input
+          placeholder="Search by MCC name, code, ID, or saved lab name…"
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setShowAll(false);
+          }}
+          className="h-8 max-w-md"
+          suppressHydrationWarning
+        />
+        <p className="text-xs text-muted-foreground">
+          {configuredCount} configured · {rows.length} total
+          {q && ` · ${filtered.length} match`}
+        </p>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="py-4 text-sm text-muted-foreground">No match.</p>
+      ) : (
+        <div className="divide-y divide-white/5">
+          {visible.map((row) => {
+            const isOpen = editing === row.mccId;
+            const hasConfig = rowHasConfig(row);
+            return (
+              <div
+                key={row.mccId}
+                className={cn(
+                  'px-1 py-3',
+                  isOpen && 'rounded-lg bg-white/[0.02] px-3',
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {row.config?.labName ?? row.mccName ?? '—'}
+                      {hasConfig && (
+                        <span className="ml-2 rounded-full bg-secondary/15 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-secondary">
+                          Configured
+                        </span>
+                      )}
+                    </p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {row.mccCode} · ID {row.mccId}
+                    </p>
+                    {hasConfig && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {[row.config?.phone, row.config?.email]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditing(isOpen ? null : row.mccId)}
+                  >
+                    {isOpen ? 'Close' : hasConfig ? 'Edit' : 'Set up'}
+                  </Button>
+                </div>
+                {isOpen && (
+                  <ConfigForm row={row} onClose={() => setEditing(null)} />
                 )}
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditing(isOpen ? null : row.mccId)}
-              >
-                {isOpen ? 'Close' : hasConfig ? 'Edit' : 'Set up'}
-              </Button>
-            </div>
-            {isOpen && (
-              <ConfigForm row={row} onClose={() => setEditing(null)} />
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
+
+      {!showAll && filtered.length > PAGE_SIZE && (
+        <div className="flex justify-center pt-2">
+          <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
+            Show all {filtered.length}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

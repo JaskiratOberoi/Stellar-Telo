@@ -13,7 +13,9 @@
     --popover-foreground: 0 0% 100%;
     --primary: 238 25% 43%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 34 45% 60%;
+    /* Success/secondary — vivid green so "Paid", "Available", etc. read as
+       success rather than warning (mustard was being misread as caution). */
+    --secondary: 142 60% 48%;
     --secondary-foreground: 0 0% 6%;
     --muted: 0 0% 12%;
     --muted-foreground: 218 11% 65%;
@@ -37,7 +39,7 @@
     --popover-foreground: 0 0% 100%;
     --primary: 238 25% 43%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 34 45% 60%;
+    --secondary: 142 60% 48%;
     --secondary-foreground: 0 0% 6%;
     --muted: 0 0% 12%;
     --muted-foreground: 218 11% 65%;
@@ -94,7 +96,8 @@
     --popover-foreground: 0 0% 5%;
     --primary: 238 25% 35%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 34 45% 45%;
+    /* Print: darker green so it stays legible on white paper. */
+    --secondary: 142 55% 32%;
     --secondary-foreground: 0 0% 100%;
     --muted: 0 0% 95%;
     --muted-foreground: 0 0% 40%;

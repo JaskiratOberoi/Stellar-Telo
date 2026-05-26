@@ -77,53 +77,79 @@ export function PendingAccessionsList({
             <TableHead className="w-20">MCC</TableHead>
             <TableHead className="w-24 text-center">SIDs</TableHead>
             <TableHead className="w-24 text-right">Amount</TableHead>
+            <TableHead className="w-32 text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-muted-foreground">
+              <TableCell colSpan={7} className="text-muted-foreground">
                 {feed.orders.length === 0
                   ? 'No orders awaiting Sample IDs.'
                   : 'No match.'}
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((o) => (
-              <TableRow
-                key={o.billId}
-                className="group cursor-pointer transition-transform hover:-translate-y-px"
-              >
-                <TableCell>
-                  <Link
-                    href={`/orders/new/${o.billId}`}
-                    className="font-mono text-xs underline underline-offset-2"
-                  >
-                    {o.billNumber ?? o.billId}
-                  </Link>
-                </TableCell>
-                <TableCell>{fmtIST(o.billDate)}</TableCell>
-                <TableCell>{o.patientName ?? '—'}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {o.mccCode ?? '—'}
-                </TableCell>
-                <TableCell className="text-center">
-                  <span
-                    className={cn(
-                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
-                      o.haveGroups >= o.requiredGroups
-                        ? 'bg-secondary/15 text-secondary'
-                        : 'bg-amber-500/15 text-amber-400',
-                    )}
-                  >
-                    {o.haveGroups}/{o.requiredGroups}
-                  </span>
-                </TableCell>
-                <TableCell className="text-right font-medium">
-                  ₹{o.total}
-                </TableCell>
-              </TableRow>
-            ))
+            rows.map((o) => {
+              const complete = o.haveGroups >= o.requiredGroups;
+              const remaining = Math.max(0, o.requiredGroups - o.haveGroups);
+              const href = `/orders/new/${o.billId}`;
+              return (
+                <TableRow
+                  key={o.billId}
+                  className="group transition-transform hover:-translate-y-px"
+                >
+                  <TableCell>
+                    <Link
+                      href={href}
+                      className="font-mono text-xs underline underline-offset-2"
+                    >
+                      {o.billNumber ?? o.billId}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{fmtIST(o.billDate)}</TableCell>
+                  <TableCell>{o.patientName ?? '—'}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {o.mccCode ?? '—'}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span
+                      className={cn(
+                        'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                        complete
+                          ? 'bg-secondary/15 text-secondary'
+                          : 'bg-amber-500/15 text-amber-400',
+                      )}
+                    >
+                      {o.haveGroups}/{o.requiredGroups}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    ₹{o.total}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      asChild
+                      size="sm"
+                      variant={complete ? 'outline' : 'default'}
+                    >
+                      <Link
+                        href={href}
+                        aria-label={
+                          complete
+                            ? `View Sample IDs for bill ${o.billNumber ?? o.billId}`
+                            : `Add ${remaining} Sample ID${remaining === 1 ? '' : 's'} for bill ${o.billNumber ?? o.billId}`
+                        }
+                      >
+                        {complete
+                          ? 'View SIDs'
+                          : `Add SID${remaining === 1 ? '' : 's'}`}
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>

@@ -5,8 +5,13 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { getAllMccInvoiceConfigs } from '@/db/read/invoiceConfig';
-import { fetchScopedMccUnits } from '@/db/read/mccUnits';
+import { fetchAllActiveMccs, fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getMccScope } from '@/auth/scope';
+
+// SQL Server param hard-cap is 2100; keep an IN-list well below to leave room
+// for the request's own bindings. Anything above this means the caller is an
+// unrestricted role (Super Admin / Admin) — fetch the full active MCC list.
+const SCOPED_IN_LIST_CAP = 1000;
 
 export interface InvoiceConfigState {
   error: string | null;
@@ -77,12 +82,24 @@ export async function saveInvoiceConfigAction(
 /**
  * Fetch every MCC in scope merged with its invoice config.
  * Used to populate the admin invoice-config management page.
+ *
+ * Unrestricted roles (Super Admin / Admin) have scope = every active MCC
+ * (~1.7k rows). That can't be passed as a single SQL IN-list, so we fall
+ * back to fetchAllActiveMccs() which scans the master table directly.
  */
 export async function getInvoiceConfigOverview() {
   const user = await requireSession();
   const scope = await getMccScope(user.uid);
+
+  const mccsPromise =
+    scope.length === 0
+      ? Promise.resolve([])
+      : scope.length <= SCOPED_IN_LIST_CAP
+        ? fetchScopedMccUnits(scope)
+        : fetchAllActiveMccs();
+
   const [mccs, configs] = await Promise.all([
-    fetchScopedMccUnits(scope.length > 0 && scope.length <= 1000 ? scope : []),
+    mccsPromise,
     getAllMccInvoiceConfigs(),
   ]);
   const configMap = new Map(configs.map((c) => [c.mccId, c]));

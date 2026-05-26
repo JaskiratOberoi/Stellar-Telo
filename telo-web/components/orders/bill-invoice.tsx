@@ -202,6 +202,18 @@ export function BillInvoice({ order, mccName, config }: BillInvoiceProps) {
         </div>
       </div>
 
+      {/* ── Notes ──────────────────────────────────────────────────── */}
+      <div className="border-b border-gray-400 px-5 py-3">
+        <p className="mb-1 font-semibold text-[10px] uppercase tracking-wide text-gray-600">
+          Note:
+        </p>
+        <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-gray-700">
+          <li>Not Valid for medico legal use.</li>
+          <li>Non refundable, subject to realization of cheque.</li>
+          <li>All above services are exempted under GST.</li>
+        </ol>
+      </div>
+
       {/* ── Footer ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 items-end px-5 py-4">
         <p className="text-gray-400 text-[9px]">

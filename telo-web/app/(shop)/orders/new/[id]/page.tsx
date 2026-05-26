@@ -38,22 +38,32 @@ export default async function AccessionPage({
   const genderLabel =
     order.gender === 1 ? 'Male' : order.gender === 2 ? 'Female' : '—';
 
+  // Lab technicians only need pass/fail payment status here — amounts live on
+  // the bill. Same logic as LabInvoice's PaymentStatusPill.
+  const paymentStatus: 'paid' | 'pending' | 'free' =
+    order.balance > 0
+      ? 'pending'
+      : order.amountPaid > 0
+        ? 'paid'
+        : 'free';
+
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between gap-3">
-        <div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="text-xl font-bold tracking-tight">
             Accession · Bill #{order.billNumber ?? order.billId}
           </h1>
-          <p className="text-xs text-muted-foreground">
-            {order.patientName ?? 'Patient'} · {fmtIST(order.billDate)} · MCC{' '}
-            <span className="font-mono">{order.mccCode ?? '—'}</span>
-          </p>
+          <PaymentStatusPill status={paymentStatus} />
         </div>
         <Link href="/orders/new" className="text-sm underline">
           ← Worklist
         </Link>
       </div>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        {order.patientName ?? 'Patient'} · {fmtIST(order.billDate)} · MCC{' '}
+        <span className="font-mono">{order.mccCode ?? '—'}</span>
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-12">
         {/* Patient — read-only; Telo never edits patient details */}
@@ -70,15 +80,13 @@ export default async function AccessionPage({
             </span>
             <span className="text-muted-foreground">Mobile</span>
             <span>{order.mobile ?? '—'}</span>
-            <span className="text-muted-foreground">Amount</span>
-            <span>₹{order.amount}</span>
             <span className="col-span-2 mt-1 text-xs text-muted-foreground">
               Patient details are read-only here — edit them in the LIS.
             </span>
           </CardContent>
         </Card>
 
-        {/* Tests — read-only */}
+        {/* Tests — read-only; amounts intentionally hidden for technicians */}
         <Card className="lg:col-span-8">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">
@@ -91,7 +99,6 @@ export default async function AccessionPage({
                 <TableRow>
                   <TableHead className="w-24">Code</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead className="w-24 text-right">Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -101,7 +108,6 @@ export default async function AccessionPage({
                       {l.testCode}
                     </TableCell>
                     <TableCell>{l.testName}</TableCell>
-                    <TableCell className="text-right">₹{l.amount}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -125,5 +131,31 @@ export default async function AccessionPage({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function PaymentStatusPill({
+  status,
+}: {
+  status: 'paid' | 'pending' | 'free';
+}) {
+  const styles =
+    status === 'paid'
+      ? 'border-secondary/40 bg-secondary/15 text-secondary'
+      : status === 'pending'
+        ? 'border-destructive/40 bg-destructive/15 text-destructive'
+        : 'border-white/15 bg-white/5 text-muted-foreground';
+  const label =
+    status === 'paid'
+      ? '✓ Paid'
+      : status === 'pending'
+        ? 'Payment Pending'
+        : 'No Charge';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles}`}
+    >
+      {label}
+    </span>
   );
 }
