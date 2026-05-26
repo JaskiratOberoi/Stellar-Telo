@@ -53,6 +53,9 @@ export default async function OrderReceiptPage({
     mccId != null ? getMccInvoiceConfig(mccId) : Promise.resolve(null),
   ]);
   const mccName = mccUnits[0]?.name ?? null;
+  // String account code (MCCUnitCode) — distinct from numeric mccCode/mcc_id.
+  // Used by BillInvoice to gate per-MCC branding (e.g. Medicare co-brand).
+  const mccAccountCode = mccUnits[0]?.code ?? null;
 
   const canCapture = hasCapability(user.caps, 'payment:capture');
   const canPay = order.balance > 0 && canCapture;
@@ -71,7 +74,12 @@ export default async function OrderReceiptPage({
 
       {/* ── Print: bill (costing only, no samples) ───────────────── */}
       <div className="hidden print:block" data-invoice="bill">
-        <BillInvoice order={order} mccName={mccName} config={invoiceConfig} />
+        <BillInvoice
+          order={order}
+          mccName={mccName}
+          mccCode={mccAccountCode}
+          config={invoiceConfig}
+        />
       </div>
 
       {/* ── Screen view: interactive web layout ──────────────────── */}

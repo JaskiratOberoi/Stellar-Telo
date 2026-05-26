@@ -4,24 +4,61 @@
  * Controlled by the `print-bill` class on <html> (see globals.css).
  */
 
+import Image from 'next/image';
 import type { OrderDetail } from '@/db/read/orders';
 import type { MccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { fmtIST } from '@/lib/datetime';
+import {
+  customLogoApiPath,
+  medicareLogoPath,
+  MEDICARE_MCC_CODES,
+} from '@/lib/invoice-logo';
 
 interface BillInvoiceProps {
   order: OrderDetail;
   mccName: string | null;
+  /**
+   * MCCUnitCode (string) for the bill's MCC. Used to gate co-branding —
+   * Medicare logo renders top-right when this matches `medicare_test` or
+   * `medicare_tech` (case-insensitive). Pass null when unknown.
+   */
+  mccCode: string | null;
   config: MccInvoiceConfig | null;
 }
 
 const inr = (n: number) =>
   '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function BillInvoice({ order, mccName, config }: BillInvoiceProps) {
+function resolveTopRightLogo(
+  mccCode: string | null,
+  config: MccInvoiceConfig | null,
+): { src: string; alt: string; width: number; height: number } | null {
+  if (config?.hasTopRightLogo && config.mccId) {
+    return {
+      src: customLogoApiPath(config.mccId),
+      alt: 'Partner logo',
+      width: 104,
+      height: 72,
+    };
+  }
+  if (mccCode && MEDICARE_MCC_CODES.has(mccCode.trim().toLowerCase())) {
+    return {
+      src: medicareLogoPath(),
+      alt: 'Medicare Superspeciality Hospital',
+      width: 104,
+      height: 72,
+    };
+  }
+  return null;
+}
+
+export function BillInvoice({ order, mccName, mccCode, config }: BillInvoiceProps) {
   const labName = config?.labName?.trim() || mccName?.trim() || 'Diagnostic Centre';
   const address = config?.address?.trim() || null;
   const phone   = config?.phone?.trim()   || null;
   const email   = config?.email?.trim()   || null;
+
+  const topRightLogo = resolveTopRightLogo(mccCode, config);
 
   const dateLabel = fmtIST(order.billDate);
   const genderLabel =
@@ -31,19 +68,43 @@ export function BillInvoice({ order, mccName, config }: BillInvoiceProps) {
 
   return (
     <div className="w-full bg-white text-black font-sans text-[11px] leading-snug border border-gray-400">
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="border-b border-gray-400 px-5 py-4 text-center">
-        <p className="text-lg font-bold tracking-tight">{labName}</p>
-        {address && (
-          <p className="mt-0.5 text-gray-600">{address}</p>
-        )}
-        {(phone || email) && (
-          <p className="mt-0.5 text-gray-600">
-            {phone && <>Ph: {phone}</>}
-            {phone && email && <span className="mx-2 text-gray-300">|</span>}
-            {email && <>Email: {email}</>}
-          </p>
-        )}
+      {/* ── Header: Noble logo | lab name block | (conditional) Medicare logo ── */}
+      <div className="border-b border-gray-400 px-5 py-4 grid grid-cols-[auto_1fr_auto] items-center gap-4">
+        <div className="flex items-center justify-start">
+          <Image
+            src="/branding/noble-logo.png"
+            alt="Noble Diagnostics"
+            width={224}
+            height={56}
+            priority
+            className="h-14 w-auto print:h-[16mm] print:block"
+          />
+        </div>
+        <div className="text-center min-w-0">
+          <p className="text-lg font-bold tracking-tight truncate">{labName}</p>
+          {address && (
+            <p className="mt-0.5 text-gray-600">{address}</p>
+          )}
+          {(phone || email) && (
+            <p className="mt-0.5 text-gray-600">
+              {phone && <>Ph: {phone}</>}
+              {phone && email && <span className="mx-2 text-gray-300">|</span>}
+              {email && <>Email: {email}</>}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-end min-w-[88px]">
+          {topRightLogo && (
+            <Image
+              src={topRightLogo.src}
+              alt={topRightLogo.alt}
+              width={topRightLogo.width}
+              height={topRightLogo.height}
+              unoptimized={topRightLogo.src.startsWith('/api/')}
+              className="h-16 w-auto print:h-[18mm] print:block"
+            />
+          )}
+        </div>
       </div>
 
       {/* ── Bill meta ──────────────────────────────────────────────── */}

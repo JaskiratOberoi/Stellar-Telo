@@ -42,7 +42,9 @@ services:
       retries: 3
       start_period: 5s
 
-  # Telo — B2C billing web app (Next.js). Internal; exposed via caddy only.
+  # Telo — B2C billing web app (Next.js).
+  # Bound to 127.0.0.1:3110 on the host; the host Caddy at Z:\Ares-CRM\server\Caddyfile
+  # reverse-proxies telo.genomicslab.in -> 127.0.0.1:3110 with auto-HTTPS.
   telo-web:
     build: ./telo-web
     restart: unless-stopped
@@ -52,6 +54,11 @@ services:
       TZ: ${TZ:-Asia/Kolkata}
       LISTEC_API_BASE_URL: http://listec:31311
       REDIS_URL: redis://redis:6379
+      # Force Next.js standalone server to bind all interfaces so the in-container
+      # healthcheck on 127.0.0.1:3000 works (default binds to container eth0 only).
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3110:3000"
     networks:
       - telo
     depends_on:
@@ -72,28 +79,6 @@ services:
       retries: 3
       start_period: 30s
 
-  # Reverse proxy — the only publicly exposed service (auto-HTTPS).
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      # Local dev: 8080/8443 avoid conflicts with IIS or other listeners on 80/443.
-      - "8080:80"
-      - "8443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - telo
-    depends_on:
-      telo-web:
-        condition: service_started
-
 networks:
   telo:
     driver: bridge
-
-volumes:
-  caddy_data:
-  caddy_config:

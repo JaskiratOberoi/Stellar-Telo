@@ -12,5 +12,6 @@ export default middleware((req) => {
 
 export const config = {
   // Run on app routes except static assets and the auth API.
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
+  // /branding/* — invoice header logos (Noble + built-in Medicare) must load on print.
+  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico|branding).*)'],
 };
