@@ -111,8 +111,8 @@ export default async function OrderReceiptPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <PrintLabButton />
-          <PrintBillButton />
+          <PrintLabButton billNumber={order.billNumber ?? order.billId} />
+          <PrintBillButton billNumber={order.billNumber ?? order.billId} />
           <Link
             href={back ?? '/orders'}
             className="text-sm underline"
