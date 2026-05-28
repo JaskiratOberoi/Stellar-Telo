@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
@@ -52,14 +53,6 @@ export default async function BalancesPage({
   if (scope.length === 1) {
     redirect(`/balances/${scope[0]}?from=${from}&to=${to}`);
   }
-  const [summary, mccs] = await Promise.all([
-    getAccountsSummary({ from, to, mccId, paymentMode }),
-    // Unrestricted users (>1000 MCCs) skip the dropdown — too long to pick from;
-    // they use the search/balance ranking instead.
-    scope.length > 0 && scope.length <= 1000
-      ? fetchScopedMccUnits(scope)
-      : Promise.resolve([]),
-  ]);
 
   return (
     <div className="space-y-3">
@@ -70,7 +63,53 @@ export default async function BalancesPage({
           see the bills driving its totals.
         </p>
       </div>
-      <AccountsSummaryView initial={summary} mccs={mccs} />
+      {/* Suspense so the heading + breadcrumb paint immediately while the
+       *  scope-wide summary (the slow Noble query) streams in. The fallback
+       *  reserves table height so the layout doesn't jump on stream-in.   */}
+      <Suspense
+        fallback={
+          <div className="rounded-lg border border-white/5 bg-card/50 p-6 text-sm text-muted-foreground">
+            Loading accounts…
+          </div>
+        }
+      >
+        <AccountsSummaryLoader
+          from={from}
+          to={to}
+          mccId={mccId}
+          paymentMode={paymentMode}
+          scope={scope}
+        />
+      </Suspense>
     </div>
   );
+}
+
+/**
+ * Streamed child so the page shell can render before the rollup query and
+ * the scoped-MCC fetch complete. Pure async server component — runs once on
+ * the server, ships HTML to the client.
+ */
+async function AccountsSummaryLoader({
+  from,
+  to,
+  mccId,
+  paymentMode,
+  scope,
+}: {
+  from: string;
+  to: string;
+  mccId: number | null;
+  paymentMode: PaymentModeFilter;
+  scope: number[];
+}) {
+  const [summary, mccs] = await Promise.all([
+    getAccountsSummary({ from, to, mccId, paymentMode }),
+    // Unrestricted users (>1000 MCCs) skip the dropdown — too long to pick from;
+    // they use the search/balance ranking instead.
+    scope.length > 0 && scope.length <= 1000
+      ? fetchScopedMccUnits(scope)
+      : Promise.resolve([]),
+  ]);
+  return <AccountsSummaryView initial={summary} mccs={mccs} />;
 }

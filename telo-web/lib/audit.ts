@@ -18,7 +18,11 @@ type AuditEvent =
   | { kind: 'admin.user.scope.partial'; actor: number; target: number; mccCount: number; error: string }
   | { kind: 'admin.user.role'; actor: number; target: number; role: string }
   | { kind: 'admin.user.password'; actor: number; target: number } // never the password value
-  | { kind: 'admin.user.active'; actor: number; target: number; active: boolean };
+  | { kind: 'admin.user.active'; actor: number; target: number; active: boolean }
+  // Emitted by the auth() session callback when a request's JWT carries an
+  // older session_version than the live one — the session is then dropped
+  // (forcing re-login). Captures both versions for ops correlation.
+  | { kind: 'session.revoked'; uid: number; embedded: number; current: number };
 
 export function audit(ev: AuditEvent): void {
   logger.info({ audit: true, ...ev }, `audit:${ev.kind}`);

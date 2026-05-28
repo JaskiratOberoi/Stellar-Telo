@@ -1,5 +1,5 @@
 import 'server-only';
-import { getPool, sql, withRetry } from '@/db/pool';
+import { getPool, sql, withRetry, traceDb } from '@/db/pool';
 import { getReceiptsInPeriod } from '@/db/read/receipts';
 
 export interface DayStats {
@@ -57,7 +57,7 @@ export async function getStats(
   // the older bill's day.
   const receiptsPromise = getReceiptsInPeriod(scope, date, date);
 
-  return withRetry(async () => {
+  return traceDb('stats.day', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     req.input('d', sql.Date, date);
@@ -145,5 +145,5 @@ export async function getStats(
       trend,
       fetchedAt: new Date().toISOString(),
     };
-  });
+  }));
 }

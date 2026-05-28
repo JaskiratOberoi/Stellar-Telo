@@ -2,7 +2,9 @@
 
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { requireCapability } from '@/auth/guards';
+import { requireCapability, throttleAdminAction } from '@/auth/guards';
+import { invalidateMccScope } from '@/auth/scope';
+import { bumpSessionVersion } from '@/db/read/sessionVersion';
 import {
   listTeloUsers,
   fetchLisUsertypes,
@@ -10,7 +12,8 @@ import {
   type LisUsertype,
 } from '@/db/read/teloUsers';
 import {
-  fetchAllActiveMccs,
+  fetchMccUnitsByIds,
+  searchMccUnits,
   type ScopedMcc,
 } from '@/db/read/mccUnits';
 import {
@@ -27,24 +30,43 @@ import type { TeloRole } from '@/types/auth';
 export interface AdminOverview {
   users: TeloUserRow[];
   lisUsertypes: LisUsertype[];
-  /** All active MCC units — used by the Add User form to assign client-code scope. */
-  allMccs: ScopedMcc[];
   fetchedAt: string;
 }
 
+// MCC list is no longer shipped in the admin overview — the picker fetches
+// matches on demand via searchMccUnitsAction (≤50 rows per call) instead.
+// Saves ~1.7k rows × ~60 B of RSC payload on every admin page render.
 export async function getAdminOverview(): Promise<AdminOverview> {
   await requireCapability('user:manage');
-  const [users, lisUsertypes, allMccs] = await Promise.all([
+  const [users, lisUsertypes] = await Promise.all([
     listTeloUsers(),
     fetchLisUsertypes(),
-    fetchAllActiveMccs(),
   ]);
   return {
     users,
     lisUsertypes,
-    allMccs,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Picker search: ≤50 active MCCs matching the query, optionally hiding
+ * already-chosen ids. Gated on `user:manage` since this is admin-only UI.
+ */
+export async function searchMccUnitsAction(
+  query: string,
+  excludeIds: number[] = [],
+): Promise<ScopedMcc[]> {
+  await requireCapability('user:manage');
+  return searchMccUnits(query, { excludeIds, limit: 50 });
+}
+
+/** Resolve picked MCC ids to display rows (chip labels). */
+export async function fetchMccUnitsByIdsAction(
+  ids: number[],
+): Promise<ScopedMcc[]> {
+  await requireCapability('user:manage');
+  return fetchMccUnitsByIds(ids);
 }
 
 /**
@@ -65,34 +87,41 @@ async function assignMccScope(
   if (!Number.isInteger(userId)) return;
   const ids = mccIds.filter((n) => Number.isInteger(n) && n > 0);
   if (ids.length === 0 && !opts.replace) return;
-  await withRetry(async () => {
-    const pool = await getPool();
-    if (opts.replace) {
-      await pool
-        .request()
-        .input('uid', sql.Int, userId)
-        .query(
-          `DELETE FROM dbo.tbl_med_user_sales_mcc_mapping WHERE user_id = @uid`,
-        );
-    }
-    // Row-by-row INSERT with NOT EXISTS — idempotent (re-saving the same
-    // scope is a no-op) and small (≤ a few dozen rows per user). Admin
-    // onboarding is rare + low-volume, so the per-row round-trip is fine.
-    for (const mccId of ids) {
-      await pool
-        .request()
-        .input('uid', sql.Int, userId)
-        .input('mcc', sql.Int, mccId)
-        .query(`
-          IF NOT EXISTS (
-            SELECT 1 FROM dbo.tbl_med_user_sales_mcc_mapping
-            WHERE user_id = @uid AND mcc_code = @mcc
-          )
-          INSERT INTO dbo.tbl_med_user_sales_mcc_mapping (user_id, mcc_code)
-          VALUES (@uid, @mcc);
-        `);
-    }
-  });
+  try {
+    await withRetry(async () => {
+      const pool = await getPool();
+      if (opts.replace) {
+        await pool
+          .request()
+          .input('uid', sql.Int, userId)
+          .query(
+            `DELETE FROM dbo.tbl_med_user_sales_mcc_mapping WHERE user_id = @uid`,
+          );
+      }
+      // Row-by-row INSERT with NOT EXISTS — idempotent (re-saving the same
+      // scope is a no-op) and small (≤ a few dozen rows per user). Admin
+      // onboarding is rare + low-volume, so the per-row round-trip is fine.
+      for (const mccId of ids) {
+        await pool
+          .request()
+          .input('uid', sql.Int, userId)
+          .input('mcc', sql.Int, mccId)
+          .query(`
+            IF NOT EXISTS (
+              SELECT 1 FROM dbo.tbl_med_user_sales_mcc_mapping
+              WHERE user_id = @uid AND mcc_code = @mcc
+            )
+            INSERT INTO dbo.tbl_med_user_sales_mcc_mapping (user_id, mcc_code)
+            VALUES (@uid, @mcc);
+          `);
+      }
+    });
+  } finally {
+    // Always bust the cache, even on partial failure — the DB state is now
+    // ambiguous and we want the next read to hit the source of truth, not a
+    // 5-minute-stale snapshot. Idempotent / safe even when no rows changed.
+    await invalidateMccScope(userId);
+  }
 }
 
 const teloRoleSchema = z.enum([
@@ -107,9 +136,15 @@ export type AdminFormState = { error: string | null; ok: boolean };
 const ok = (): AdminFormState => ({ error: null, ok: true });
 const err = (m: string): AdminFormState => ({ error: m, ok: false });
 
+// Password policy: ≥12 chars (admin-set passwords). Stronger than the
+// historical 4-char minimum which was a pragmatic legacy compromise; with
+// the rate-limited login + bumped session_version on rotation, weak admin
+// passwords are now the most-likely path to account takeover.
+const PASSWORD_MIN = 12;
+
 const createSchema = z.object({
   username: z.string().trim().min(1).max(50),
-  password: z.string().trim().min(4).max(50),
+  password: z.string().trim().min(PASSWORD_MIN).max(72),
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().max(100).optional(),
   email: z.string().trim().max(100).optional(),
@@ -141,8 +176,17 @@ export async function createUserAction(
 ): Promise<AdminFormState> {
   try {
     const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'create');
     const parsed = createSchema.safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return err('Please fill all required fields.');
+    if (!parsed.success) {
+      const pw = parsed.error.flatten().fieldErrors.password;
+      if (pw && pw.length > 0) {
+        return err(
+          `Password must be at least ${PASSWORD_MIN} characters.`,
+        );
+      }
+      return err('Please fill all required fields.');
+    }
     const f = parsed.data;
     const mccIds = parseMccIds(f.mccIdsCsv);
 
@@ -262,6 +306,7 @@ export async function updateUserAction(
 ): Promise<AdminFormState> {
   try {
     const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'update');
     const parsed = updateUserSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return err('Please fill all required fields.');
     const f = parsed.data;
@@ -336,12 +381,21 @@ export async function setRoleAction(
 ): Promise<AdminFormState> {
   try {
     const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'role');
     const parsed = setRoleSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return err('Invalid role change.');
     const { userId, teloRole } = parsed.data;
 
     const res = await adminSetRole({ userId, teloRole, actor: actor.uid });
     if (!res.ok) return err(res.message || 'Could not update the role.');
+
+    // Bump the session version so any outstanding JWT this user holds is
+    // treated as revoked by the next auth() call (within ~30s, the Redis
+    // TTL on the cached version). Also bust scope cache to be safe.
+    await Promise.all([
+      bumpSessionVersion(userId, actor.uid),
+      invalidateMccScope(userId),
+    ]);
 
     audit({
       kind: 'admin.user.role',
@@ -359,7 +413,7 @@ export async function setRoleAction(
 
 const resetSchema = z.object({
   userId: z.coerce.number().int().positive(),
-  newPassword: z.string().trim().min(4).max(50),
+  newPassword: z.string().trim().min(PASSWORD_MIN).max(72),
 });
 
 export async function resetPasswordAction(
@@ -368,8 +422,13 @@ export async function resetPasswordAction(
 ): Promise<AdminFormState> {
   try {
     const actor = await requireCapability('user:manage');
+    // Tighter window than other admin actions: bulk password resets are a
+    // high-impact destructive pattern, so cap at 10/min/actor.
+    await throttleAdminAction(actor.uid, 'password', { limit: 10 });
     const parsed = resetSchema.safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return err('Enter a password of 4+ characters.');
+    if (!parsed.success) {
+      return err(`Enter a password of at least ${PASSWORD_MIN} characters.`);
+    }
     const { userId, newPassword } = parsed.data;
 
     const res = await adminResetPassword({
@@ -378,6 +437,11 @@ export async function resetPasswordAction(
       actor: actor.uid,
     });
     if (!res.ok) return err(res.message || 'Could not reset the password.');
+
+    // Bump session version — a password reset implies the old credential
+    // may be compromised, so any session still using the old token should
+    // be forced through /login.
+    await bumpSessionVersion(userId, actor.uid);
 
     // NEVER log the password value.
     audit({ kind: 'admin.user.password', actor: actor.uid, target: userId });
@@ -400,12 +464,23 @@ export async function setActiveAction(
 ): Promise<AdminFormState> {
   try {
     const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'active');
     const parsed = activeSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return err('Invalid request.');
     const { userId, active } = parsed.data;
 
     const res = await adminSetActive({ userId, active, actor: actor.uid });
     if (!res.ok) return err(res.message || 'Could not update the user.');
+
+    // Deactivation MUST revoke any outstanding JWT — bump the session
+    // version so the user is forced back through /login on their next
+    // request (Redis cache TTL is 30s, so this is near-immediate).
+    // Re-activation also bumps so the user can re-enter with fresh caps.
+    // Scope cache is busted in parallel for the same near-immediate effect.
+    await Promise.all([
+      bumpSessionVersion(userId, actor.uid),
+      invalidateMccScope(userId),
+    ]);
 
     audit({
       kind: 'admin.user.active',

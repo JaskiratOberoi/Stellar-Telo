@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { redirect } from 'next/navigation';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { currentUser } from '@/auth/session';
-import { requireCapabilityForMcc } from '@/auth/guards';
+import { requireCapability, requireCapabilityForMcc } from '@/auth/guards';
+import { getMccScope } from '@/auth/scope';
 import { loadCatalog, filterCatalog } from '@/db/read/catalog';
 import {
   fetchDoctorsForMcc,
@@ -12,8 +13,8 @@ import {
   invalidateRefDataCache,
   type RefEntity,
 } from '@/db/read/refData';
-import { sidExists } from '@/db/read/sid';
-import { resolveRate } from '@/db/sp/resolveRate';
+import { sidExistsInScope } from '@/db/read/sid';
+import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import {
   previewSampleGroups,
@@ -21,7 +22,10 @@ import {
 } from '@/db/sp/previewSampleGroups';
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
-import type { CatalogItem } from '@/domain/catalog/catalog.types';
+import {
+  toPublicCatalogItem,
+  type CatalogItemPublic,
+} from '@/domain/catalog/catalog.types';
 import { clearCart } from '@/db/cartStore';
 
 export interface RefDataForMcc {
@@ -49,28 +53,47 @@ export async function fetchRefDataAction(mcc: number): Promise<RefDataForMcc> {
   return { doctors, customers };
 }
 
-/** Debounced test/profile search for the registration picker. */
+/**
+ * Debounced test/profile search for the registration picker.
+ *
+ * Gated by `order:create` — only roles that can place an order can read the
+ * catalogue. Returns the client-safe shape so internal CT/cost pricing never
+ * crosses the RSC boundary (was leaking via the full CatalogItem before).
+ */
 export async function searchCatalogAction(
   q: string,
   kind: 'all' | 'test' | 'profile' = 'all',
-): Promise<CatalogItem[]> {
-  await currentUser();
+): Promise<CatalogItemPublic[]> {
+  try {
+    await requireCapability('order:create');
+  } catch {
+    return [];
+  }
   const all = await loadCatalog();
-  return filterCatalog(all, q, kind, 30);
+  return filterCatalog(all, q, kind, 30).map(toPublicCatalogItem);
 }
 
 /**
- * Real-time SID duplicate check for the new-order form. Auth-gated, read-only.
- * 'taken' is advisory — the SP + trigger still enforce uniqueness on submit.
+ * Real-time SID duplicate check for the new-order form. Auth-gated, read-only,
+ * and scoped to the caller's MCCs — without scoping any signed-in user could
+ * enumerate sample IDs from centres they don't own. 'taken' is advisory — the
+ * SP + trigger still enforce uniqueness on submit.
  */
 export async function checkSid(
   sid: string,
 ): Promise<{ status: 'available' | 'taken' | 'empty' }> {
-  const user = await currentUser();
-  if (!user) return { status: 'empty' };
+  let user;
+  try {
+    user = await requireCapability('order:create');
+  } catch {
+    return { status: 'empty' };
+  }
   const v = (sid ?? '').trim();
   if (!v) return { status: 'empty' };
-  return { status: (await sidExists(v)) ? 'taken' : 'available' };
+  const scope = await getMccScope(user.uid);
+  return {
+    status: (await sidExistsInScope(v, scope)) ? 'taken' : 'available',
+  };
 }
 
 export interface PreviewLine {
@@ -104,6 +127,9 @@ export async function previewSampleGroupsAction(
  * Live, server-authoritative price preview for the selected items. Rates are
  * MRP — centre-independent — so no MCC is needed; the preview resolves even
  * before a Client code is chosen.
+ *
+ * One batched lookup for all lines (previously: N sequential round-trips per
+ * preview, each one a WAN hop to the India SQL server).
  */
 export async function previewOrder(
   items: { id: number; kind: 'test' | 'profile'; code: string; name: string }[],
@@ -112,15 +138,16 @@ export async function previewOrder(
   if (!user) return { lines: [], total: 0 };
   if (items.length === 0) return { lines: [], total: 0 };
 
-  const lines: PreviewLine[] = [];
-  for (const it of items) {
-    const rr = await resolveRate({
-      mcc: 0, // MRP is MCC-independent; resolve_rate ignores this arg
+  const rates = await resolveRatesBatch(
+    items.map((it) => ({
       testMasterId: it.kind === 'test' ? it.id : null,
       profileCode: it.kind === 'profile' ? it.id : null,
-    });
-    lines.push({ ...it, rate: rr.rate, source: rr.source });
-  }
+    })),
+  );
+  const lines: PreviewLine[] = items.map((it, idx) => {
+    const rr = rates[idx];
+    return { ...it, rate: rr.rate, source: rr.source };
+  });
   const total = lines.reduce((s, l) => s + (l.rate ?? 0), 0);
   return { lines, total };
 }

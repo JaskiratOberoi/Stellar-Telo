@@ -3,15 +3,13 @@ import { notFound } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
-import { getOrder } from '@/db/read/orders';
+import { getOrder, redactFinancialFields } from '@/db/read/orders';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
-import { getMccInvoiceConfig, getMccInvoiceLogoBytes } from '@/db/read/invoiceConfig';
 import { RecordPaymentForm } from '@/components/payment/record-payment';
 import { RecordRefundForm } from '@/components/payment/record-refund';
 import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-button';
-import { LabInvoice } from '@/components/orders/lab-invoice';
-import { BillInvoice } from '@/components/orders/bill-invoice';
 import { fmtIST } from '@/lib/datetime';
+import type { Capability } from '@/types/auth';
 import {
   Card,
   CardContent,
@@ -41,38 +39,66 @@ export default async function OrderReceiptPage({
   const billId = Number(id);
   if (!Number.isInteger(billId)) notFound();
 
+  // NOTE: this page used to wrap the body in <Suspense> for streamed first-
+  // paint (the P2 perf pass). That broke the record-payment / refund form:
+  // when those actions call revalidatePath inside a useActionState
+  // transition, React 19 keeps `pending` true until the transition's
+  // suspending boundary resolves — and with a Suspense + `force-dynamic`
+  // combination above the re-fetching data, the transition could stall
+  // indefinitely, leaving the Record button stuck on "Recording…" while
+  // the receipt list silently fell behind the server state. Only a hard
+  // refresh recovered. The page is a single getOrder + a tiny MCC-name
+  // fetch (no slow split point to justify Suspense here), so rendering it
+  // synchronously is simpler AND fixes the form-stuck regression.
   const user = await requireSession();
   const scope = await getMccScope(user.uid);
-  const order = await getOrder(billId, scope);
-  if (!order) notFound();
+  const canViewBill = hasCapability(user.caps, 'bill:view');
+  return (
+    <ReceiptBody
+      billId={billId}
+      back={back}
+      scope={scope}
+      canViewBill={canViewBill}
+      caps={user.caps}
+    />
+  );
+}
 
-  // Fetch MCC display name + invoice branding config in parallel.
+async function ReceiptBody({
+  billId,
+  back,
+  scope,
+  canViewBill,
+  caps,
+}: {
+  billId: number;
+  back: string | undefined;
+  scope: number[];
+  canViewBill: boolean;
+  caps: Capability[];
+}) {
+  const orderRaw = await getOrder(billId, scope);
+  if (!orderRaw) notFound();
+
+  // Defence in depth: technicians have `order:view` (worklist + accessioning)
+  // but NOT `bill:view`, so they shouldn't see line totals, payments, balance
+  // or discounts. Redact server-side so the values never leave the server even
+  // via View-Source / RSC payload — the screen layout still renders a useful
+  // patient + samples + tests view without amounts.
+  const order = canViewBill ? orderRaw : redactFinancialFields(orderRaw);
+
+  // Fetch MCC display name for the on-screen header. The invoice branding
+  // config (logo bytes etc.) is no longer needed at this layer — print
+  // templates are rendered on demand by `/print/orders/[id]/[kind]`, which
+  // re-fetches the config when the user actually clicks print.
   const mccId = order.mccCode;
-  const [mccUnits, invoiceConfig] = await Promise.all([
-    mccId != null ? fetchScopedMccUnits([mccId]) : Promise.resolve([]),
-    mccId != null ? getMccInvoiceConfig(mccId) : Promise.resolve(null),
-  ]);
+  const mccUnits =
+    mccId != null ? await fetchScopedMccUnits([mccId]) : [];
   const mccName = mccUnits[0]?.name ?? null;
-  // String account code (MCCUnitCode) — distinct from numeric mccCode/mcc_id.
-  // Used by BillInvoice to gate per-MCC branding (e.g. Medicare co-brand).
-  const mccAccountCode = mccUnits[0]?.code ?? null;
 
-  // Pre-fetch the per-MCC custom logo bytes server-side and inline them as a
-  // data URI. Embedding avoids a fragile runtime image fetch from inside the
-  // `hidden print:block` container — Chrome was snapshotting the print
-  // before the lazy /api/mcc-invoice-logo/[id] response landed. With the
-  // bytes in the markup, the logo is part of the document and prints every
-  // time. Only fetched when the config says a logo exists for this MCC.
-  const customLogoDataUri =
-    mccId != null && invoiceConfig?.hasTopRightLogo
-      ? await getMccInvoiceLogoBytes(mccId).then((logo) =>
-          logo ? `data:${logo.mime};base64,${logo.bytes.toString('base64')}` : null,
-        )
-      : null;
-
-  const canCapture = hasCapability(user.caps, 'payment:capture');
-  const canPay = order.balance > 0 && canCapture;
-  const canRefund = order.amountPaid > 0 && canCapture;
+  const canCapture = hasCapability(caps, 'payment:capture');
+  const canPay = canViewBill && order.balance > 0 && canCapture;
+  const canRefund = canViewBill && order.amountPaid > 0 && canCapture;
 
   const dateLabel = fmtIST(order.billDate);
   const genderLabel =
@@ -80,21 +106,10 @@ export default async function OrderReceiptPage({
 
   return (
     <div>
-      {/* ── Print: lab receipt (samples + tests) ─────────────────── */}
-      <div className="hidden print:block" data-invoice="lab">
-        <LabInvoice order={order} mccName={mccName} config={invoiceConfig} />
-      </div>
-
-      {/* ── Print: bill (costing only, no samples) ───────────────── */}
-      <div className="hidden print:block" data-invoice="bill">
-        <BillInvoice
-          order={order}
-          mccName={mccName}
-          mccCode={mccAccountCode}
-          config={invoiceConfig}
-          customLogoDataUri={customLogoDataUri}
-        />
-      </div>
+      {/* Print templates are no longer SSR'd here. The Print buttons load
+       *  /print/orders/[id]/(lab|bill) into a hidden iframe on click —
+       *  cuts HTML payload for every order page visit and eliminates the
+       *  duplicate-DOM cost. */}
 
       {/* ── Screen view: interactive web layout ──────────────────── */}
       <div className="space-y-4 print:hidden">
@@ -111,8 +126,16 @@ export default async function OrderReceiptPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <PrintLabButton billNumber={order.billNumber ?? order.billId} />
-          <PrintBillButton billNumber={order.billNumber ?? order.billId} />
+          <PrintLabButton
+            billId={order.billId}
+            billNumber={order.billNumber ?? order.billId}
+          />
+          {canViewBill && (
+            <PrintBillButton
+              billId={order.billId}
+              billNumber={order.billNumber ?? order.billId}
+            />
+          )}
           <Link
             href={back ?? '/orders'}
             className="text-sm underline"
@@ -217,9 +240,9 @@ export default async function OrderReceiptPage({
         )}
       </div>
 
-      {/* Bottom row: Tests (wide) + Summary/Payment (narrow) */}
+      {/* Bottom row: Tests (wide) + Summary/Payment (narrow when bill view) */}
       <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-8">
+        <Card className={canViewBill ? 'lg:col-span-8' : 'lg:col-span-12'}>
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">
               Tests · {order.lines.length}
@@ -231,7 +254,9 @@ export default async function OrderReceiptPage({
                 <TableRow>
                   <TableHead className="w-24">Code</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead className="w-24 text-right">Amount</TableHead>
+                  {canViewBill && (
+                    <TableHead className="w-24 text-right">Amount</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -241,7 +266,9 @@ export default async function OrderReceiptPage({
                       {l.testCode}
                     </TableCell>
                     <TableCell>{l.testName}</TableCell>
-                    <TableCell className="text-right">₹{l.amount}</TableCell>
+                    {canViewBill && (
+                      <TableCell className="text-right">₹{l.amount}</TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -249,58 +276,60 @@ export default async function OrderReceiptPage({
           </CardContent>
         </Card>
 
-        <Card variant="light" className="lg:col-span-4">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-base text-zinc-900">Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 p-4 pt-0 text-sm text-zinc-900">
-            <div className="space-y-1">
-              <Row label="Amount" value={`₹${order.amount}`} />
-              <Row label="Discount" value={`₹${order.discount}`} />
-            </div>
-
-            {order.receipts.length > 0 && (
-              <div className="border-t border-zinc-200 pt-2 space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Payments &amp; refunds · {order.receipts.length}
-                </p>
-                <div className="space-y-1">
-                  {order.receipts.map((rcpt, idx) => (
-                    <ReceiptRow key={idx} rcpt={rcpt} />
-                  ))}
-                </div>
-                <div className="border-t border-zinc-200 pt-1.5">
-                  <Row label="Net paid" value={`₹${order.amountPaid}`} />
-                </div>
+        {canViewBill && (
+          <Card variant="light" className="lg:col-span-4">
+            <CardHeader className="p-4 pb-2">
+              <CardTitle className="text-base text-zinc-900">Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 p-4 pt-0 text-sm text-zinc-900">
+              <div className="space-y-1">
+                <Row label="Amount" value={`₹${order.amount}`} />
+                <Row label="Discount" value={`₹${order.discount}`} />
               </div>
-            )}
-            {order.receipts.length === 0 && (
+
+              {order.receipts.length > 0 && (
+                <div className="border-t border-zinc-200 pt-2 space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Payments &amp; refunds · {order.receipts.length}
+                  </p>
+                  <div className="space-y-1">
+                    {order.receipts.map((rcpt, idx) => (
+                      <ReceiptRow key={idx} rcpt={rcpt} />
+                    ))}
+                  </div>
+                  <div className="border-t border-zinc-200 pt-1.5">
+                    <Row label="Net paid" value={`₹${order.amountPaid}`} />
+                  </div>
+                </div>
+              )}
+              {order.receipts.length === 0 && (
+                <div className="border-t border-zinc-200 pt-2">
+                  <Row label="Paid" value={`₹${order.amountPaid}`} />
+                </div>
+              )}
+
               <div className="border-t border-zinc-200 pt-2">
-                <Row label="Paid" value={`₹${order.amountPaid}`} />
+                <Row label="Balance" value={`₹${order.balance}`} bold />
               </div>
-            )}
-
-            <div className="border-t border-zinc-200 pt-2">
-              <Row label="Balance" value={`₹${order.balance}`} bold />
-            </div>
-            {canPay && (
-              <div className="border-t border-zinc-200 pt-3">
-                <RecordPaymentForm
-                  billId={order.billId}
-                  balance={order.balance}
-                />
-              </div>
-            )}
-            {canRefund && (
-              <div className="border-t border-zinc-200 pt-3">
-                <RecordRefundForm
-                  billId={order.billId}
-                  amountPaid={order.amountPaid}
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              {canPay && (
+                <div className="border-t border-zinc-200 pt-3">
+                  <RecordPaymentForm
+                    billId={order.billId}
+                    balance={order.balance}
+                  />
+                </div>
+              )}
+              {canRefund && (
+                <div className="border-t border-zinc-200 pt-3">
+                  <RecordRefundForm
+                    billId={order.billId}
+                    amountPaid={order.amountPaid}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
       </div>{/* end screen view */}
     </div>

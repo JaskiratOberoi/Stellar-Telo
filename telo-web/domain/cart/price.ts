@@ -1,17 +1,21 @@
 import type { Cart, PricedCart, PricedLine } from './cart.types';
-import type { ResolvedRate } from '@/db/sp/resolveRate';
+import type { ResolveItem, ResolvedRate } from '@/db/sp/resolveRate';
 
 /**
- * Pure cart-pricing assembly. Takes a rate resolver (injected — no IO here)
- * and produces the priced cart. Total excludes lines whose rate is
- * unresolved; `hasUnresolved` flags that so checkout can block.
+ * Pure cart-pricing assembly. Takes a BATCH rate resolver (injected — no IO
+ * here) and produces the priced cart in a single round-trip. Total excludes
+ * lines whose rate is unresolved; `hasUnresolved` flags that so checkout can
+ * block.
+ *
+ * Note: the resolver is batch-only on purpose. The old per-line variant was
+ * the single largest perf bug in the cart/checkout/register paths — N items
+ * meant N sequential round-trips to a SQL Server in India. Keeping the
+ * signature collection-shaped here ensures no caller can re-introduce the
+ * fan-out.
  */
 export async function priceCart(
   cart: Cart,
-  resolve: (item: {
-    testMasterId?: number | null;
-    profileCode?: number | null;
-  }) => Promise<ResolvedRate>,
+  resolve: (items: ResolveItem[]) => Promise<ResolvedRate[]>,
 ): Promise<PricedCart> {
   if (cart.mccCode == null) {
     return {
@@ -22,15 +26,18 @@ export async function priceCart(
     };
   }
 
-  const lines: PricedLine[] = [];
-  for (const item of cart.items) {
-    const rr = await resolve(
+  const rates = await resolve(
+    cart.items.map((item) =>
       item.kind === 'profile'
         ? { profileCode: item.id }
         : { testMasterId: item.id },
-    );
-    lines.push({ ...item, rate: rr.rate, source: rr.source });
-  }
+    ),
+  );
+
+  const lines: PricedLine[] = cart.items.map((item, idx) => {
+    const rr = rates[idx];
+    return { ...item, rate: rr?.rate ?? null, source: rr?.source ?? 'none' };
+  });
 
   const total = lines.reduce((s, l) => s + (l.rate ?? 0), 0);
   const hasUnresolved = lines.some((l) => l.rate == null);

@@ -16,7 +16,7 @@ import { removeFromCart } from '@/actions/cart.actions';
 import type { SampleGroup } from '@/db/sp/previewSampleGroups';
 import { PAY_METHODS } from '@/lib/payment-methods';
 import type { ScopedMcc } from '@/db/read/mccUnits';
-import type { CatalogItem } from '@/domain/catalog/catalog.types';
+import type { CatalogItemPublic } from '@/domain/catalog/catalog.types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -165,7 +165,7 @@ export function RegisterForm({
 
   const [picked, setPicked] = useState<Picked[]>(initialItems);
   const [q, setQ] = useState('');
-  const [results, setResults] = useState<CatalogItem[]>([]);
+  const [results, setResults] = useState<CatalogItemPublic[]>([]);
   const [preview, setPreview] = useState<PreviewResult>({ lines: [], total: 0 });
   const [, startSearch] = useTransition();
   const [, startPreview] = useTransition();
@@ -229,14 +229,30 @@ export function RegisterForm({
     };
   }, [q]);
 
+  // Debounced pricing preview. Bulk-adds from the catalog (cart hydration,
+  // a profile that expands into many tests) used to fire one previewOrder
+  // server action per intermediate state. With a 200 ms trailing debounce +
+  // stale-sequence guard, repeated cart edits collapse into a single call.
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewSeq = useRef(0);
   useEffect(() => {
+    if (previewTimer.current) clearTimeout(previewTimer.current);
     if (picked.length === 0) {
       setPreview({ lines: [], total: 0 });
       return;
     }
     // Rates are MRP — centre-independent — so the preview resolves even
     // before a Client code is picked.
-    startPreview(async () => setPreview(await previewOrder(picked)));
+    previewTimer.current = setTimeout(() => {
+      const seq = ++previewSeq.current;
+      startPreview(async () => {
+        const r = await previewOrder(picked);
+        if (seq === previewSeq.current) setPreview(r);
+      });
+    }, 200);
+    return () => {
+      if (previewTimer.current) clearTimeout(previewTimer.current);
+    };
   }, [picked]);
 
   // pageMounted gate — placed AFTER all hooks so hook count stays stable
@@ -251,7 +267,7 @@ export function RegisterForm({
     );
   }
 
-  function add(i: CatalogItem) {
+  function add(i: CatalogItemPublic) {
     setPicked((p) =>
       p.some((x) => x.id === i.id && x.kind === i.kind)
         ? p

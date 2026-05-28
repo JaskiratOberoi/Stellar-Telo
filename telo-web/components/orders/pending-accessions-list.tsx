@@ -26,6 +26,7 @@ export function PendingAccessionsList({
   const [feed, setFeed] = useState<PendingAccessionsFeed>(initial);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
+  const canViewBill = feed.canViewBill;
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -76,14 +77,19 @@ export function PendingAccessionsList({
             <TableHead>Patient</TableHead>
             <TableHead className="w-20">MCC</TableHead>
             <TableHead className="w-24 text-center">SIDs</TableHead>
-            <TableHead className="w-24 text-right">Amount</TableHead>
+            {canViewBill && (
+              <TableHead className="w-24 text-right">Amount</TableHead>
+            )}
             <TableHead className="w-32 text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-muted-foreground">
+              <TableCell
+                colSpan={canViewBill ? 7 : 6}
+                className="text-muted-foreground"
+              >
                 {feed.orders.length === 0
                   ? 'No orders awaiting Sample IDs.'
                   : 'No match.'}
@@ -124,9 +130,11 @@ export function PendingAccessionsList({
                       {o.haveGroups}/{o.requiredGroups}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-medium">
-                    ₹{o.total}
-                  </TableCell>
+                  {canViewBill && (
+                    <TableCell className="text-right font-medium">
+                      ₹{o.total}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right">
                     <Button
                       asChild

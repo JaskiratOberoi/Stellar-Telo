@@ -8,6 +8,8 @@ import {
   setActiveAction,
   updateUserAction,
   getEditableUserScope,
+  searchMccUnitsAction,
+  fetchMccUnitsByIdsAction,
   type AdminFormState,
   type AdminOverview,
 } from '@/actions/admin.actions';
@@ -25,7 +27,7 @@ import {
 import type { TeloRole } from '@/types/auth';
 import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { fmtIST } from '@/lib/datetime';
-import { Combobox } from '@/components/ui/combobox';
+import { RemoteCombobox } from '@/components/ui/remote-combobox';
 import type { ScopedMcc } from '@/db/read/mccUnits';
 
 const initial: AdminFormState = { error: null, ok: false };
@@ -216,7 +218,6 @@ export function UserManagement({
                 key={u.id}
                 user={u}
                 isSelf={u.id === currentUid}
-                allMccs={overview.allMccs}
               />
             ))
           )}
@@ -273,7 +274,6 @@ export function UserManagement({
       {createOpen && (
         <CreateUserPanel
           lisUsertypes={overview.lisUsertypes}
-          allMccs={overview.allMccs}
           onClose={() => setCreateOpen(false)}
         />
       )}
@@ -284,11 +284,9 @@ export function UserManagement({
 function UserRow({
   user,
   isSelf,
-  allMccs,
 }: {
   user: AdminOverview['users'][number];
   isSelf: boolean;
-  allMccs: ScopedMcc[];
 }) {
   const [openRow, setOpenRow] = useState<
     null | 'role' | 'password' | 'edit'
@@ -376,7 +374,6 @@ function UserRow({
           <TableCell colSpan={6} className="bg-white/[0.03]">
             <EditUserForm
               user={user}
-              allMccs={allMccs}
               onDone={() => setOpenRow(null)}
             />
           </TableCell>
@@ -469,11 +466,9 @@ function SetRoleForm({
 
 function EditUserForm({
   user,
-  allMccs,
   onDone,
 }: {
   user: AdminOverview['users'][number];
-  allMccs: ScopedMcc[];
   onDone: () => void;
 }) {
   const [state, action, pending] = useActionState(updateUserAction, initial);
@@ -484,6 +479,11 @@ function EditUserForm({
   const [pickerValue, setPickerValue] = useState<number | ''>('');
   const [scopeLoading, setScopeLoading] = useState(true);
   const [scopeError, setScopeError] = useState<string | null>(null);
+  // Chip-label cache: only the picked MCCs need to be display-resolved.
+  // Hydrated from the picked-ids resolver on mount and from each pick.
+  const [mccLabels, setMccLabels] = useState<Map<number, ScopedMcc>>(
+    () => new Map(),
+  );
 
   // Pull current MCC scope on mount — the listTeloUsers payload doesn't
   // ship it (would be ~3.5k × N MCC IDs in the admin overview otherwise).
@@ -492,13 +492,26 @@ function EditUserForm({
     setScopeLoading(true);
     setScopeError(null);
     getEditableUserScope(user.id)
-      .then((r) => {
+      .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
           setScopeError(r.error ?? 'Could not load scope.');
           return;
         }
         setPickedMccIds(r.mccIds);
+        if (r.mccIds.length > 0) {
+          try {
+            const rows = await fetchMccUnitsByIdsAction(r.mccIds);
+            if (cancelled) return;
+            setMccLabels((prev) => {
+              const m = new Map(prev);
+              for (const x of rows) m.set(x.id, x);
+              return m;
+            });
+          } catch {
+            /* chip labels degrade to id-only — no need to surface */
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setScopeError('Could not load scope.');
@@ -516,20 +529,16 @@ function EditUserForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.ok]);
 
-  const mccById = useMemo(() => {
-    const m = new Map<number, ScopedMcc>();
-    for (const x of allMccs) m.set(x.id, x);
-    return m;
-  }, [allMccs]);
-
-  const pickerItems = useMemo(
-    () => allMccs.filter((m) => !pickedMccIds.includes(m.id)),
-    [allMccs, pickedMccIds],
-  );
-
-  function addMcc(id: number | '') {
+  function addMcc(id: number | '', label?: ScopedMcc) {
     if (id === '' || pickedMccIds.includes(id)) return;
     setPickedMccIds((p) => [...p, id]);
+    if (label) {
+      setMccLabels((prev) => {
+        const m = new Map(prev);
+        m.set(id, label);
+        return m;
+      });
+    }
     setPickerValue('');
   }
   function removeMcc(id: number) {
@@ -602,7 +611,7 @@ function EditUserForm({
             {pickedMccIds.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {pickedMccIds.map((id) => {
-                  const m = mccById.get(id);
+                  const m = mccLabels.get(id);
                   return (
                     <span
                       key={id}
@@ -627,13 +636,27 @@ function EditUserForm({
                 })}
               </div>
             )}
-            <Combobox
-              items={pickerItems}
+            <RemoteCombobox
+              search={(q) => searchMccUnitsAction(q, pickedMccIds).then((rows) => {
+                // Cache labels for any rows the user might pick so the chip
+                // renders with a name immediately, not just an id.
+                setMccLabels((prev) => {
+                  const m = new Map(prev);
+                  for (const x of rows) m.set(x.id, x);
+                  return m;
+                });
+                return rows;
+              })}
               value={pickerValue}
-              onChange={(id) => addMcc(id)}
+              onChange={(id) =>
+                addMcc(
+                  id,
+                  id === '' ? undefined : mccLabels.get(id) ?? undefined,
+                )
+              }
               placeholder={
                 pickedMccIds.length === 0
-                  ? `Search ${allMccs.length.toLocaleString('en-IN')} client codes…`
+                  ? 'Search client codes…'
                   : 'Add another client code…'
               }
             />
@@ -695,8 +718,8 @@ function ResetPasswordForm({
           name="newPassword"
           value={pwd}
           onChange={(e) => setPwd(e.target.value)}
-          minLength={4}
-          maxLength={50}
+          minLength={12}
+          maxLength={72}
           required
           className="w-64"
         />
@@ -748,11 +771,9 @@ function SetActiveButton({
 
 function CreateUserPanel({
   lisUsertypes,
-  allMccs,
   onClose,
 }: {
   lisUsertypes: AdminOverview['lisUsertypes'];
-  allMccs: ScopedMcc[];
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState(createUserAction, initial);
@@ -762,6 +783,10 @@ function CreateUserPanel({
   const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
   const [pickerValue, setPickerValue] = useState<number | ''>('');
   const [teloRole, setTeloRole] = useState<TeloRole>('viewer');
+  // Chip-label cache populated by RemoteCombobox results (server search).
+  const [mccLabels, setMccLabels] = useState<Map<number, ScopedMcc>>(
+    () => new Map(),
+  );
 
   useEffect(() => {
     if (state.ok) onClose();
@@ -772,23 +797,17 @@ function CreateUserPanel({
   const defaultLisId =
     lisUsertypes.find((t) => t.id === 8)?.id ?? lisUsertypes[0]?.id ?? '';
 
-  // Lookup by id for chip labels. allMccs is ~1.7k rows — Map > linear find.
-  const mccById = useMemo(() => {
-    const m = new Map<number, ScopedMcc>();
-    for (const x of allMccs) m.set(x.id, x);
-    return m;
-  }, [allMccs]);
-
-  // Filter the picker so already-selected MCCs don't appear as options.
-  const pickerItems = useMemo(
-    () => allMccs.filter((m) => !pickedMccIds.includes(m.id)),
-    [allMccs, pickedMccIds],
-  );
-
-  function addMcc(id: number | '') {
+  function addMcc(id: number | '', label?: ScopedMcc) {
     if (id === '' || pickedMccIds.includes(id)) return;
     setPickedMccIds((p) => [...p, id]);
-    setPickerValue(''); // reset picker for next add
+    if (label) {
+      setMccLabels((prev) => {
+        const m = new Map(prev);
+        m.set(id, label);
+        return m;
+      });
+    }
+    setPickerValue('');
   }
   function removeMcc(id: number) {
     setPickedMccIds((p) => p.filter((x) => x !== id));
@@ -830,8 +849,8 @@ function CreateUserPanel({
               id="password"
               name="password"
               required
-              minLength={4}
-              maxLength={50}
+              minLength={12}
+              maxLength={72}
             />
           </div>
         </div>
@@ -898,7 +917,7 @@ function CreateUserPanel({
               {pickedMccIds.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {pickedMccIds.map((id) => {
-                    const m = mccById.get(id);
+                    const m = mccLabels.get(id);
                     return (
                       <span
                         key={id}
@@ -923,13 +942,27 @@ function CreateUserPanel({
                   })}
                 </div>
               )}
-              <Combobox
-                items={pickerItems}
+              <RemoteCombobox
+                search={(q) =>
+                  searchMccUnitsAction(q, pickedMccIds).then((rows) => {
+                    setMccLabels((prev) => {
+                      const m = new Map(prev);
+                      for (const x of rows) m.set(x.id, x);
+                      return m;
+                    });
+                    return rows;
+                  })
+                }
                 value={pickerValue}
-                onChange={(id) => addMcc(id)}
+                onChange={(id) =>
+                  addMcc(
+                    id,
+                    id === '' ? undefined : mccLabels.get(id) ?? undefined,
+                  )
+                }
                 placeholder={
                   pickedMccIds.length === 0
-                    ? `Search ${allMccs.length.toLocaleString('en-IN')} client codes…`
+                    ? 'Search client codes…'
                     : 'Add another client code…'
                 }
               />

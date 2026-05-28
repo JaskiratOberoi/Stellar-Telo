@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import {
   recordRefundAction,
   type RecordPaymentState,
@@ -27,6 +27,25 @@ export function RecordRefundForm({
   const [method, setMethod] = useState<PayMethod>('Cash');
   const [amountInput, setAmountInput] = useState(String(amountPaid));
   const showTxnRef = method !== 'Cash';
+
+  // Sync the cap-bound amount input with the post-revalidate amountPaid prop.
+  // Without this it sticks at the just-refunded value and looks like the
+  // input didn't clear after pressing Refund.
+  useEffect(() => {
+    setAmountInput(String(amountPaid));
+  }, [amountPaid]);
+
+  // See record-payment.tsx for the full rationale. React 19's form-action
+  // auto-reset visually resets the <select> without firing onChange, leaving
+  // local `method` state out of sync with the DOM and keeping the txnRef
+  // input rendered even though the select reads "Cash".
+  const prevStateRef = useRef(state);
+  useEffect(() => {
+    if (state !== prevStateRef.current && state.ok) {
+      setMethod('Cash');
+    }
+    prevStateRef.current = state;
+  }, [state]);
 
   const amountNum = Number(amountInput);
   const isAmountValid =

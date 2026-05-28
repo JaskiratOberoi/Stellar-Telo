@@ -45,7 +45,11 @@ export function getTeloPoolConfig(): sql.config {
       // prod (Docker has TZ=Asia/Kolkata). Display lines up.
       useUTC: false,
     },
-    pool: { max: 10, min: 0, idleTimeoutMillis: 30_000 },
+    pool: {
+      max: e.TELO_SQL_POOL_MAX,
+      min: e.TELO_SQL_POOL_MIN,
+      idleTimeoutMillis: e.TELO_SQL_POOL_IDLE_MS,
+    },
     connectionTimeout: e.TELO_SQL_CONNECT_TIMEOUT_MS,
     requestTimeout: e.TELO_SQL_REQUEST_TIMEOUT_MS,
   };

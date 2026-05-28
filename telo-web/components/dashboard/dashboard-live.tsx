@@ -9,7 +9,11 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 
-const POLL_MS = 30_000;
+// Polling cadence — bumped 30s → 60s. Combined with visibility-gating below
+// (no polls while the tab is hidden) and a 30s Redis memoization on the server,
+// dashboard load on Noble drops to roughly: (active tabs) × (1 query / 60s) /
+// (memo TTL) — i.e. effectively one query per minute regardless of audience.
+const POLL_MS = 60_000;
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const shiftISO = (iso: string, days: number) => {
@@ -50,11 +54,38 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
-  // Live poll only for "today".
+  // Live poll only for "today" — and only while the tab is actually visible.
+  // Before this change, a stack of dashboards left open in background tabs
+  // each fired one query / 30 s against Noble forever, even though no human
+  // was looking at the numbers. Now: pause on hidden, refresh immediately on
+  // becoming visible (so the user sees fresh data the instant they switch
+  // back), and otherwise poll at POLL_MS.
   useEffect(() => {
     if (!live || !isToday) return;
-    const id = setInterval(() => load(date), POLL_MS);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id != null) return;
+      id = setInterval(() => load(date), POLL_MS);
+    };
+    const stop = () => {
+      if (id == null) return;
+      clearInterval(id);
+      id = null;
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void load(date);
+        start();
+      } else {
+        stop();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    if (document.visibilityState === 'visible') start();
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      stop();
+    };
   }, [live, isToday, date, load]);
 
   const maxRev = Math.max(1, ...s.trend.map((t) => t.revenue));

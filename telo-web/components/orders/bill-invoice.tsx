@@ -23,14 +23,17 @@ interface BillInvoiceProps {
   mccCode: string | null;
   config: MccInvoiceConfig | null;
   /**
-   * Inline data URI for the per-MCC custom logo bytes, prepared server-side
-   * so the print template never depends on a runtime image fetch. Embedding
-   * avoids print-preview races where Chrome would snapshot the page before
-   * a separate /api/... request completes (and before cookies were even
-   * proven to round-trip on a hidden subresource). Pass null when no logo
-   * is uploaded for this MCC.
+   * URL to the per-MCC custom logo bytes (typically `/api/mcc-invoice-logo/[mccId]`).
+   * Pass null when no logo is uploaded for this MCC. The endpoint serves the
+   * bytes with an ETag + private cache header, so repeat opens of the order
+   * page reuse the browser's image cache (no fresh DB read or HTML inflation
+   * — the previous data-URI approach embedded ~40 KB per page load).
+   *
+   * The print path (see print-bill-button.tsx) waits for all images in the
+   * cloned block to finish loading before calling print(), so the URL-based
+   * approach no longer races the print snapshot.
    */
-  customLogoDataUri: string | null;
+  customLogoSrc: string | null;
 }
 
 const inr = (n: number) =>
@@ -39,14 +42,14 @@ const inr = (n: number) =>
 function resolveTopRightLogo(
   mccCode: string | null,
   config: MccInvoiceConfig | null,
-  customLogoDataUri: string | null,
+  customLogoSrc: string | null,
 ): { src: string; alt: string; width: number; height: number } | null {
-  // Custom upload (inlined as a data URI by the server) wins. Falls back to
-  // the built-in Medicare brand for the special Medicare MCC codes when no
-  // upload is present.
-  if (config?.hasTopRightLogo && customLogoDataUri) {
+  // Custom upload (served by the auth-gated /api/mcc-invoice-logo route)
+  // wins. Falls back to the built-in Medicare brand for the special
+  // Medicare MCC codes when no upload is present.
+  if (config?.hasTopRightLogo && customLogoSrc) {
     return {
-      src: customLogoDataUri,
+      src: customLogoSrc,
       alt: 'Partner logo',
       width: 104,
       height: 72,
@@ -68,14 +71,14 @@ export function BillInvoice({
   mccName,
   mccCode,
   config,
-  customLogoDataUri,
+  customLogoSrc,
 }: BillInvoiceProps) {
   const labName = config?.labName?.trim() || mccName?.trim() || 'Diagnostic Centre';
   const address = config?.address?.trim() || null;
   const phone   = config?.phone?.trim()   || null;
   const email   = config?.email?.trim()   || null;
 
-  const customLogo = resolveTopRightLogo(mccCode, config, customLogoDataUri);
+  const customLogo = resolveTopRightLogo(mccCode, config, customLogoSrc);
   const noblePos = config?.nobleLogoPosition ?? 'left';
   const nobleVisible = config?.nobleLogoVisible ?? true;
   const customVisible = config?.customLogoVisible ?? true;

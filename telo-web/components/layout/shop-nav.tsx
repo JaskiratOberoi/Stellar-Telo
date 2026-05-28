@@ -60,10 +60,19 @@ export function ShopNav({
             const showBadge = isOrdersLink && cartCount > 0;
             // Cart has items → skip the worklist and open the order form directly.
             const href = showBadge ? '/orders/new/create' : n.href;
+            // Disable Next.js's default link prefetch for heavy admin /
+            // order routes. Prefetching pulls the full admin overview
+            // and the scoped-MCC fetch on EVERY page render where the nav
+            // is visible, regardless of whether the user clicks. We accept
+            // a small click-time latency in exchange. /orders/new (the
+            // worklist) and /orders/new/create (the registration form)
+            // both qualify.
+            const heavyRoute = n.href === '/admin' || isOrdersLink;
             return (
               <Link
                 key={n.href}
                 href={href}
+                prefetch={heavyRoute ? false : undefined}
                 aria-current={isActive(n.href) ? 'page' : undefined}
                 // Tagged so AddToCartButton can fly its chip here.
                 data-cart-target={isOrdersLink ? '' : undefined}

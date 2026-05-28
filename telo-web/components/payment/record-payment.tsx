@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import {
   recordOfflinePayment,
   type RecordPaymentState,
@@ -28,6 +28,28 @@ export function RecordPaymentForm({
   // button before the server-side check fires. balance is the absolute cap.
   const [amountInput, setAmountInput] = useState(String(balance));
   const showTxnRef = method !== 'Cash';
+
+  // Keep the amount input in sync with the latest balance prop. After a
+  // successful submit the parent revalidates and re-renders us with the new
+  // (lower) balance — without this effect amountInput would still hold the
+  // value the operator just submitted, looking like the input "didn't clear".
+  useEffect(() => {
+    setAmountInput(String(balance));
+  }, [balance]);
+
+  // React 19's <form action={…}> auto-resets the form's DOM after a
+  // successful action. That clears uncontrolled inputs (txnRef) and visually
+  // resets the <select> to its first option — but it does NOT fire onChange,
+  // so our `method` state stays on e.g. 'UPI'. Result: the select shows
+  // "Cash" while showTxnRef is still true and the UPI reference input keeps
+  // rendering. Explicitly resync local state on every successful submit.
+  const prevStateRef = useRef(state);
+  useEffect(() => {
+    if (state !== prevStateRef.current && state.ok) {
+      setMethod('Cash');
+    }
+    prevStateRef.current = state;
+  }, [state]);
 
   const amountNum = Number(amountInput);
   const isAmountValid =

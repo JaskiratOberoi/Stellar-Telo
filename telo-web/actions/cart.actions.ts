@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireCapability } from '@/auth/guards';
 import { assertMccInScope } from '@/auth/scope';
 import { getCart, saveCart, clearCart } from '@/db/cartStore';
-import { resolveRate } from '@/db/sp/resolveRate';
+import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { priceCart } from '@/domain/cart/price';
 import type { CartItem, PricedCart } from '@/domain/cart/cart.types';
 import { AppError } from '@/lib/errors';
@@ -75,7 +75,13 @@ export async function clearMyCart(): Promise<ActionResult> {
   }
 }
 
-/** Authoritative server-side rate preview. Client price is never trusted. */
+/**
+ * Authoritative server-side rate preview. Client price is never trusted.
+ *
+ * Uses the batched resolver so an N-item cart costs ONE round-trip to Noble
+ * (was N — each line was a separate `usp_telo_resolve_rate` call, each one
+ * a WAN hop to the India SQL server).
+ */
 export async function getPricedCart(): Promise<PricedCart> {
   const user = await requireCapability('order:create');
   const cart = await getCart(user.uid);
@@ -83,11 +89,5 @@ export async function getPricedCart(): Promise<PricedCart> {
     // Re-validate scope on every pricing pass (defence in depth).
     await assertMccInScope(user.uid, cart.mccCode);
   }
-  return priceCart(cart, (i) =>
-    resolveRate({
-      mcc: cart.mccCode as number,
-      testMasterId: i.testMasterId ?? null,
-      profileCode: i.profileCode ?? null,
-    }),
-  );
+  return priceCart(cart, (items) => resolveRatesBatch(items));
 }

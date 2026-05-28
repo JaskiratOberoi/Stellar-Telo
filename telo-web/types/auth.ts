@@ -59,4 +59,9 @@ export interface TeloUser {
    *  (then caps come from the LIS-derived fallback in auth/rbac.ts). */
   teloRole: TeloRole | null;
   caps: Capability[];
+  /** Session-version snapshot captured at login. Compared against the live
+   *  value in `dbo.telo_user_session_version` on every auth() call — if
+   *  they differ, the JWT is treated as revoked (admin deactivated the
+   *  account, changed their role, reset their password, etc.). */
+  sv: number;
 }

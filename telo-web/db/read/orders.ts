@@ -1,5 +1,5 @@
 import 'server-only';
-import { getPool, sql, withRetry } from '@/db/pool';
+import { getPool, sql, withRetry, traceDb } from '@/db/pool';
 
 export interface OrderSummary {
   billId: number;
@@ -105,6 +105,26 @@ function scopeParams(
     .join(',');
 }
 
+/**
+ * Returns a copy of an order with every monetary field zeroed out and the
+ * payment/refund history cleared. Used to gate financial visibility for roles
+ * without `bill:view` (e.g. technicians who still need to open the order to
+ * accession samples but should never see line totals, balance, discount, or
+ * payment ledger). Per-line `amount` is zeroed too — sums must not be
+ * reconstructable client-side.
+ */
+export function redactFinancialFields(order: OrderDetail): OrderDetail {
+  return {
+    ...order,
+    amount: 0,
+    balance: 0,
+    discount: 0,
+    amountPaid: 0,
+    receipts: [],
+    lines: order.lines.map((l) => ({ ...l, amount: 0 })),
+  };
+}
+
 /** Recent bills, restricted to the caller's resolved MCC scope (fail-closed). */
 export async function listOrders(
   scope: number[],
@@ -116,7 +136,7 @@ export async function listOrders(
   // param per id every poll is wasteful and nears the 2100-param ceiling — at
   // that breadth the scope filter is a no-op, so skip it entirely.
   const unrestricted = ids.length > 1000;
-  return withRetry(async () => {
+  return traceDb('orders.list', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     req.input('lim', sql.Int, Math.min(Math.max(limit, 1), 200));
@@ -149,7 +169,7 @@ export async function listOrders(
       amount: Number(x.amount ?? 0),
       balance: Number(x.balance ?? 0),
     }));
-  });
+  }));
 }
 
 export async function getOrder(
@@ -159,7 +179,7 @@ export async function getOrder(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return null;
   const unrestricted = ids.length > 1000; // Super Admin/Admin: skip scope IN
-  return withRetry(async () => {
+  return traceDb('orders.get', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     req.input('bid', sql.Int, billId);
@@ -207,40 +227,90 @@ export async function getOrder(
     const h = head.recordset[0];
     if (!h) return null;
 
-    const linesReq = pool.request().input('bid', sql.Int, billId);
-    const lr = await linesReq.query<{
-      testCode: string | null;
-      testName: string | null;
-      testType: string | null;
-      amount: number;
-    }>(`
-      SELECT testcode AS testCode, testname AS testName,
-             testtype AS testType, testamount AS amount
-      FROM dbo.tbl_billing_patient_test_detail
-      WHERE billid = @bid
-      ORDER BY id
-    `);
+    // Fan out the child queries in parallel — lines/receipts/samples are
+    // independent of each other (only `samples` even depends on the head
+    // result, and only for whether to issue the query). Previous code ran
+    // them sequentially = up to 3 × India WAN RTT per order view. Each
+    // child opens its own pool.request() so they share the connection pool
+    // rather than serializing on a single request.
+    const linesPromise = pool
+      .request()
+      .input('bid', sql.Int, billId)
+      .query<{
+        testCode: string | null;
+        testName: string | null;
+        testType: string | null;
+        amount: number;
+      }>(`
+        SELECT testcode AS testCode, testname AS testName,
+               testtype AS testType, testamount AS amount
+        FROM dbo.tbl_billing_patient_test_detail
+        WHERE billid = @bid
+        ORDER BY id
+      `);
 
     // Per-bill payment + refund history. `card_number` carries the txn
     // ref / cheque no / UPI UTR set by usp_telo_record_receipt and the
     // refund SP — the LIS column name is legacy, the value is generic.
-    const rcReq = pool.request().input('bid', sql.Int, billId);
-    const rcr = await rcReq.query<{
-      date: Date | null;
-      amount: number;
-      method: string | null;
-      reference: string | null;
-      status: string | null;
-    }>(`
-      SELECT recd_date AS date,
-             amount,
-             pay_mode AS method,
-             card_number AS reference,
-             receive_status AS status
-      FROM dbo.tbl_billing_patient_amount_receipt
-      WHERE bill_id = @bid
-      ORDER BY id
-    `);
+    const receiptsPromise = pool
+      .request()
+      .input('bid', sql.Int, billId)
+      .query<{
+        date: Date | null;
+        amount: number;
+        method: string | null;
+        reference: string | null;
+        status: string | null;
+      }>(`
+        SELECT recd_date AS date,
+               amount,
+               pay_mode AS method,
+               card_number AS reference,
+               receive_status AS status
+        FROM dbo.tbl_billing_patient_amount_receipt
+        WHERE bill_id = @bid
+        ORDER BY id
+      `);
+
+    // Samples: only available for Telo-created orders (patient_id in medid).
+    const samplesPromise =
+      h.patientId != null
+        ? pool
+            .request()
+            .input('pid', sql.Int, h.patientId)
+            .query<{
+              vailid: string;
+              sampleTypeId: number | null;
+              sampleTypeName: string | null;
+              testCodes: string | null;
+              status: string | null;
+            }>(`
+              SELECT s.vailid,
+                     s.sampleid AS sampleTypeId,
+                     sm.Sampletype AS sampleTypeName,
+                     s.testcodes AS testCodes,
+                     st.status AS status
+              FROM dbo.tbl_med_mcc_patient_samples s
+              LEFT JOIN dbo.tbl_med_sample_master sm ON sm.id = s.sampleid
+              LEFT JOIN dbo.tbl_med_mcc_patient_samples_status_master st
+                        ON st.id = s.sample_status
+              WHERE s.patient_id = @pid
+              ORDER BY s.id
+            `)
+        : Promise.resolve({ recordset: [] as {
+            vailid: string;
+            sampleTypeId: number | null;
+            sampleTypeName: string | null;
+            testCodes: string | null;
+            status: string | null;
+          }[] });
+
+    const [lr, rcr, sr] = await Promise.all([
+      linesPromise,
+      receiptsPromise,
+      samplesPromise,
+    ]);
+
     const receipts: OrderReceipt[] = rcr.recordset.map((x) => ({
       date: x.date ? x.date.toISOString() : null,
       amount: Number(x.amount ?? 0),
@@ -249,37 +319,13 @@ export async function getOrder(
       kind: x.status === '2' ? 'refund' : 'payment',
     }));
 
-    // Samples: only available for Telo-created orders (patient_id in medid).
-    let samples: OrderSample[] = [];
-    if (h.patientId != null) {
-      const sReq = pool.request().input('pid', sql.Int, h.patientId);
-      const sr = await sReq.query<{
-        vailid: string;
-        sampleTypeId: number | null;
-        sampleTypeName: string | null;
-        testCodes: string | null;
-        status: string | null;
-      }>(`
-        SELECT s.vailid,
-               s.sampleid AS sampleTypeId,
-               sm.Sampletype AS sampleTypeName,
-               s.testcodes AS testCodes,
-               st.status AS status
-        FROM dbo.tbl_med_mcc_patient_samples s
-        LEFT JOIN dbo.tbl_med_sample_master sm ON sm.id = s.sampleid
-        LEFT JOIN dbo.tbl_med_mcc_patient_samples_status_master st
-                  ON st.id = s.sample_status
-        WHERE s.patient_id = @pid
-        ORDER BY s.id
-      `);
-      samples = sr.recordset.map((x) => ({
-        vailid: x.vailid,
-        sampleTypeId: x.sampleTypeId,
-        sampleTypeName: x.sampleTypeName ?? 'Unspecified',
-        testCodes: x.testCodes,
-        status: x.status,
-      }));
-    }
+    const samples: OrderSample[] = sr.recordset.map((x) => ({
+      vailid: x.vailid,
+      sampleTypeId: x.sampleTypeId,
+      sampleTypeName: x.sampleTypeName ?? 'Unspecified',
+      testCodes: x.testCodes,
+      status: x.status,
+    }));
 
     return {
       billId: h.billId,
@@ -309,7 +355,7 @@ export async function getOrder(
       samples,
       receipts,
     };
-  });
+  }));
 }
 
 /**
@@ -324,7 +370,7 @@ export async function listRegistrations(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const unrestricted = ids.length > 1000;
-  return withRetry(async () => {
+  return traceDb('orders.listRegistrations', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     req.input('lim', sql.Int, Math.min(Math.max(limit, 1), 200));
@@ -357,7 +403,7 @@ export async function listRegistrations(
       mobile: x.mobile,
       registeredAt: x.registeredAt ? x.registeredAt.toISOString() : null,
     }));
-  });
+  }));
 }
 
 export interface PatientTestItem {
@@ -420,7 +466,7 @@ export async function listPendingAccessions(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const unrestricted = ids.length > 1000;
-  return withRetry(async () => {
+  return traceDb('orders.listPendingAccessions', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     const scopeClause = unrestricted
@@ -494,7 +540,7 @@ export async function listPendingAccessions(
       total: Number(x.total ?? 0),
       balance: Number(x.balance ?? 0),
     }));
-  });
+  }));
 }
 
 /** Recent sample accessions (each barcode that hit the LIS), scope-aware. */
@@ -505,7 +551,7 @@ export async function listSampleAccessions(
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const unrestricted = ids.length > 1000;
-  return withRetry(async () => {
+  return traceDb('orders.listSampleAccessions', () => withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
     req.input('lim', sql.Int, Math.min(Math.max(limit, 1), 200));
@@ -549,5 +595,5 @@ export async function listSampleAccessions(
       status: x.status,
       accessionedAt: x.accessionedAt ? x.accessionedAt.toISOString() : null,
     }));
-  });
+  }));
 }

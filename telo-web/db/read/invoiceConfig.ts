@@ -1,5 +1,7 @@
 import 'server-only';
+import { createHash } from 'crypto';
 import { getPool, sql, withRetry } from '@/db/pool';
+import { cached, redis } from '@/lib/cache';
 
 export type LogoPosition = 'left' | 'right';
 
@@ -64,8 +66,25 @@ function mapRow(row: RawRow): MccInvoiceConfig {
   };
 }
 
-/** Returns true only if the table exists in the database. */
+/**
+ * Returns true only if the table exists in the database. Memoised for the
+ * lifetime of the Node process — the table is created once at deploy and
+ * never dropped at runtime, so re-querying INFORMATION_SCHEMA on every admin
+ * invoice page load (was: one hit per request) is pure overhead.
+ *
+ * A negative result is cached too but with a shorter expiry: if the operator
+ * is in the middle of deploying the migration and the table appears mid-run,
+ * we want to notice within a minute rather than require a process restart.
+ */
+let tableExistsMemo: { value: boolean; until: number } | null = null;
+const TABLE_EXISTS_POS_TTL_MS = 60 * 60 * 1000;
+const TABLE_EXISTS_NEG_TTL_MS = 60 * 1000;
+
 async function tableExists(): Promise<boolean> {
+  const now = Date.now();
+  if (tableExistsMemo && tableExistsMemo.until > now) {
+    return tableExistsMemo.value;
+  }
   try {
     const pool = await getPool();
     const r = await pool.request().query<{ n: number }>(`
@@ -74,8 +93,14 @@ async function tableExists(): Promise<boolean> {
       WHERE TABLE_SCHEMA = 'dbo'
         AND TABLE_NAME   = 'telo_mcc_invoice_config'
     `);
-    return (r.recordset[0]?.n ?? 0) > 0;
+    const value = (r.recordset[0]?.n ?? 0) > 0;
+    tableExistsMemo = {
+      value,
+      until: now + (value ? TABLE_EXISTS_POS_TTL_MS : TABLE_EXISTS_NEG_TTL_MS),
+    };
+    return value;
   } catch {
+    tableExistsMemo = { value: false, until: now + TABLE_EXISTS_NEG_TTL_MS };
     return false;
   }
 }
@@ -169,38 +194,104 @@ export async function getAllMccInvoiceConfigs(): Promise<MccInvoiceConfig[]> {
   }
 }
 
-/** Raw logo bytes for `/api/mcc-invoice-logo/[mccId]` — not loaded on overview pages. */
+/**
+ * Raw logo bytes for `/api/mcc-invoice-logo/[mccId]` — not loaded on
+ * overview pages.
+ *
+ * Cached in Redis for 1 hour (logos are uploaded rarely — saveInvoiceConfig
+ * busts the cache key whenever a new file is written). Cache stores the
+ * mime + bytes as base64 inside a small JSON envelope so a downed/missing
+ * Redis falls through to the live DB read transparently (cached() degrades
+ * to direct compute on Redis failures).
+ *
+ * Why not the ETag fetch chain alone? The ETag handles repeat fetches from
+ * the SAME browser. The Redis layer also handles fan-out across MANY
+ * browsers asking the same Node process for the same MCC's logo and
+ * absorbs cold-cache cost across rolling deploys.
+ */
+const LOGO_TTL_SECONDS = 60 * 60;
+
+function logoCacheKey(mccId: number): string {
+  return `telo:invoice-logo:${mccId}`;
+}
+
+interface CachedLogoEnvelope {
+  mime: string;
+  bytesB64: string;
+}
+
 export async function getMccInvoiceLogoBytes(
   mccId: number,
 ): Promise<MccInvoiceLogoBytes | null> {
   if (!Number.isInteger(mccId)) return null;
   try {
-    return await withRetry(async () => {
-      const pool = await getPool();
-      const r = await pool
-        .request()
-        .input('mid', sql.Int, mccId)
-        .query<{
-          mime: string | null;
-          bytes: Buffer | null;
-        }>(`
-          SELECT top_right_logo_mime AS mime,
-                 top_right_logo_bytes AS bytes
-          FROM ${TABLE}
-          WHERE mcc_id = @mid
-            AND top_right_logo_mime IS NOT NULL
-            AND top_right_logo_bytes IS NOT NULL
-        `);
-      const row = r.recordset[0];
-      if (!row?.mime || !row.bytes) return null;
-      return { mime: row.mime, bytes: row.bytes };
-    });
+    const envelope = await cached<CachedLogoEnvelope | null>(
+      logoCacheKey(mccId),
+      LOGO_TTL_SECONDS,
+      async () => {
+        return await withRetry(async () => {
+          const pool = await getPool();
+          const r = await pool
+            .request()
+            .input('mid', sql.Int, mccId)
+            .query<{
+              mime: string | null;
+              bytes: Buffer | null;
+            }>(`
+              SELECT top_right_logo_mime AS mime,
+                     top_right_logo_bytes AS bytes
+              FROM ${TABLE}
+              WHERE mcc_id = @mid
+                AND top_right_logo_mime IS NOT NULL
+                AND top_right_logo_bytes IS NOT NULL
+            `);
+          const row = r.recordset[0];
+          if (!row?.mime || !row.bytes) return null;
+          return {
+            mime: row.mime,
+            bytesB64: row.bytes.toString('base64'),
+          };
+        });
+      },
+    );
+    if (!envelope) return null;
+    return {
+      mime: envelope.mime,
+      bytes: Buffer.from(envelope.bytesB64, 'base64'),
+    };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('Invalid object name') || msg.includes('Invalid column name')) {
       return null;
     }
     throw err;
+  }
+}
+
+/**
+ * Strong ETag for the logo bytes — used by `/api/mcc-invoice-logo/[mccId]`.
+ * Wraps the cached lookup so we don't pay a second DB hit just to hash. Falls
+ * back to a per-mccId placeholder when no bytes are present (callers should
+ * not use it in that path, but defensive against accidental misuse).
+ */
+export async function getMccInvoiceLogoEtag(mccId: number): Promise<string | null> {
+  const logo = await getMccInvoiceLogoBytes(mccId);
+  if (!logo) return null;
+  return `"${createHash('sha1').update(logo.bytes).digest('hex')}"`;
+}
+
+/**
+ * Bust the Redis cache for one MCC's logo bytes. Call from saveInvoiceConfig
+ * after any write that changes top_right_logo_bytes / top_right_logo_mime
+ * (upload OR removal). Best-effort — Redis-down silently falls through; the
+ * TTL still bounds staleness to 1 hour.
+ */
+export async function invalidateMccInvoiceLogo(mccId: number): Promise<void> {
+  if (!Number.isInteger(mccId)) return;
+  try {
+    await redis().del(logoCacheKey(mccId));
+  } catch {
+    /* best-effort */
   }
 }
 

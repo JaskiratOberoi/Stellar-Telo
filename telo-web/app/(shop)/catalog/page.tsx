@@ -1,33 +1,21 @@
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { loadCatalog, filterCatalog } from '@/db/read/catalog';
-import { CatalogSearchBox } from '@/components/catalog/search-box';
-import { AddToCartButton } from '@/components/catalog/add-to-cart';
-import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { loadCatalog } from '@/db/read/catalog';
+import { toPublicCatalogItem } from '@/domain/catalog/catalog.types';
+import { CatalogBrowser } from '@/components/catalog/catalog-browser';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CatalogPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string; kind?: string }>;
-}) {
+export default async function CatalogPage() {
   const user = await requireSession();
   const canOrder = hasCapability(user.caps, 'order:create');
-  const sp = await searchParams;
-  const kind =
-    sp.kind === 'test' || sp.kind === 'profile' ? sp.kind : 'all';
 
   const all = await loadCatalog();
-  const rows = filterCatalog(all, sp.q, kind, 100);
+  // Strip costCt before the rows ever cross the server/client boundary.
+  // CatalogBrowser does the rest of the work (filter + paginate) entirely
+  // in the browser, so typing into the search box no longer triggers an
+  // RSC round-trip per keystroke.
+  const publicItems = all.map(toPublicCatalogItem);
 
   return (
     <div className="space-y-6">
@@ -37,66 +25,7 @@ export default async function CatalogPage({
           {all.length.toLocaleString()} active tests &amp; profiles · MRP pricing
         </p>
       </div>
-
-      <CatalogSearchBox />
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-24">Code</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead className="w-24">Type</TableHead>
-            <TableHead className="w-24 text-right">MRP</TableHead>
-            {canOrder && <TableHead className="w-20" />}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={canOrder ? 5 : 4}
-                className="text-muted-foreground"
-              >
-                No matches.
-              </TableCell>
-            </TableRow>
-          ) : (
-            rows.map((i) => (
-              <TableRow key={`${i.kind}-${i.id}`}>
-                <TableCell className="font-mono text-xs">{i.code}</TableCell>
-                <TableCell>{i.name}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={i.kind === 'profile' ? 'secondary' : 'outline'}
-                  >
-                    {i.kind}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {i.mrp != null ? `₹${i.mrp}` : '—'}
-                </TableCell>
-                {canOrder && (
-                  <TableCell className="text-right">
-                    <AddToCartButton
-                      item={{
-                        id: i.id,
-                        kind: i.kind,
-                        code: i.code,
-                        name: i.name,
-                      }}
-                    />
-                  </TableCell>
-                )}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-      {rows.length === 100 && (
-        <p className="text-xs text-muted-foreground">
-          Showing first 100 — refine your search to narrow results.
-        </p>
-      )}
+      <CatalogBrowser items={publicItems} canOrder={canOrder} />
     </div>
   );
 }

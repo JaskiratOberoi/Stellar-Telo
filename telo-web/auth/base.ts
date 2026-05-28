@@ -9,6 +9,16 @@ import type { TeloUser } from '@/types/auth';
  * Protected-route policy lives in `authorized`; the JWT/session shaping is
  * shared by both the edge and Node instances.
  */
+// trustHost must stay true: the app runs behind Caddy in prod (and behind
+// the docker bridge in dev), so Auth.js sees the request via a reverse
+// proxy. With trustHost=false the library rejects the forwarded Host header
+// with UntrustedHost and breaks /api/auth/* entirely.
+//
+// NEXTAUTH_URL still matters and IS set in prod — it pins the canonical URL
+// for callbacks/redirects so a forged Host header can't trick Auth.js into
+// redirecting elsewhere. The two settings cover different concerns; the
+// host-pinning protection comes from NEXTAUTH_URL, not from trustHost.
+
 export const authConfig: NextAuthConfig = {
   session: { strategy: 'jwt', maxAge: 60 * 60 * 8 },
   pages: { signIn: '/login' },

@@ -10,6 +10,7 @@ export type AppErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT' // e.g. vailid collision after retries
   | 'RATE_UNRESOLVED'
+  | 'RATE_LIMITED'
   | 'DB_UNAVAILABLE'
   | 'INTERNAL';
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { currentUser } from '@/auth/session';
+import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import {
   listOrders,
@@ -70,22 +71,39 @@ export async function getRecentOrders(
 export interface PendingAccessionsFeed {
   orders: PendingAccession[];
   scopeCount: number;
+  /** True when the caller has bill:view — gates ₹ display on the worklist. */
+  canViewBill: boolean;
   fetchedAt: string;
 }
 
 /**
  * Telo orders still awaiting Sample IDs — the "New order" worklist. Scope-aware.
+ *
+ * `canViewBill` is returned alongside the feed so the client list can hide the
+ * Amount column without a second round-trip. Per-order `total` is zeroed
+ * server-side for technicians (no `bill:view`) — the value never leaves the
+ * server even if a custom client tries to read it from the JSON payload.
  */
 export async function getPendingAccessions(): Promise<PendingAccessionsFeed> {
   const user = await currentUser();
   if (!user) {
-    return { orders: [], scopeCount: 0, fetchedAt: new Date().toISOString() };
+    return {
+      orders: [],
+      scopeCount: 0,
+      canViewBill: false,
+      fetchedAt: new Date().toISOString(),
+    };
   }
   const scope = await getMccScope(user.uid);
-  const orders = await listPendingAccessions(scope);
+  const canViewBill = hasCapability(user.caps, 'bill:view');
+  const rows = await listPendingAccessions(scope);
+  const orders = canViewBill
+    ? rows
+    : rows.map((o) => ({ ...o, total: 0, balance: 0 }));
   return {
     orders,
     scopeCount: scope.length,
+    canViewBill,
     fetchedAt: new Date().toISOString(),
   };
 }

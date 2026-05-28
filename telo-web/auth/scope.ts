@@ -1,14 +1,38 @@
 import 'server-only';
-import { cached } from '@/lib/cache';
+import { cached, redis } from '@/lib/cache';
 import { fetchUserMccScope } from '@/db/read/userScope';
 import { AppError } from '@/lib/errors';
+
+/** Cache key for one user's MCC scope set. Kept in one place so the
+ * invalidator can't drift from the reader. */
+function scopeKey(userId: number): string {
+  return `telo:scope:${userId}`;
+}
 
 /**
  * Per-user allowed MCC code set, redis-cached (10k+ global mapping rows are
  * never put in the JWT). Cache miss/Redis-down degrades to a live query.
  */
 export async function getMccScope(userId: number): Promise<number[]> {
-  return cached(`telo:scope:${userId}`, 300, () => fetchUserMccScope(userId));
+  return cached(scopeKey(userId), 300, () => fetchUserMccScope(userId));
+}
+
+/**
+ * Bust the cached MCC scope for one user. Call after ANY admin write that
+ * changes `tbl_med_user_sales_mcc_mapping` rows for that user — without this
+ * the next 5 minutes of `assertMccInScope()` checks see stale data, which is
+ * both a UX bug (admin changes appear not to take effect) and a security bug
+ * (a newly-removed centre can still be acted on, or a newly-added one stays
+ * "out of scope"). Best-effort: Redis-down is silently swallowed because the
+ * cache will simply expire on its own TTL.
+ */
+export async function invalidateMccScope(userId: number): Promise<void> {
+  if (!Number.isInteger(userId)) return;
+  try {
+    await redis().del(scopeKey(userId));
+  } catch {
+    /* best-effort */
+  }
 }
 
 /**

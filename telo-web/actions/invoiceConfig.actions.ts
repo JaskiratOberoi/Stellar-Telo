@@ -2,9 +2,13 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireSession } from '@/auth/session';
+import { requireCapability } from '@/auth/guards';
 import { hasCapability } from '@/auth/rbac';
 import { getPool, sql, withRetry } from '@/db/pool';
-import { getAllMccInvoiceConfigs } from '@/db/read/invoiceConfig';
+import {
+  getAllMccInvoiceConfigs,
+  invalidateMccInvoiceLogo,
+} from '@/db/read/invoiceConfig';
 import { fetchAllActiveMccs, fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getMccScope } from '@/auth/scope';
 import { readTopRightLogo } from '@/lib/invoice-logo';
@@ -67,6 +71,14 @@ export async function saveInvoiceConfigAction(
     return { error: msg, ok: false };
   }
 
+  // Logo column behaviour:
+  //   removeLogo=true   → set both columns NULL
+  //   logoUpload=<file> → write bytes+mime
+  //   neither           → leave existing values untouched on UPDATE; NULL on INSERT
+  const logoBytes = removeLogo ? null : logoUpload?.buffer ?? null;
+  const logoMime = removeLogo ? null : logoUpload?.mime ?? null;
+  const writeLogo = removeLogo || !!logoUpload;
+
   try {
     await withRetry(async () => {
       const pool = await getPool();
@@ -77,14 +89,6 @@ export async function saveInvoiceConfigAction(
           `SELECT COUNT(*) AS n FROM dbo.telo_mcc_invoice_config WHERE mcc_id = @mid`,
         );
       const rowExists = (exists.recordset[0]?.n ?? 0) > 0;
-
-      // Logo column behaviour:
-      //   removeLogo=true   → set both columns NULL
-      //   logoUpload=<file> → write bytes+mime
-      //   neither           → leave existing values untouched on UPDATE; NULL on INSERT
-      const logoBytes = removeLogo ? null : logoUpload?.buffer ?? null;
-      const logoMime = removeLogo ? null : logoUpload?.mime ?? null;
-      const writeLogo = removeLogo || !!logoUpload;
 
       const setClauses: string[] = [
         'lab_name    = @labName',
@@ -154,6 +158,12 @@ export async function saveInvoiceConfigAction(
         `);
       }
     });
+    // If the write touched the logo bytes (upload or removal), bust the
+    // Redis cache so the next /api/mcc-invoice-logo/[mccId] read picks up
+    // the new ETag immediately instead of waiting for the 1h TTL.
+    if (writeLogo) {
+      await invalidateMccInvoiceLogo(mccId);
+    }
     revalidatePath('/admin/invoice');
     return { error: null, ok: true };
   } catch (err) {
@@ -186,7 +196,10 @@ export async function saveInvoiceConfigAction(
  * back to fetchAllActiveMccs() which scans the master table directly.
  */
 export async function getInvoiceConfigOverview() {
-  const user = await requireSession();
+  // Action-layer cap check (defence-in-depth). The /admin/invoice page also
+  // gates on user:manage; this guard means the action itself rejects calls
+  // from any other surface (including direct fetch) too.
+  const user = await requireCapability('user:manage');
   const scope = await getMccScope(user.uid);
 
   const mccsPromise =

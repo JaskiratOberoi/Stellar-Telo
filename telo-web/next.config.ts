@@ -19,7 +19,12 @@ const nextConfig: NextConfig = {
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "connect-src 'self'",
-      "frame-ancestors 'none'",
+      // Self framing is required: the Print Lab/Bill buttons load a same-
+      // origin print fragment (/print/orders/[id]/[kind]) into a hidden
+      // iframe and then call iframe.contentWindow.print(). With 'none' the
+      // iframe is blocked and the call fails with a cross-origin permission
+      // error in the console. 'self' still prevents third-party clickjacking.
+      "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self'",
     ].join('; ');
@@ -28,7 +33,10 @@ const nextConfig: NextConfig = {
         source: '/:path*',
         headers: [
           { key: 'Content-Security-Policy', value: csp },
-          { key: 'X-Frame-Options', value: 'DENY' },
+          // SAMEORIGIN (not DENY) so the print iframe in the Print buttons
+          // can load; CSP frame-ancestors 'self' above does the real work,
+          // this header is the legacy compatibility fallback.
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           {

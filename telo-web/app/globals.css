@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* Dark palette — default (no light/dark toggle needed) */
+  /* Dark palette is the only theme — no light/dark toggle exists in the
+     app. We declare the same custom-property block under both `:root` and
+     `.dark` via a single selector so a future next-themes integration keeps
+     working without duplicating the values. */
+  :root,
+  .dark {
     --background: 0 0% 6%;
     --foreground: 0 0% 100%;
     --card: 0 0% 9%;
@@ -27,29 +31,6 @@
     --input: 0 0% 10%;
     --ring: 238 25% 43%;
     --radius: 0.875rem;
-  }
-
-  /* .dark is an alias of :root — keeps next-themes compatible */
-  .dark {
-    --background: 0 0% 6%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 238 25% 43%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 142 60% 48%;
-    --secondary-foreground: 0 0% 6%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 218 11% 65%;
-    --accent: 238 25% 43%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 358 75% 59%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 16%;
-    --input: 0 0% 10%;
-    --ring: 238 25% 43%;
   }
 }
 
