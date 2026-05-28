@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useActionState } from 'react';
+import { useEffect, useMemo, useRef, useState, useActionState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   saveInvoiceConfigAction,
@@ -24,22 +25,64 @@ interface MccRow {
     phone: string | null;
     email: string | null;
     hasTopRightLogo: boolean;
+    nobleLogoPosition: 'left' | 'right';
+    nobleLogoVisible: boolean;
+    customLogoVisible: boolean;
+    preparedBy: string | null;
   } | null;
 }
 
 const initial: InvoiceConfigState = { error: null, ok: false };
 
 function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(saveInvoiceConfigAction, initial);
   const [removeLogo, setRemoveLogo] = useState(false);
   const hasLogo = row.config?.hasTopRightLogo ?? false;
   const isMedicareDefault =
     MEDICARE_MCC_CODES.has(row.mccCode.trim().toLowerCase()) && !hasLogo;
 
+  // Layout state — defaults match the SQL fall-back (left, both visible).
+  // The parent re-mounts this component (via a `key` derived from
+  // row.config) whenever the saved config changes, so these useState
+  // initializers are guaranteed to see the freshest server snapshot. That's
+  // why no useEffect resync is needed here.
+  const [noblePosition, setNoblePosition] = useState<'left' | 'right'>(
+    row.config?.nobleLogoPosition ?? 'left',
+  );
+  const [nobleVisible, setNobleVisible] = useState<boolean>(
+    row.config?.nobleLogoVisible ?? true,
+  );
+  const [customVisible, setCustomVisible] = useState<boolean>(
+    row.config?.customLogoVisible ?? true,
+  );
+
+  // Force the client to re-fetch /admin/invoice after a successful save.
+  // `revalidatePath` inside the server action invalidates the server cache,
+  // but in this useActionState + form combo it doesn't always trigger an
+  // automatic client transition. `router.refresh()` makes it explicit, and
+  // the resulting new `row.config` flows down to the parent, which then
+  // remounts this form via its config-derived key. Net effect: the form
+  // always reflects what's actually in the database after a save.
+  const lastOkRef = useRef(state.ok);
+  useEffect(() => {
+    if (state.ok && !lastOkRef.current) {
+      router.refresh();
+    }
+    lastOkRef.current = state.ok;
+  }, [state.ok, router]);
+
+  const customPosition: 'left' | 'right' = noblePosition === 'left' ? 'right' : 'left';
+
   return (
     <form action={action} encType="multipart/form-data" className="space-y-3 pt-2">
       <input type="hidden" name="mccId" value={row.mccId} />
       {removeLogo && <input type="hidden" name="removeLogo" value="1" />}
+      {/* Layout fields are always submitted so the server can persist toggles. */}
+      <input type="hidden" name="layoutSubmitted" value="1" />
+      <input type="hidden" name="nobleLogoPosition" value={noblePosition} />
+      {nobleVisible && <input type="hidden" name="nobleLogoVisible" value="1" />}
+      {customVisible && <input type="hidden" name="customLogoVisible" value="1" />}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label htmlFor={`ln-${row.mccId}`}>Lab / clinic name</Label>
@@ -81,13 +124,82 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             defaultValue={row.config?.email ?? ''}
           />
         </div>
-        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
-          <Label htmlFor={`logo-${row.mccId}`}>Top-right logo (optional)</Label>
+        <div className="space-y-1 sm:col-span-2">
+          <Label htmlFor={`pb-${row.mccId}`}>Prepared by (receptionist name)</Label>
+          <Input
+            id={`pb-${row.mccId}`}
+            name="preparedBy"
+            placeholder="e.g. Priya Sharma"
+            defaultValue={row.config?.preparedBy ?? ''}
+            maxLength={120}
+          />
           <p className="text-xs text-muted-foreground">
-            Shown on the bill header opposite the Noble logo — same placement as the
-            built-in Medicare logo for{' '}
+            Printed above the &ldquo;Note:&rdquo; block on the bill as
+            &ldquo;Prepared By: &lt;name&gt;&rdquo;. Leave blank to hide.
+          </p>
+        </div>
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <Label className="block">Header layout</Label>
+          <p className="text-xs text-muted-foreground">
+            Choose where the Noble logo sits — the custom logo (if uploaded, or
+            the built-in Medicare logo for{' '}
             <span className="font-mono">medicare_test</span> /{' '}
-            <span className="font-mono">medicare_tech</span>. Stored in Telo only.
+            <span className="font-mono">medicare_tech</span>) automatically sits
+            on the opposite side. Hide either logo with the toggles.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor={`pos-${row.mccId}`} className="text-xs">
+                Noble position
+              </Label>
+              <select
+                id={`pos-${row.mccId}`}
+                value={noblePosition}
+                onChange={(e) => setNoblePosition(e.target.value as 'left' | 'right')}
+                className="h-8 w-full rounded-md border border-white/10 bg-transparent px-2 text-sm"
+              >
+                <option value="left">Top left</option>
+                <option value="right">Top right</option>
+              </select>
+              <p className="text-[10px] text-muted-foreground">
+                Custom logo will be on the {customPosition === 'left' ? 'top left' : 'top right'}.
+              </p>
+            </div>
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 p-2">
+              <input
+                type="checkbox"
+                checked={nobleVisible}
+                onChange={(e) => setNobleVisible(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-xs">
+                <span className="block font-medium">Show Noble logo</span>
+                <span className="text-muted-foreground">
+                  Hide on bills for this client account.
+                </span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 p-2">
+              <input
+                type="checkbox"
+                checked={customVisible}
+                onChange={(e) => setCustomVisible(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="text-xs">
+                <span className="block font-medium">Show custom logo</span>
+                <span className="text-muted-foreground">
+                  Applies to uploaded logo or the built-in Medicare logo.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <Label htmlFor={`logo-${row.mccId}`}>Custom logo (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Shown opposite the Noble logo on every bill — exact placement
+            controlled by the header layout above. Stored in Telo only.
           </p>
           {hasLogo && !removeLogo && (
             <div className="flex items-center gap-3">
@@ -159,7 +271,13 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
 
 function rowHasConfig(row: MccRow): boolean {
   const c = row.config;
-  return !!(c?.labName || c?.address || c?.phone || c?.email || c?.hasTopRightLogo);
+  if (!c) return false;
+  if (c.labName || c.address || c.phone || c.email || c.hasTopRightLogo || c.preparedBy) return true;
+  // Layout customisation also counts as "configured".
+  if (c.nobleLogoPosition === 'right') return true;
+  if (!c.nobleLogoVisible) return true;
+  if (!c.customLogoVisible) return true;
+  return false;
 }
 
 export function InvoiceConfigManager({
@@ -277,7 +395,18 @@ export function InvoiceConfigManager({
                   </Button>
                 </div>
                 {isOpen && (
-                  <ConfigForm row={row} onClose={() => setEditing(null)} />
+                  // Key derived from the saved layout fields: when a save
+                  // changes any of them server-side, this changes too, which
+                  // forces ConfigForm to unmount + remount. That makes its
+                  // useState initializers run again against the new
+                  // row.config, so the form's displayed state always matches
+                  // the database — sidestepping React 19's form-reset
+                  // desync of controlled inputs after useActionState.
+                  <ConfigForm
+                    key={`cfg-${row.mccId}-${row.config?.nobleLogoPosition ?? 'left'}-${row.config?.nobleLogoVisible ?? true ? 1 : 0}-${row.config?.customLogoVisible ?? true ? 1 : 0}-${row.config?.hasTopRightLogo ? 1 : 0}`}
+                    row={row}
+                    onClose={() => setEditing(null)}
+                  />
                 )}
               </div>
             );

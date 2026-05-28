@@ -37,11 +37,27 @@ export async function saveInvoiceConfigAction(
     return { error: 'Invalid MCC', ok: false };
   }
 
-  const labName = ((formData.get('labName') as string) ?? '').trim() || null;
-  const address = ((formData.get('address') as string) ?? '').trim() || null;
-  const phone   = ((formData.get('phone')   as string) ?? '').trim() || null;
-  const email   = ((formData.get('email')   as string) ?? '').trim() || null;
+  const labName    = ((formData.get('labName')    as string) ?? '').trim() || null;
+  const address    = ((formData.get('address')    as string) ?? '').trim() || null;
+  const phone      = ((formData.get('phone')      as string) ?? '').trim() || null;
+  const email      = ((formData.get('email')      as string) ?? '').trim() || null;
+  const preparedBy = ((formData.get('preparedBy') as string) ?? '').trim() || null;
   const removeLogo = formData.get('removeLogo') === '1';
+
+  // Layout controls. Checkbox inputs only appear in the form when checked, so a
+  // missing value means "false" — that's why visibility is read with a hidden
+  // companion field (logoVisibleSubmitted=1) signalling the form posted them.
+  const layoutSubmitted = formData.get('layoutSubmitted') === '1';
+  const noblePosRaw = ((formData.get('nobleLogoPosition') as string) ?? '').toLowerCase();
+  const nobleLogoPosition: 'left' | 'right' | null = layoutSubmitted
+    ? (noblePosRaw === 'right' ? 'right' : 'left')
+    : null;
+  const nobleLogoVisible = layoutSubmitted
+    ? (formData.get('nobleLogoVisible') === '1' ? 1 : 0)
+    : null;
+  const customLogoVisible = layoutSubmitted
+    ? (formData.get('customLogoVisible') === '1' ? 1 : 0)
+    : null;
 
   let logoUpload: { buffer: Buffer; mime: string } | null = null;
   try {
@@ -62,91 +78,80 @@ export async function saveInvoiceConfigAction(
         );
       const rowExists = (exists.recordset[0]?.n ?? 0) > 0;
 
+      // Logo column behaviour:
+      //   removeLogo=true   → set both columns NULL
+      //   logoUpload=<file> → write bytes+mime
+      //   neither           → leave existing values untouched on UPDATE; NULL on INSERT
+      const logoBytes = removeLogo ? null : logoUpload?.buffer ?? null;
+      const logoMime = removeLogo ? null : logoUpload?.mime ?? null;
+      const writeLogo = removeLogo || !!logoUpload;
+
+      const setClauses: string[] = [
+        'lab_name    = @labName',
+        'address     = @address',
+        'phone       = @phone',
+        'email       = @email',
+        'prepared_by = @preparedBy',
+        'updated_at  = GETUTCDATE()',
+      ];
+      if (writeLogo) {
+        setClauses.push('top_right_logo_bytes = @logoBytes');
+        setClauses.push('top_right_logo_mime  = @logoMime');
+      }
+      if (layoutSubmitted) {
+        setClauses.push('noble_logo_position = @nobleLogoPosition');
+        setClauses.push('noble_logo_visible  = @nobleLogoVisible');
+        setClauses.push('custom_logo_visible = @customLogoVisible');
+      }
+
+      const req = pool
+        .request()
+        .input('mid', sql.Int, mccId)
+        .input('labName', sql.NVarChar(200), labName)
+        .input('address', sql.NVarChar(500), address)
+        .input('phone', sql.NVarChar(50), phone)
+        .input('email', sql.NVarChar(200), email)
+        .input('preparedBy', sql.NVarChar(120), preparedBy);
+
+      if (writeLogo) {
+        req.input('logoBytes', sql.VarBinary(sql.MAX), logoBytes);
+        req.input('logoMime', sql.NVarChar(64), logoMime);
+      }
+      if (layoutSubmitted) {
+        req.input('nobleLogoPosition', sql.NVarChar(8), nobleLogoPosition);
+        req.input('nobleLogoVisible', sql.Bit, nobleLogoVisible);
+        req.input('customLogoVisible', sql.Bit, customLogoVisible);
+      }
+
       if (rowExists) {
-        if (removeLogo) {
-          await pool
-            .request()
-            .input('mid', sql.Int, mccId)
-            .input('labName', sql.NVarChar(200), labName)
-            .input('address', sql.NVarChar(500), address)
-            .input('phone', sql.NVarChar(50), phone)
-            .input('email', sql.NVarChar(200), email)
-            .query(`
-              UPDATE dbo.telo_mcc_invoice_config
-                 SET lab_name = @labName,
-                     address = @address,
-                     phone = @phone,
-                     email = @email,
-                     top_right_logo_bytes = NULL,
-                     top_right_logo_mime = NULL,
-                     updated_at = GETUTCDATE()
-               WHERE mcc_id = @mid
-            `);
-        } else if (logoUpload) {
-          await pool
-            .request()
-            .input('mid', sql.Int, mccId)
-            .input('labName', sql.NVarChar(200), labName)
-            .input('address', sql.NVarChar(500), address)
-            .input('phone', sql.NVarChar(50), phone)
-            .input('email', sql.NVarChar(200), email)
-            .input('logoBytes', sql.VarBinary(sql.MAX), logoUpload.buffer)
-            .input('logoMime', sql.NVarChar(64), logoUpload.mime)
-            .query(`
-              UPDATE dbo.telo_mcc_invoice_config
-                 SET lab_name = @labName,
-                     address = @address,
-                     phone = @phone,
-                     email = @email,
-                     top_right_logo_bytes = @logoBytes,
-                     top_right_logo_mime = @logoMime,
-                     updated_at = GETUTCDATE()
-               WHERE mcc_id = @mid
-            `);
-        } else {
-          await pool
-            .request()
-            .input('mid', sql.Int, mccId)
-            .input('labName', sql.NVarChar(200), labName)
-            .input('address', sql.NVarChar(500), address)
-            .input('phone', sql.NVarChar(50), phone)
-            .input('email', sql.NVarChar(200), email)
-            .query(`
-              UPDATE dbo.telo_mcc_invoice_config
-                 SET lab_name = @labName,
-                     address = @address,
-                     phone = @phone,
-                     email = @email,
-                     updated_at = GETUTCDATE()
-               WHERE mcc_id = @mid
-            `);
-        }
+        await req.query(`
+          UPDATE dbo.telo_mcc_invoice_config
+             SET ${setClauses.join(', ')}
+           WHERE mcc_id = @mid
+        `);
       } else {
-        await pool
-          .request()
-          .input('mid', sql.Int, mccId)
-          .input('labName', sql.NVarChar(200), labName)
-          .input('address', sql.NVarChar(500), address)
-          .input('phone', sql.NVarChar(50), phone)
-          .input('email', sql.NVarChar(200), email)
-          .input(
-            'logoBytes',
-            sql.VarBinary(sql.MAX),
-            removeLogo ? null : logoUpload?.buffer ?? null,
-          )
-          .input(
-            'logoMime',
-            sql.NVarChar(64),
-            removeLogo ? null : logoUpload?.mime ?? null,
-          )
-          .query(`
-            INSERT INTO dbo.telo_mcc_invoice_config
-              (mcc_id, lab_name, address, phone, email,
-               top_right_logo_bytes, top_right_logo_mime)
-            VALUES
-              (@mid, @labName, @address, @phone, @email,
-               @logoBytes, @logoMime)
-          `);
+        // Insert with all columns; layout/logo columns default to NULL when not submitted.
+        if (!writeLogo) {
+          req.input('logoBytes', sql.VarBinary(sql.MAX), null);
+          req.input('logoMime', sql.NVarChar(64), null);
+        }
+        if (!layoutSubmitted) {
+          req.input('nobleLogoPosition', sql.NVarChar(8), null);
+          req.input('nobleLogoVisible', sql.Bit, null);
+          req.input('customLogoVisible', sql.Bit, null);
+        }
+        await req.query(`
+          INSERT INTO dbo.telo_mcc_invoice_config
+            (mcc_id, lab_name, address, phone, email,
+             top_right_logo_bytes, top_right_logo_mime,
+             noble_logo_position, noble_logo_visible, custom_logo_visible,
+             prepared_by)
+          VALUES
+            (@mid, @labName, @address, @phone, @email,
+             @logoBytes, @logoMime,
+             @nobleLogoPosition, @nobleLogoVisible, @customLogoVisible,
+             @preparedBy)
+        `);
       }
     });
     revalidatePath('/admin/invoice');
@@ -164,7 +169,7 @@ export async function saveInvoiceConfigAction(
     if (msg.includes('Invalid column name')) {
       return {
         error:
-          'Logo columns missing. Run db/sql/07_alter_telo_mcc_invoice_config_add_logo.sql first.',
+          'Logo / layout / prepared_by columns missing. Run db/sql/07_alter_telo_mcc_invoice_config_add_logo.sql, 08_alter_telo_mcc_invoice_config_add_logo_layout.sql, and 09_alter_telo_mcc_invoice_config_add_prepared_by.sql.',
         ok: false,
       };
     }

@@ -4,12 +4,10 @@
  * Controlled by the `print-bill` class on <html> (see globals.css).
  */
 
-import Image from 'next/image';
 import type { OrderDetail } from '@/db/read/orders';
 import type { MccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { fmtIST } from '@/lib/datetime';
 import {
-  customLogoApiPath,
   medicareLogoPath,
   MEDICARE_MCC_CODES,
 } from '@/lib/invoice-logo';
@@ -24,6 +22,15 @@ interface BillInvoiceProps {
    */
   mccCode: string | null;
   config: MccInvoiceConfig | null;
+  /**
+   * Inline data URI for the per-MCC custom logo bytes, prepared server-side
+   * so the print template never depends on a runtime image fetch. Embedding
+   * avoids print-preview races where Chrome would snapshot the page before
+   * a separate /api/... request completes (and before cookies were even
+   * proven to round-trip on a hidden subresource). Pass null when no logo
+   * is uploaded for this MCC.
+   */
+  customLogoDataUri: string | null;
 }
 
 const inr = (n: number) =>
@@ -32,10 +39,14 @@ const inr = (n: number) =>
 function resolveTopRightLogo(
   mccCode: string | null,
   config: MccInvoiceConfig | null,
+  customLogoDataUri: string | null,
 ): { src: string; alt: string; width: number; height: number } | null {
-  if (config?.hasTopRightLogo && config.mccId) {
+  // Custom upload (inlined as a data URI by the server) wins. Falls back to
+  // the built-in Medicare brand for the special Medicare MCC codes when no
+  // upload is present.
+  if (config?.hasTopRightLogo && customLogoDataUri) {
     return {
-      src: customLogoApiPath(config.mccId),
+      src: customLogoDataUri,
       alt: 'Partner logo',
       width: 104,
       height: 72,
@@ -52,13 +63,53 @@ function resolveTopRightLogo(
   return null;
 }
 
-export function BillInvoice({ order, mccName, mccCode, config }: BillInvoiceProps) {
+export function BillInvoice({
+  order,
+  mccName,
+  mccCode,
+  config,
+  customLogoDataUri,
+}: BillInvoiceProps) {
   const labName = config?.labName?.trim() || mccName?.trim() || 'Diagnostic Centre';
   const address = config?.address?.trim() || null;
   const phone   = config?.phone?.trim()   || null;
   const email   = config?.email?.trim()   || null;
 
-  const topRightLogo = resolveTopRightLogo(mccCode, config);
+  const customLogo = resolveTopRightLogo(mccCode, config, customLogoDataUri);
+  const noblePos = config?.nobleLogoPosition ?? 'left';
+  const nobleVisible = config?.nobleLogoVisible ?? true;
+  const customVisible = config?.customLogoVisible ?? true;
+
+  // Plain <img> on purpose — BillInvoice is mounted inside a `hidden print:block`
+  // wrapper (display:none on screen). Next/Image's wrapper + IntersectionObserver
+  // path doesn't reliably preload inside a display:none ancestor, so the print
+  // preview captures an empty slot. A native <img> with default eager loading is
+  // fetched by the browser as soon as it's parsed, even while the container is
+  // hidden, and prints crisply at the @page DPI without runtime optimization.
+  const noblePane = nobleVisible ? (
+    // eslint-disable-next-line @next/next/no-img-element -- print-only invoice; see comment above
+    <img
+      src="/branding/noble-logo.png"
+      alt="Noble Diagnostics"
+      width={224}
+      height={56}
+      className="h-14 w-auto print:h-[16mm] print:block"
+    />
+  ) : null;
+
+  const customPane = customVisible && customLogo ? (
+    // eslint-disable-next-line @next/next/no-img-element -- print-only invoice; see comment above
+    <img
+      src={customLogo.src}
+      alt={customLogo.alt}
+      width={customLogo.width}
+      height={customLogo.height}
+      className="h-16 w-auto print:h-[18mm] print:block"
+    />
+  ) : null;
+
+  const leftPane = noblePos === 'left' ? noblePane : customPane;
+  const rightPane = noblePos === 'left' ? customPane : noblePane;
 
   const dateLabel = fmtIST(order.billDate);
   const genderLabel =
@@ -68,18 +119,14 @@ export function BillInvoice({ order, mccName, mccCode, config }: BillInvoiceProp
 
   return (
     <div className="w-full bg-white text-black font-sans text-[11px] leading-snug border border-gray-400">
-      {/* ── Header: Noble logo | lab name block | (conditional) Medicare logo ── */}
+      {/* ── Header: [left logo] | lab name block | [right logo] ──────────────
+           Layout per dbo.telo_mcc_invoice_config (Telo only, no LIS DDL):
+             noble_logo_position  = 'left' | 'right'  (default 'left')
+             noble_logo_visible   = 0/1                (default 1)
+             custom_logo_visible  = 0/1                (default 1)
+           Custom logo always renders opposite Noble. */}
       <div className="border-b border-gray-400 px-5 py-4 grid grid-cols-[auto_1fr_auto] items-center gap-4">
-        <div className="flex items-center justify-start">
-          <Image
-            src="/branding/noble-logo.png"
-            alt="Noble Diagnostics"
-            width={224}
-            height={56}
-            priority
-            className="h-14 w-auto print:h-[16mm] print:block"
-          />
-        </div>
+        <div className="flex items-center justify-start min-w-[88px]">{leftPane}</div>
         <div className="text-center min-w-0">
           <p className="text-lg font-bold tracking-tight truncate">{labName}</p>
           {address && (
@@ -93,18 +140,7 @@ export function BillInvoice({ order, mccName, mccCode, config }: BillInvoiceProp
             </p>
           )}
         </div>
-        <div className="flex items-center justify-end min-w-[88px]">
-          {topRightLogo && (
-            <Image
-              src={topRightLogo.src}
-              alt={topRightLogo.alt}
-              width={topRightLogo.width}
-              height={topRightLogo.height}
-              unoptimized={topRightLogo.src.startsWith('/api/')}
-              className="h-16 w-auto print:h-[18mm] print:block"
-            />
-          )}
-        </div>
+        <div className="flex items-center justify-end min-w-[88px]">{rightPane}</div>
       </div>
 
       {/* ── Bill meta ──────────────────────────────────────────────── */}
@@ -260,8 +296,23 @@ export function BillInvoice({ order, mccName, mccCode, config }: BillInvoiceProp
           <div className="border-t border-gray-300 pt-1 mt-1">
             <SummaryRow label="Balance Due" value={inr(order.balance)} bold />
           </div>
+          <p className="mt-1.5 text-right text-[10px] italic text-gray-500">
+            On behalf of Qugen Pathlabs Pvt. Ltd.
+          </p>
         </div>
       </div>
+
+      {/* ── Prepared by ────────────────────────────────────────────── */}
+      {config?.preparedBy?.trim() && (
+        <div className="border-b border-gray-400 px-5 py-2">
+          <p className="text-[10px] text-gray-700">
+            <span className="font-semibold uppercase tracking-wide text-gray-600">
+              Prepared By:
+            </span>{' '}
+            {config.preparedBy.trim()}
+          </p>
+        </div>
+      )}
 
       {/* ── Notes ──────────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">

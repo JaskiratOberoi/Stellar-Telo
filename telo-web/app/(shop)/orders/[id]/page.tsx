@@ -5,7 +5,7 @@ import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { getOrder } from '@/db/read/orders';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
-import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
+import { getMccInvoiceConfig, getMccInvoiceLogoBytes } from '@/db/read/invoiceConfig';
 import { RecordPaymentForm } from '@/components/payment/record-payment';
 import { RecordRefundForm } from '@/components/payment/record-refund';
 import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-button';
@@ -57,6 +57,19 @@ export default async function OrderReceiptPage({
   // Used by BillInvoice to gate per-MCC branding (e.g. Medicare co-brand).
   const mccAccountCode = mccUnits[0]?.code ?? null;
 
+  // Pre-fetch the per-MCC custom logo bytes server-side and inline them as a
+  // data URI. Embedding avoids a fragile runtime image fetch from inside the
+  // `hidden print:block` container — Chrome was snapshotting the print
+  // before the lazy /api/mcc-invoice-logo/[id] response landed. With the
+  // bytes in the markup, the logo is part of the document and prints every
+  // time. Only fetched when the config says a logo exists for this MCC.
+  const customLogoDataUri =
+    mccId != null && invoiceConfig?.hasTopRightLogo
+      ? await getMccInvoiceLogoBytes(mccId).then((logo) =>
+          logo ? `data:${logo.mime};base64,${logo.bytes.toString('base64')}` : null,
+        )
+      : null;
+
   const canCapture = hasCapability(user.caps, 'payment:capture');
   const canPay = order.balance > 0 && canCapture;
   const canRefund = order.amountPaid > 0 && canCapture;
@@ -79,6 +92,7 @@ export default async function OrderReceiptPage({
           mccName={mccName}
           mccCode={mccAccountCode}
           config={invoiceConfig}
+          customLogoDataUri={customLogoDataUri}
         />
       </div>
 
