@@ -55,6 +55,9 @@ export function LabInvoice({ order, mccName, config }: BillInvoiceProps) {
         )}
       </div>
 
+      {/* ── Internal use marker ──────────────────────────────────────── */}
+      <LabUseOnlyBadge />
+
       {/* ── Bill meta + payment status ─────────────────────────────── */}
       <div className="border-b border-gray-400 grid grid-cols-3 px-5 py-3 gap-x-4 items-center">
         <div className="flex items-baseline gap-2">
@@ -180,6 +183,17 @@ function Row({
     <div className="flex items-baseline gap-1.5">
       <span className="text-gray-500 shrink-0 w-16">{label}</span>
       <span className={mono ? 'font-mono text-[10px]' : ''}>{value}</span>
+    </div>
+  );
+}
+
+/** Prominent marker — lab receipts are for internal accessioning, not patients. */
+function LabUseOnlyBadge() {
+  return (
+    <div className="border-b-2 border-dashed border-amber-700 bg-amber-50 px-5 py-2.5 text-center">
+      <span className="inline-block rounded border-2 border-amber-800 bg-amber-100 px-5 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-amber-950">
+        Internal — Lab use only
+      </span>
     </div>
   );
 }
