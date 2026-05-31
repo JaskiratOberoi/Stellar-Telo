@@ -22,6 +22,7 @@ const NAV: NavItem[] = [
   // { href: '/orders', label: 'Orders', cap: 'order:view' },
   // { href: '/rate-lists', label: 'Rate lists', cap: 'rate:view' },
   { href: '/balances', label: 'Accounts', cap: 'balance:view' },
+  { href: '/reporting', label: 'Reporting', cap: 'report:view' },
   // href: '/admin' so the active-link indicator covers /admin/users AND
   // /admin/invoice (ShopNav uses pathname.startsWith(href)).
   { href: '/admin', label: 'Admin', cap: 'user:manage' },

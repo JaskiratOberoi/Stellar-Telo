@@ -31,6 +31,9 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:manage',
     'balance:view',
     'dashboard:view',
+    // Reporting is gated to super_admin only while the feature is finalised.
+    // Widen by adding 'report:view' to other roles here.
+    'report:view',
   ],
   admin: [
     // Everything super_admin has EXCEPT user:manage.

@@ -23,7 +23,8 @@ export type Capability =
   | 'rate:view'
   | 'rate:manage'
   | 'balance:view'
-  | 'dashboard:view';    // Revenue KPIs / live dashboard (not for Technicians)
+  | 'dashboard:view'     // Revenue KPIs / live dashboard (not for Technicians)
+  | 'report:view';       // Reporting tab — customer-facing result reports (super admin only for now)
 
 /** Raw row shape returned by dbo.usp_telo_authenticate. */
 export interface AuthRow {
