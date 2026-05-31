@@ -4,7 +4,9 @@ import { useActionState, useEffect, useState } from 'react';
 import { loginAction, type LoginState } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { AmbientBackground } from '@/components/ui/ambient-background';
 
 const initial: LoginState = { error: null };
 
@@ -16,11 +18,13 @@ export default function LoginPage() {
   useEffect(() => setMounted(true), []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm animate-pop">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
+      <AmbientBackground />
+
+      <div className="relative z-10 w-full max-w-sm animate-pop">
         {/* Brand mark */}
         <div className="mb-8 text-center">
-          <span className="text-4xl font-bold tracking-tight text-primary">
+          <span className="bg-gradient-to-br from-primary via-indigo-400 to-secondary bg-clip-text text-4xl font-bold tracking-tight text-transparent drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)]">
             Telo
           </span>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -28,7 +32,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/5 bg-card p-8 shadow-2xl">
+        <div className="rounded-2xl border border-white/10 bg-card/70 p-8 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl">
           <h1 className="mb-1 text-lg font-semibold">Sign in</h1>
           <p className="mb-6 text-sm text-muted-foreground">
             Use your existing LIS credentials
@@ -50,10 +54,9 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   name="password"
-                  type="password"
                   autoComplete="current-password"
                   required
                 />

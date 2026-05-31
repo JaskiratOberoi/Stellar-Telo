@@ -19,6 +19,7 @@ type AuditEvent =
   | { kind: 'admin.user.role'; actor: number; target: number; role: string }
   | { kind: 'admin.user.password'; actor: number; target: number } // never the password value
   | { kind: 'admin.user.active'; actor: number; target: number; active: boolean }
+  | { kind: 'admin.user.lis_access'; actor: number; target: number; enabled: boolean }
   // Emitted by the auth() session callback when a request's JWT carries an
   // older session_version than the live one — the session is then dropped
   // (forcing re-login). Captures both versions for ops correlation.

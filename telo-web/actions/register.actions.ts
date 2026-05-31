@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { currentUser } from '@/auth/session';
 import { requireCapability, requireCapabilityForMcc } from '@/auth/guards';
-import { getMccScope } from '@/auth/scope';
+import { hasCapability } from '@/auth/rbac';
 import { loadCatalog, filterCatalog } from '@/db/read/catalog';
 import {
   fetchDoctorsForMcc,
@@ -13,7 +13,7 @@ import {
   invalidateRefDataCache,
   type RefEntity,
 } from '@/db/read/refData';
-import { sidExistsInScope } from '@/db/read/sid';
+import { sidExists } from '@/db/read/sid';
 import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import {
@@ -74,26 +74,45 @@ export async function searchCatalogAction(
 }
 
 /**
- * Real-time SID duplicate check for the new-order form. Auth-gated, read-only,
- * and scoped to the caller's MCCs — without scoping any signed-in user could
- * enumerate sample IDs from centres they don't own. 'taken' is advisory — the
- * SP + trigger still enforce uniqueness on submit.
+ * Real-time SID duplicate check. Auth-gated, read-only. Shared by the New Order
+ * form (callers with `order:create`) AND the lab Accession page (technicians
+ * with `order:accession`), so it accepts EITHER capability — gating on
+ * `order:create` alone made every check return 'empty' for technicians, which
+ * the field then rendered as a false "✓ Available".
+ *
+ * Uses a GLOBAL existence check (not MCC-scoped): vailid uniqueness in Noble is
+ * enforced globally by trigger_PreventDuplicate and the create-order / add-sids
+ * SPs reject any vailid that exists anywhere in tbl_med_mcc_patient_samples. A
+ * scoped check would falsely report a SID owned by another centre as
+ * "available" and let the operator enter a value the write path then rejects —
+ * exactly the Telo-vs-LIS conflict this feedback exists to prevent. The only
+ * thing a global check "leaks" is that some numeric SID is in use somewhere,
+ * which is acceptable for this internal tool. 'taken' stays advisory — the SP +
+ * trigger remain the hard guarantee on submit.
+ *
+ * Returns 'error' (not 'empty') when the lookup can't run, so the caller can
+ * keep the field neutral instead of showing a green "available".
  */
 export async function checkSid(
   sid: string,
-): Promise<{ status: 'available' | 'taken' | 'empty' }> {
-  let user;
-  try {
-    user = await requireCapability('order:create');
-  } catch {
-    return { status: 'empty' };
-  }
+): Promise<{ status: 'available' | 'taken' | 'empty' | 'error' }> {
   const v = (sid ?? '').trim();
   if (!v) return { status: 'empty' };
-  const scope = await getMccScope(user.uid);
-  return {
-    status: (await sidExistsInScope(v, scope)) ? 'taken' : 'available',
-  };
+  const user = await currentUser();
+  if (
+    !user ||
+    !(
+      hasCapability(user.caps, 'order:create') ||
+      hasCapability(user.caps, 'order:accession')
+    )
+  ) {
+    return { status: 'error' };
+  }
+  try {
+    return { status: (await sidExists(v)) ? 'taken' : 'available' };
+  } catch {
+    return { status: 'error' };
+  }
 }
 
 export interface PreviewLine {
@@ -295,6 +314,29 @@ export async function registerOrder(
     const user = await currentUser();
     if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
     await requireCapabilityForMcc('order:create', f.mcc);
+
+    // Server-authoritative 50% floor. Mirrors the client gate so a tampered
+    // form can't post a receipt below half the resolved total.
+    const floorRates = await resolveRatesBatch(
+      f.mcc,
+      items.map((it) => ({
+        testMasterId: it.kind === 'test' ? it.id : null,
+        profileCode: it.kind === 'profile' ? it.id : null,
+      })),
+    );
+    const resolvedTotal = floorRates.reduce((s, r) => s + (r.rate ?? 0), 0);
+    const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
+    if (Number(f.receiptAmount ?? 0) < minPaid) {
+      return {
+        error: `At least ₹${minPaid} (50% of ₹${resolvedTotal}) must be collected now.`,
+      };
+    }
+    const maxDiscount = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
+    if (Number(f.discountAmount ?? 0) > maxDiscount) {
+      return {
+        error: `Discount cannot exceed ₹${maxDiscount} (50% of ₹${resolvedTotal}).`,
+      };
+    }
 
     const refDoc = parseRefValue(f.refDoctorJson);
     const refCust = parseRefValue(f.refCustomerJson);

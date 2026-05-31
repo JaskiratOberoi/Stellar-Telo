@@ -2,6 +2,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import type { Capability } from '@/types/auth';
 import { ShopNav } from '@/components/layout/shop-nav';
+import { AmbientBackground } from '@/components/ui/ambient-background';
 import { getCart } from '@/db/cartStore';
 
 interface NavItem {
@@ -57,7 +58,9 @@ export default async function ShopLayout({
     : '/orders/new';
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background">
+      {/* Pinned behind all content so dense screens stay readable. */}
+      <AmbientBackground subtle className="fixed" />
       <ShopNav
         userName={user.name}
         roleName={roleName}
@@ -65,7 +68,9 @@ export default async function ShopLayout({
         cartCount={cartCount}
         homeHref={homeHref}
       />
-      <main className="container py-6 print:p-0 print:max-w-none">{children}</main>
+      <main className="container relative z-10 py-6 print:p-0 print:max-w-none">
+        {children}
+      </main>
     </div>
   );
 }

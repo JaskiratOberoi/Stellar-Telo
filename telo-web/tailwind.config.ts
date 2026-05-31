@@ -71,10 +71,17 @@ const config: Config = {
           '60%': { transform: 'scale(1.02)' },
           '100%': { transform: 'scale(1)', opacity: '1' },
         },
+        // Slow, organic drift for the ambient background blobs.
+        blob: {
+          '0%, 100%': { transform: 'translate(0px, 0px) scale(1)' },
+          '33%': { transform: 'translate(40px, -50px) scale(1.1)' },
+          '66%': { transform: 'translate(-30px, 30px) scale(0.92)' },
+        },
       },
       animation: {
         'fade-in-up': 'fade-in-up 0.3s ease-out both',
         pop: 'pop 0.2s ease-out both',
+        blob: 'blob 18s ease-in-out infinite',
       },
     },
   },

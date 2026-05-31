@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AddToCartButton } from '@/components/catalog/add-to-cart';
@@ -12,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { CatalogItemPublic, CatalogKind } from '@/domain/catalog/catalog.types';
+import type { CatalogItemPriced, CatalogKind } from '@/domain/catalog/catalog.types';
+import type { ScopedMcc } from '@/db/read/mccUnits';
 
 const PAGE_SIZE = 100;
 
@@ -31,10 +33,17 @@ type KindFilter = CatalogKind | 'all';
 export function CatalogBrowser({
   items,
   canOrder,
+  units = [],
+  selectedMccId = null,
 }: {
-  items: CatalogItemPublic[];
+  items: CatalogItemPriced[];
   canOrder: boolean;
+  units?: ScopedMcc[];
+  selectedMccId?: number | null;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [switching, startSwitch] = useTransition();
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<KindFilter>('all');
 
@@ -73,6 +82,28 @@ export function CatalogBrowser({
           <option value="test">Tests</option>
           <option value="profile">Profiles</option>
         </select>
+        {units.length > 1 && (
+          <select
+            aria-label="Client rate list"
+            suppressHydrationWarning
+            value={selectedMccId ?? ''}
+            disabled={switching}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (!v) return;
+              startSwitch(() => {
+                router.push(`${pathname}?mcc=${v}`);
+              });
+            }}
+            className="h-9 max-w-[16rem] rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+          >
+            {units.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name ?? u.code} ({u.code})
+              </option>
+            ))}
+          </select>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">
           {filtered.length.toLocaleString('en-IN')} match
           {filtered.length === 1 ? '' : 'es'}
@@ -85,7 +116,7 @@ export function CatalogBrowser({
             <TableHead className="w-24">Code</TableHead>
             <TableHead>Name</TableHead>
             <TableHead className="w-24">Type</TableHead>
-            <TableHead className="w-24 text-right">MRP</TableHead>
+            <TableHead className="w-28 text-right">Rate</TableHead>
             {canOrder && <TableHead className="w-20" />}
           </TableRow>
         </TableHeader>
@@ -111,8 +142,8 @@ export function CatalogBrowser({
                     {i.kind}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right">
-                  {i.mrp != null ? `₹${i.mrp}` : '—'}
+                <TableCell className="text-right font-medium">
+                  {i.rate != null ? `₹${i.rate}` : '—'}
                 </TableCell>
                 {canOrder && (
                   <TableCell className="text-right">

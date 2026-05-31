@@ -21,6 +21,7 @@ import {
   adminSetRole,
   adminResetPassword,
   adminSetActive,
+  adminSetLisAccess,
 } from '@/db/sp/adminUsers';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { audit } from '@/lib/audit';
@@ -493,6 +494,44 @@ export async function setActiveAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong updating the user.');
+  }
+}
+
+const lisAccessSchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  enabled: z.preprocess((v) => v === 'true' || v === true, z.boolean()),
+});
+
+/**
+ * Enable/disable LIS login for a Telo-created account. This flips the LIS
+ * IsActive gate (via telo_account.lis_access) WITHOUT touching the user's Telo
+ * login — so no session-version bump is needed (the Telo JWT stays valid).
+ */
+export async function setLisAccessAction(
+  _prev: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'lis');
+    const parsed = lisAccessSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('Invalid request.');
+    const { userId, enabled } = parsed.data;
+
+    const res = await adminSetLisAccess({ userId, enabled, actor: actor.uid });
+    if (!res.ok) return err(res.message || 'Could not update LIS access.');
+
+    audit({
+      kind: 'admin.user.lis_access',
+      actor: actor.uid,
+      target: userId,
+      enabled,
+    });
+    revalidatePath('/admin/users');
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating LIS access.');
   }
 }
 

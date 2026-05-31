@@ -2,9 +2,16 @@
  * 97_usp_telo_admin_create_user.sql
  *
  * Onboards a new Telo user. Atomic: writes one row in tbl_med_user_master
- * (LIS user, plaintext password) AND one in tbl_telo_user_role. The LIS
- * usertypeid is required because LIS screens key on it; the Telo role is the
- * only thing that drives access to Telo's own tabs/actions.
+ * (LIS user, plaintext password), one in tbl_telo_user_role, AND one in
+ * dbo.telo_account. The LIS usertypeid is required because LIS screens key on
+ * it; the Telo role is the only thing that drives access to Telo's own
+ * tabs/actions.
+ *
+ * LIS LOCK: the LIS row is created with IsActive = 0 and telo_account.lis_access
+ * = 0, so the account CANNOT sign in to the LIS until an admin explicitly
+ * enables LIS access (usp_telo_admin_set_lis_access). It can use Telo right
+ * away because usp_telo_authenticate gates Telo-managed accounts on
+ * telo_account.telo_active (= 1 here), not on IsActive.
  *
  * Username uniqueness is enforced here (the LIS table has no unique index).
  * Returns { ok, error_code, message, user_id }.
@@ -79,12 +86,17 @@ BEGIN
              LEFT(ISNULL(@firstName, N''), 100),
              LEFT(ISNULL(@lastName, N''), 100),
              LEFT(ISNULL(@email, N''), 100),
-             @lisUsertypeId, 1,
+             @lisUsertypeId, 0,  -- LIS-locked by default; enable explicitly
              CONCAT(N'telo:', @actor), GETDATE());
         SET @newId = SCOPE_IDENTITY();
 
         INSERT INTO dbo.tbl_telo_user_role (user_id, role, assigned_by)
         VALUES (@newId, @teloRole, @actor);
+
+        -- Mark as Telo-managed: usable in Telo (telo_active=1), denied LIS
+        -- login (lis_access=0). usp_telo_authenticate keys off this row.
+        INSERT INTO dbo.telo_account (user_id, telo_active, lis_access)
+        VALUES (@newId, 1, 0);
 
         COMMIT;
 

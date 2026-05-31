@@ -10,6 +10,11 @@
  * Returns exactly one row on success (user identity + role + security bits),
  * zero rows on failure. MCC scope is resolved separately by the app and cached
  * (10k+ mapping rows — not bundled into the auth round-trip).
+ *
+ * Telo-managed accounts (a row in dbo.telo_account) are gated on telo_active,
+ * NOT IsActive — Telo deliberately keeps IsActive=0 for them so the LIS denies
+ * login while Telo still admits them. Native LIS users (no telo_account row)
+ * keep the legacy IsActive=1 gate, unchanged.
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_authenticate
     @Username NVARCHAR(50),
@@ -39,7 +44,14 @@ BEGIN
         ON ut.id = u.usertypeid
     LEFT JOIN dbo.tbl_med_mcc_user_security_auth sa
         ON sa.user_type = u.usertypeid
+    LEFT JOIN dbo.telo_account ta
+        ON ta.user_id = u.id
     WHERE u.Username = @Username
       AND u.password = @Password
-      AND u.IsActive = 1;
+      AND (
+            -- Telo-managed: gate on telo_active, ignore the LIS IsActive bit.
+            (ta.user_id IS NOT NULL AND ta.telo_active = 1)
+            -- Native LIS user: legacy gate.
+         OR (ta.user_id IS NULL AND u.IsActive = 1)
+          );
 END

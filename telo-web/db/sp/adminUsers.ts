@@ -125,3 +125,32 @@ export async function adminSetActive(args: {
     };
   });
 }
+
+/**
+ * Grants/revokes LIS login for a Telo-managed account by flipping
+ * telo_account.lis_access (the SP re-derives tbl_med_user_master.IsActive, the
+ * bit the legacy LIS actually checks). Does NOT affect the user's Telo login.
+ */
+export async function adminSetLisAccess(args: {
+  userId: number;
+  enabled: boolean;
+  actor: number;
+}): Promise<AdminSpResult> {
+  return withRetry(async () => {
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input('userId', sql.Int, args.userId)
+      .input('enabled', sql.Bit, args.enabled ? 1 : 0)
+      .input('actor', sql.Int, args.actor)
+      .execute<{ ok: boolean; error_code: string | null; message: string | null }>(
+        'dbo.usp_telo_admin_set_lis_access',
+      );
+    const row = r.recordset[0];
+    return {
+      ok: row?.ok === true,
+      errorCode: row?.error_code ?? null,
+      message: row?.message ?? null,
+    };
+  });
+}

@@ -36,7 +36,17 @@ export interface TeloUserRow {
   firstName: string | null;
   lastName: string | null;
   email: string | null;
+  /** Raw `tbl_med_user_master.IsActive` — the LIS login gate. */
   isActive: boolean;
+  /** Telo login allowed. For Telo-managed accounts this is
+   *  `telo_account.telo_active`; for native LIS users it mirrors `isActive`. */
+  teloActive: boolean;
+  /** LIS login allowed. For Telo-managed accounts this is
+   *  `telo_account.lis_access`; for native LIS users it mirrors `isActive`. */
+  lisAccess: boolean;
+  /** True when a `dbo.telo_account` row exists — i.e. Telo manages this
+   *  account's LIS/Telo gates and the LIS-access toggle applies. */
+  hasTeloAccount: boolean;
   lisUsertypeId: number | null;
   lisUsertypeName: string | null;
   teloRole: TeloRole | null;
@@ -58,6 +68,9 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lastName: string | null;
       email: string | null;
       isActive: boolean;
+      teloActive: boolean;
+      lisAccess: boolean;
+      hasTeloAccount: number; // 0/1 from CASE
       lisUsertypeId: number | null;
       lisUsertypeName: string | null;
       teloRole: string | null;
@@ -67,6 +80,11 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       SELECT u.id, u.Username AS username,
              u.firstname AS firstName, u.lastname AS lastName,
              u.Email AS email, u.IsActive AS isActive,
+             -- Telo-managed accounts carry their own gates; native LIS users
+             -- mirror IsActive so the UI can treat both uniformly.
+             CAST(ISNULL(ta.telo_active, u.IsActive) AS BIT) AS teloActive,
+             CAST(ISNULL(ta.lis_access, u.IsActive) AS BIT)  AS lisAccess,
+             CASE WHEN ta.user_id IS NOT NULL THEN 1 ELSE 0 END AS hasTeloAccount,
              u.usertypeid AS lisUsertypeId,
              ut.Name AS lisUsertypeName,
              r.role AS teloRole,
@@ -75,6 +93,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       FROM dbo.tbl_med_user_master u
       LEFT JOIN dbo.tbl_med_usertypes ut ON ut.id = u.usertypeid
       LEFT JOIN dbo.tbl_telo_user_role r ON r.user_id = u.id
+      LEFT JOIN dbo.telo_account ta ON ta.user_id = u.id
       -- All LIS users — so the Telo admin can assign roles to existing
       -- Clients/Sub Clients/etc. Telo-roled users surface first; the
       -- client-side filter handles the rest of the ~3.5k list.
@@ -90,6 +109,9 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lastName: x.lastName?.trim() ?? null,
       email: x.email?.trim() ?? null,
       isActive: !!x.isActive,
+      teloActive: !!x.teloActive,
+      lisAccess: !!x.lisAccess,
+      hasTeloAccount: Number(x.hasTeloAccount) === 1,
       lisUsertypeId: x.lisUsertypeId,
       lisUsertypeName: x.lisUsertypeName?.trim() ?? null,
       teloRole: toRole(x.teloRole),

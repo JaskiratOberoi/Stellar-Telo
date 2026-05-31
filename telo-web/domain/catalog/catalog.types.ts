@@ -38,6 +38,21 @@ export function toPublicCatalogItem(i: CatalogItem): CatalogItemPublic {
   };
 }
 
+/** Where a priced catalog row's `rate` came from. */
+export type CatalogRateSource = 'ratelist' | 'mrp' | 'none';
+
+/**
+ * Catalog row priced for a specific client (MCC). `rate` is the price the
+ * logged-in account would actually be billed: the client's assigned rate-list
+ * price when the item is on that list, otherwise the catalogue MRP. `mrp` is
+ * kept alongside so the UI can show "list price" context when the two differ.
+ * Still cost-free (extends the public, costCt-stripped view).
+ */
+export interface CatalogItemPriced extends CatalogItemPublic {
+  rate: number | null;
+  rateSource: CatalogRateSource;
+}
+
 export interface CatalogQuery {
   q?: string; // fuzzy substring on code or name
   kind?: CatalogKind | 'all';

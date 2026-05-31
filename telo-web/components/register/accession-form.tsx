@@ -46,10 +46,18 @@ export function AccessionForm({
   const anyChecking = pendingGroups.some(
     (g) => status[g.sampleTypeId] === 'checking',
   );
+  const anyError = pendingGroups.some(
+    (g) => status[g.sampleTypeId] === 'error',
+  );
   const hasClientDup =
     new Set(filled).size < filled.length;
   const blocked =
-    pending || filled.length === 0 || anyTaken || anyChecking || hasClientDup;
+    pending ||
+    filled.length === 0 ||
+    anyTaken ||
+    anyChecking ||
+    anyError ||
+    hasClientDup;
 
   const sidsJson = JSON.stringify(
     pendingGroups
@@ -70,7 +78,9 @@ export function AccessionForm({
           ? 'Duplicate Sample IDs'
           : anyChecking
             ? 'Checking…'
-            : `Save ${filled.length} Sample ID${filled.length === 1 ? '' : 's'}`;
+            : anyError
+              ? 'Could not verify Sample IDs'
+              : `Save ${filled.length} Sample ID${filled.length === 1 ? '' : 's'}`;
 
   return (
     <form action={action} className="space-y-3">

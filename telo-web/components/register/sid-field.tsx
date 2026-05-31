@@ -11,7 +11,7 @@ function isNumericOnly(v: string) {
   return /^\d*$/.test(v);
 }
 
-export type SidStatus = 'idle' | 'checking' | 'available' | 'taken';
+export type SidStatus = 'idle' | 'checking' | 'available' | 'taken' | 'error';
 
 /**
  * One labeled Sample ID input — used once per distinct sample type an order
@@ -54,9 +54,18 @@ export function SidField({
       try {
         const r = await checkSid(v);
         if (my !== seq.current) return;
-        onStatus(r.status === 'taken' ? 'taken' : 'available');
+        // Only an explicit 'taken'/'available' drives the badge. Anything else
+        // ('error'/'empty') must NOT fall through to a green "available" —
+        // that masked real duplicates when the lookup could not run.
+        onStatus(
+          r.status === 'taken'
+            ? 'taken'
+            : r.status === 'available'
+              ? 'available'
+              : 'error',
+        );
       } catch {
-        if (my === seq.current) onStatus('idle');
+        if (my === seq.current) onStatus('error');
       }
     }, 400);
     return () => {
@@ -65,7 +74,8 @@ export function SidField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, locked]);
 
-  const bad = !locked && (status === 'taken' || clientDup || formatError);
+  const bad =
+    !locked && (status === 'taken' || status === 'error' || clientDup || formatError);
   const ok = locked || (status === 'available' && !clientDup && !formatError);
   return (
     <div className="space-y-1 rounded-lg border border-white/5 bg-card p-3">
@@ -142,6 +152,11 @@ export function SidField({
       {!locked && !formatError && status === 'taken' && !clientDup && (
         <p className="text-xs text-destructive">
           ✗ This Sample ID already exists in Noble — use a different one.
+        </p>
+      )}
+      {!locked && !formatError && status === 'error' && !clientDup && (
+        <p className="text-xs text-destructive">
+          ✗ Couldn&apos;t verify this Sample ID — try again before saving.
         </p>
       )}
       {!locked && !formatError && clientDup && (

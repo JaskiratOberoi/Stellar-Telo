@@ -28,6 +28,7 @@ import {
   type CreatableValue,
 } from '@/components/ui/creatable-combobox';
 import { SidField, type SidStatus } from '@/components/register/sid-field';
+import { ChevronDown } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -93,6 +94,10 @@ export function RegisterForm({
     units.length === 1 ? units[0].id : '',
   );
   const [f, setF] = useState<Fields>(DEFAULTS);
+  // Auto-fill "Paid now" with 50% of the running total so a bill is never
+  // saved with ₹0 collected by mistake. Stops mirroring once the operator
+  // edits the field manually, so an explicit amount is always respected.
+  const [receiptTouched, setReceiptTouched] = useState(false);
   const upd =
     (k: keyof Fields) =>
     (
@@ -184,7 +189,20 @@ export function RegisterForm({
   const [groups, setGroups] = useState<SampleGroup[]>([]);
   const [groupSids, setGroupSids] = useState<Record<number, string>>({});
   const [groupStatus, setGroupStatus] = useState<Record<number, SidStatus>>({});
+  // SIDs are optional at order time (the lab adds them later from the worklist),
+  // so the panel stays collapsed by default and doesn't compete for attention.
+  const [sidsOpen, setSidsOpen] = useState(false);
   const groupsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // If a typed SID turns out to be taken or unverifiable, reveal the panel so
+  // the blocking reason is never hidden behind a collapsed dropdown.
+  useEffect(() => {
+    if (
+      Object.values(groupStatus).some((s) => s === 'taken' || s === 'error')
+    ) {
+      setSidsOpen(true);
+    }
+  }, [groupStatus]);
 
   useEffect(() => {
     if (groupsTimer.current) clearTimeout(groupsTimer.current);
@@ -205,7 +223,7 @@ export function RegisterForm({
         return next;
       });
       setGroupStatus((prev) => {
-        const next: Record<number, 'idle' | 'checking' | 'available' | 'taken'> = {};
+        const next: Record<number, SidStatus> = {};
         for (const id of keep) if (prev[id] != null) next[id] = prev[id];
         return next;
       });
@@ -255,6 +273,26 @@ export function RegisterForm({
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
   }, [picked, mcc]);
+
+  // Keep "Paid now" pinned to half the current total while the operator hasn't
+  // overridden it. Re-runs whenever the priced total changes (tests added or
+  // removed, rate list switched).
+  useEffect(() => {
+    if (receiptTouched) return;
+    const half = preview.total > 0 ? String(Math.round(preview.total / 2)) : '0';
+    setF((s) => (s.receiptAmount === half ? s : { ...s, receiptAmount: half }));
+  }, [preview.total, receiptTouched]);
+
+  // Hard floor for "Paid now": operators may raise the amount but can never
+  // collect below 50% of the total (same figure the effect above prefills).
+  const minPaid = preview.total > 0 ? Math.round(preview.total / 2) : 0;
+  const belowMinPaid =
+    preview.total > 0 && Number(f.receiptAmount || 0) < minPaid;
+
+  // Hard cap for "Discount": never more than 50% of the total bill.
+  const maxDiscount = preview.total > 0 ? Math.round(preview.total / 2) : 0;
+  const aboveMaxDiscount =
+    preview.total > 0 && Number(f.discountAmount || 0) > maxDiscount;
 
   // pageMounted gate — placed AFTER all hooks so hook count stays stable
   // across renders (Rules of Hooks). The hooks for pageMounted itself live
@@ -554,10 +592,36 @@ export function RegisterForm({
                 id="receiptAmount"
                 name="receiptAmount"
                 type="number"
-                min={0}
+                min={minPaid}
                 value={f.receiptAmount}
-                onChange={upd('receiptAmount')}
+                onChange={(e) => {
+                  setReceiptTouched(true);
+                  upd('receiptAmount')(e);
+                }}
+                onBlur={() => {
+                  // Snap back up to the 50% floor if the operator typed less
+                  // (or cleared the field). They can still edit it higher.
+                  if (preview.total <= 0) return;
+                  const v = Number(f.receiptAmount);
+                  if (!Number.isFinite(v) || v < minPaid) {
+                    setF((s) => ({ ...s, receiptAmount: String(minPaid) }));
+                  }
+                }}
+                aria-invalid={belowMinPaid}
               />
+              {preview.total > 0 && (
+                <p
+                  className={`text-[10px] ${
+                    belowMinPaid ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                >
+                  {belowMinPaid
+                    ? `At least ₹${minPaid} (50%) must be collected.`
+                    : !receiptTouched
+                      ? `Prefilled at 50% — you can raise it (min ₹${minPaid}).`
+                      : `Minimum ₹${minPaid} (50%).`}
+                </p>
+              )}
             </div>
             <div className="space-y-0.5">
               <Label htmlFor="discountAmount">Discount (₹)</Label>
@@ -566,9 +630,30 @@ export function RegisterForm({
                 name="discountAmount"
                 type="number"
                 min={0}
+                max={maxDiscount}
                 value={f.discountAmount}
                 onChange={upd('discountAmount')}
+                onBlur={() => {
+                  // Snap a too-large discount back down to the 50% cap.
+                  if (preview.total <= 0) return;
+                  const v = Number(f.discountAmount);
+                  if (Number.isFinite(v) && v > maxDiscount) {
+                    setF((s) => ({ ...s, discountAmount: String(maxDiscount) }));
+                  }
+                }}
+                aria-invalid={aboveMaxDiscount}
               />
+              {preview.total > 0 && (
+                <p
+                  className={`text-[10px] ${
+                    aboveMaxDiscount ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                >
+                  {aboveMaxDiscount
+                    ? `Max discount ₹${maxDiscount} (50%).`
+                    : `Up to ₹${maxDiscount} (50%).`}
+                </p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -677,42 +762,71 @@ export function RegisterForm({
             </div>
           </div>
 
-          {groups.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Sample IDs · {groups.length} barcode{groups.length === 1 ? '' : 's'} needed
-              </p>
-              <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
-                Optional — leave blank and the lab technician adds them later
-                from the New Order worklist.
-              </p>
-              {(() => {
-                const trimmed = groups.map(
-                  (g) => (groupSids[g.sampleTypeId] ?? '').trim(),
-                );
-                return groups.map((g, idx) => {
-                  const me = trimmed[idx];
-                  const clientDup =
-                    !!me && trimmed.filter((v) => v === me).length > 1;
-                  return (
-                    <SidField
-                      key={g.sampleTypeId}
-                      group={g}
-                      value={groupSids[g.sampleTypeId] ?? ''}
-                      onChange={(next) =>
-                        setGroupSids((p) => ({ ...p, [g.sampleTypeId]: next }))
-                      }
-                      status={groupStatus[g.sampleTypeId] ?? 'idle'}
-                      onStatus={(s) =>
-                        setGroupStatus((p) => ({ ...p, [g.sampleTypeId]: s }))
-                      }
-                      clientDup={clientDup}
+          {groups.length > 0 && (() => {
+            const trimmed = groups.map(
+              (g) => (groupSids[g.sampleTypeId] ?? '').trim(),
+            );
+            const enteredCount = trimmed.filter((v) => v.length > 0).length;
+            return (
+              <div className="rounded-md border border-white/10 bg-white/[0.02]">
+                <button
+                  type="button"
+                  onClick={() => setSidsOpen((o) => !o)}
+                  aria-expanded={sidsOpen}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                >
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Sample IDs · {groups.length} barcode
+                    {groups.length === 1 ? '' : 's'} needed
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      {enteredCount > 0
+                        ? `${enteredCount} entered · optional`
+                        : 'Optional'}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        sidsOpen ? 'rotate-180' : ''
+                      }`}
                     />
-                  );
-                });
-              })()}
-            </div>
-          )}
+                  </span>
+                </button>
+                <div className={sidsOpen ? 'space-y-2 px-3 pb-3' : 'hidden'}>
+                  <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
+                    Optional — leave blank and the lab technician adds them later
+                    from the New Order worklist.
+                  </p>
+                  {groups.map((g, idx) => {
+                    const me = trimmed[idx];
+                    const clientDup =
+                      !!me && trimmed.filter((v) => v === me).length > 1;
+                    return (
+                      <SidField
+                        key={g.sampleTypeId}
+                        group={g}
+                        value={groupSids[g.sampleTypeId] ?? ''}
+                        onChange={(next) =>
+                          setGroupSids((p) => ({
+                            ...p,
+                            [g.sampleTypeId]: next,
+                          }))
+                        }
+                        status={groupStatus[g.sampleTypeId] ?? 'idle'}
+                        onStatus={(s) =>
+                          setGroupStatus((p) => ({
+                            ...p,
+                            [g.sampleTypeId]: s,
+                          }))
+                        }
+                        clientDup={clientDup}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {state.error && (
             <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -733,6 +847,9 @@ export function RegisterForm({
             const anyChecking = groups.some(
               (g) => groupStatus[g.sampleTypeId] === 'checking',
             );
+            const anyError = groups.some(
+              (g) => groupStatus[g.sampleTypeId] === 'error',
+            );
             const hasClientDup =
               new Set(trimmed.filter(Boolean)).size <
               trimmed.filter(Boolean).length;
@@ -748,8 +865,11 @@ export function RegisterForm({
               groups.length === 0 ||
               anyTaken ||
               anyChecking ||
+              anyError ||
               hasClientDup ||
-              coreMissing;
+              coreMissing ||
+              belowMinPaid ||
+              aboveMaxDiscount;
             const label = pending
               ? 'Registering…'
               : mcc === ''
@@ -764,7 +884,13 @@ export function RegisterForm({
                         ? 'Duplicate Sample IDs in form'
                         : anyChecking
                           ? 'Checking Sample IDs…'
-                          : `Review & register · ₹${preview.total}`;
+                          : anyError
+                            ? 'Could not verify Sample IDs'
+                            : belowMinPaid
+                              ? `Collect at least ₹${minPaid} (50%)`
+                              : aboveMaxDiscount
+                                ? `Discount can't exceed ₹${maxDiscount} (50%)`
+                                : `Review & register · ₹${preview.total}`;
 
             // Two-step submit. The first button only flips into review mode
             // (no commit); the operator confirms or goes back from the panel.

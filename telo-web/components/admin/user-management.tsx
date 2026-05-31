@@ -6,6 +6,7 @@ import {
   setRoleAction,
   resetPasswordAction,
   setActiveAction,
+  setLisAccessAction,
   updateUserAction,
   getEditableUserScope,
   searchMccUnitsAction,
@@ -73,8 +74,8 @@ export function UserManagement({
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return overview.users.filter((u) => {
-      if (activeFilter === 'active' && !u.isActive) return false;
-      if (activeFilter === 'inactive' && u.isActive) return false;
+      if (activeFilter === 'active' && !u.teloActive) return false;
+      if (activeFilter === 'inactive' && u.teloActive) return false;
       if (lisRoleFilter !== 'all' && u.lisUsertypeId !== lisRoleFilter)
         return false;
       // Telo role filter matches on the EFFECTIVE role — explicit row, else
@@ -200,13 +201,14 @@ export function UserManagement({
             <TableHead className="w-44">LIS role</TableHead>
             <TableHead className="w-40">Telo role</TableHead>
             <TableHead className="w-20 text-center">Active</TableHead>
-            <TableHead className="w-44">Actions</TableHead>
+            <TableHead className="w-28 text-center">LIS access</TableHead>
+            <TableHead className="w-56">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {pageRows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-muted-foreground">
+              <TableCell colSpan={7} className="text-muted-foreground">
                 {overview.users.length === 0
                   ? 'No Telo users yet — click "Add user" to onboard one.'
                   : 'No users match these filters.'}
@@ -324,14 +326,47 @@ function UserRow({
           )}
         </TableCell>
         <TableCell className="text-center">
-          {user.isActive ? (
+          {user.teloActive ? (
             <span className="text-xs text-secondary">Yes</span>
           ) : (
             <span className="text-xs text-destructive">No</span>
           )}
         </TableCell>
+        <TableCell className="text-center">
+          {user.hasTeloAccount ? (
+            user.lisAccess ? (
+              <span
+                className="text-xs text-secondary"
+                title="This Telo account can sign in to the LIS."
+              >
+                Enabled
+              </span>
+            ) : (
+              <span
+                className="text-xs text-amber-500"
+                title="LIS-locked — these credentials cannot sign in to the LIS."
+              >
+                Locked
+              </span>
+            )
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Native LIS account — LIS access is managed in the LIS."
+            >
+              —
+            </span>
+          )}
+        </TableCell>
         <TableCell>
           <div className="flex flex-wrap gap-1.5 text-xs">
+            {/* LIS access toggle — only for Telo-managed accounts. */}
+            {user.hasTeloAccount && (
+              <SetLisAccessButton
+                userId={user.id}
+                enabled={!user.lisAccess}
+              />
+            )}
             {/* Edit is Telo-only — see updateUserAction guard. */}
             {user.createdByTelo && (
               <button
@@ -363,7 +398,7 @@ function UserRow({
             </button>
             <SetActiveButton
               userId={user.id}
-              active={!user.isActive}
+              active={!user.teloActive}
               disabled={isSelf}
             />
           </div>
@@ -371,7 +406,7 @@ function UserRow({
       </TableRow>
       {openRow === 'edit' && user.createdByTelo && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-white/[0.03]">
             <EditUserForm
               user={user}
               onDone={() => setOpenRow(null)}
@@ -381,7 +416,7 @@ function UserRow({
       )}
       {openRow === 'role' && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-white/[0.03]">
             <SetRoleForm
               userId={user.id}
               current={user.teloRole}
@@ -392,7 +427,7 @@ function UserRow({
       )}
       {openRow === 'password' && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-white/[0.03]">
             <ResetPasswordForm
               userId={user.id}
               username={user.username}
@@ -764,6 +799,38 @@ function SetActiveButton({
         className="text-destructive hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
       >
         {active ? 'Activate' : 'Deactivate'}
+      </button>
+    </form>
+  );
+}
+
+function SetLisAccessButton({
+  userId,
+  enabled,
+}: {
+  userId: number;
+  enabled: boolean; // target state (toggle): true = grant LIS access
+}) {
+  const [, action, pending] = useActionState(setLisAccessAction, initial);
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+      <button
+        type="submit"
+        disabled={pending}
+        title={
+          enabled
+            ? 'Allow this Telo account to sign in to the LIS'
+            : 'Block this Telo account from signing in to the LIS'
+        }
+        className={
+          enabled
+            ? 'text-secondary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            : 'text-amber-500 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+        }
+      >
+        {enabled ? 'Enable LIS' : 'Lock LIS'}
       </button>
     </form>
   );
