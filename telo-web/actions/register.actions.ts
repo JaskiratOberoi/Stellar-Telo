@@ -124,14 +124,17 @@ export async function previewSampleGroupsAction(
 }
 
 /**
- * Live, server-authoritative price preview for the selected items. Rates are
- * MRP — centre-independent — so no MCC is needed; the preview resolves even
- * before a Client code is chosen.
+ * Live, server-authoritative price preview for the selected items, resolved
+ * against the Client's assigned rate list. Pass the selected MCC so the
+ * preview matches what the order will actually bill (createOrder re-resolves
+ * with the same two-tier logic). `mcc` null → MRP-only estimate (e.g. a
+ * multi-MCC operator who hasn't picked a Client code yet).
  *
  * One batched lookup for all lines (previously: N sequential round-trips per
  * preview, each one a WAN hop to the India SQL server).
  */
 export async function previewOrder(
+  mcc: number | null,
   items: { id: number; kind: 'test' | 'profile'; code: string; name: string }[],
 ): Promise<PreviewResult> {
   const user = await currentUser();
@@ -139,6 +142,7 @@ export async function previewOrder(
   if (items.length === 0) return { lines: [], total: 0 };
 
   const rates = await resolveRatesBatch(
+    mcc != null && Number.isInteger(mcc) ? mcc : null,
     items.map((it) => ({
       testMasterId: it.kind === 'test' ? it.id : null,
       profileCode: it.kind === 'profile' ? it.id : null,

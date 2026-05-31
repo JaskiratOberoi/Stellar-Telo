@@ -170,8 +170,22 @@ BEGIN
                   WHERE pm.id = i.testMasterId AND pm.IsActive = 1)
         END,
         CASE WHEN i.isProfile = 1 THEN 'p' ELSE 't' END,
-        -- Telo bills at MRP (catalogue list price), MCC-independent.
+        -- Rate is resolved per the Client's assigned rate list (@rateTypeId,
+        -- read above from tbl_med_mcc_unit_master.RateType), with catalogue
+        -- MRP as the fallback. This MUST mirror usp_telo_resolve_rate so the
+        -- billed price equals the price previewed in the order form.
+        --   tier 1: rate-list Price for @rateTypeId
+        --   tier 2: catalogue MRP
+        --   tier 3: 0 (never NULL — billing line needs a number)
         COALESCE(
+          CASE WHEN i.isProfile = 0
+            THEN (SELECT r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
+                    WHERE r.TestCode = i.testMasterId
+                      AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
+            ELSE (SELECT r.Price FROM dbo.tbl_med_profile_rates_with_pcc_types r
+                    WHERE r.profilecode = i.testMasterId
+                      AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
+          END,
           CASE WHEN i.isProfile = 0
             THEN (SELECT t.MRP FROM dbo.tbl_med_test_master t WHERE t.id = i.testMasterId)
             ELSE (SELECT pm.MRP FROM dbo.tbl_med_test_profile_master pm WHERE pm.id = i.testMasterId)

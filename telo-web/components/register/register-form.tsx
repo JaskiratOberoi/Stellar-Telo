@@ -241,19 +241,20 @@ export function RegisterForm({
       setPreview({ lines: [], total: 0 });
       return;
     }
-    // Rates are MRP — centre-independent — so the preview resolves even
-    // before a Client code is picked.
+    // Rates are resolved against the selected Client's rate list, so the
+    // preview re-runs whenever the picked items OR the Client code changes.
     previewTimer.current = setTimeout(() => {
       const seq = ++previewSeq.current;
+      const mccArg = mcc === '' ? null : Number(mcc);
       startPreview(async () => {
-        const r = await previewOrder(picked);
+        const r = await previewOrder(mccArg, picked);
         if (seq === previewSeq.current) setPreview(r);
       });
     }, 200);
     return () => {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
-  }, [picked]);
+  }, [picked, mcc]);
 
   // pageMounted gate — placed AFTER all hooks so hook count stays stable
   // across renders (Rules of Hooks). The hooks for pageMounted itself live

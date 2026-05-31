@@ -89,5 +89,5 @@ export async function getPricedCart(): Promise<PricedCart> {
     // Re-validate scope on every pricing pass (defence in depth).
     await assertMccInScope(user.uid, cart.mccCode);
   }
-  return priceCart(cart, (items) => resolveRatesBatch(items));
+  return priceCart(cart, (items) => resolveRatesBatch(cart.mccCode, items));
 }

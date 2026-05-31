@@ -55,104 +55,150 @@ export interface ResolveItem {
 }
 
 /**
- * Batched MRP lookup for many items at once. Mirrors usp_telo_resolve_rate's
- * logic (test → tbl_med_test_master.MRP, profile → tbl_med_test_profile_master.MRP)
- * with two key differences from the per-line variant:
+ * Batched, MCC-aware rate resolution for many items at once. Mirrors
+ * usp_telo_resolve_rate's two-tier logic so the previewed price always equals
+ * the billed price:
  *
- *   1. Routes through `loadCatalog()` (Redis-cached 15 min). For the common
- *      case — items the user picked from the catalogue — this resolves all
- *      MRPs in one Redis GET, zero DB round-trips.
- *   2. Falls back to two parameterised IN-list SELECTs for anything missing
- *      from the catalogue cache (rare: ids that were active when picked but
- *      have since been deactivated, or hand-constructed inputs).
+ *   tier 1 (ratelist): the item's Price in the rate list assigned to the MCC
+ *                      (tbl_med_mcc_unit_master.RateType). Read LIVE from the
+ *                      rate tables so an updated LIS rate list shows up in
+ *                      Telo immediately — no cache, no re-sync step.
+ *   tier 2 (mrp)     : catalogue MRP when the item isn't in the rate list, or
+ *                      the MCC has no rate list assigned. MRP comes from the
+ *                      Redis-cached catalogue (15 min) — fine for a fallback.
  *
+ * Performance: at most ~3 round-trips total regardless of item count —
+ *   1 to read the MCC's RateType, 1 IN-list for test rate-list prices,
+ *   1 IN-list for profile rate-list prices (+ MRP-fallback IN-lists only for
+ *   ids the cached catalogue didn't answer). No per-line fan-out.
+ *
+ * `mccId` null (or an MCC with no RateType) => MRP-only (legacy behaviour).
  * Order of the returned array matches the input order; missing ids resolve
- * to { rate: null, source: 'none' }. Read-only against the LIS schema — no
- * writes, no DDL.
+ * to { rate: null, source: 'none' }. Read-only — no writes, no DDL.
  */
 export async function resolveRatesBatch(
+  mccId: number | null,
   items: ResolveItem[],
 ): Promise<ResolvedRate[]> {
   if (items.length === 0) return [];
 
-  // Build per-kind maps from the cached catalogue first.
-  const testMap = new Map<number, number | null>();
-  const profileMap = new Map<number, number | null>();
+  // ── MRP fallback maps from the cached catalogue ─────────────────────
+  const testMrp = new Map<number, number | null>();
+  const profileMrp = new Map<number, number | null>();
   try {
     const catalog = await loadCatalog();
     for (const c of catalog) {
-      if (c.kind === 'test') testMap.set(c.id, c.mrp);
-      else profileMap.set(c.id, c.mrp);
+      if (c.kind === 'test') testMrp.set(c.id, c.mrp);
+      else profileMrp.set(c.id, c.mrp);
     }
   } catch {
     /* fall through to DB lookups for everything */
   }
 
-  // Dedup ids and only DB-look-up what the catalogue didn't already answer.
-  const missingTestIds = Array.from(
-    new Set(
-      items
-        .map((i) => i.testMasterId)
-        .filter(
-          (n): n is number =>
-            Number.isInteger(n) && (n as number) > 0 && !testMap.has(n as number),
-        ),
-    ),
-  );
-  const missingProfileIds = Array.from(
-    new Set(
-      items
-        .map((i) => i.profileCode)
-        .filter(
-          (n): n is number =>
-            Number.isInteger(n) && (n as number) > 0 && !profileMap.has(n as number),
-        ),
-    ),
-  );
+  const uniq = (xs: (number | null | undefined)[]) =>
+    Array.from(
+      new Set(
+        xs.filter((n): n is number => Number.isInteger(n) && (n as number) > 0),
+      ),
+    );
+  const testIds = uniq(items.map((i) => i.testMasterId));
+  const profileIds = uniq(items.map((i) => i.profileCode));
 
-  if (missingTestIds.length > 0 || missingProfileIds.length > 0) {
-    await withRetry(async () => {
-      const pool = await getPool();
+  // ── Live rate-list prices for the MCC's assigned RateType ───────────
+  const testRate = new Map<number, number>();
+  const profileRate = new Map<number, number>();
+  let rateTypeId: number | null = null;
 
-      if (missingTestIds.length > 0) {
-        const req = pool.request();
-        const params = missingTestIds
-          .map((id, i) => {
-            req.input(`t${i}`, sql.Int, id);
-            return `@t${i}`;
-          })
-          .join(',');
-        const r = await req.query<{ id: number; mrp: number | null }>(
-          `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_master WHERE id IN (${params})`,
+  await withRetry(async () => {
+    const pool = await getPool();
+
+    if (mccId != null) {
+      const rt = await pool
+        .request()
+        .input('mcc', sql.Int, mccId)
+        .query<{ RateType: number | null }>(
+          `SELECT RateType FROM dbo.tbl_med_mcc_unit_master WHERE id = @mcc`,
         );
-        for (const row of r.recordset) testMap.set(row.id, row.mrp);
-      }
+      rateTypeId = rt.recordset[0]?.RateType ?? null;
+    }
 
-      if (missingProfileIds.length > 0) {
-        const req = pool.request();
-        const params = missingProfileIds
-          .map((id, i) => {
-            req.input(`p${i}`, sql.Int, id);
-            return `@p${i}`;
-          })
-          .join(',');
-        const r = await req.query<{ id: number; mrp: number | null }>(
-          `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_profile_master WHERE id IN (${params})`,
-        );
-        for (const row of r.recordset) profileMap.set(row.id, row.mrp);
-      }
-    });
-  }
+    if (rateTypeId != null && testIds.length > 0) {
+      const req = pool.request().input('rt', sql.Int, rateTypeId);
+      const params = testIds
+        .map((id, i) => {
+          req.input(`t${i}`, sql.Int, id);
+          return `@t${i}`;
+        })
+        .join(',');
+      const r = await req.query<{ TestCode: number; Price: number }>(
+        `SELECT TestCode, Price FROM dbo.tbl_med_test_rates_with_pcc_type
+         WHERE RateTypeId = @rt AND IsActive = 1 AND TestCode IN (${params})`,
+      );
+      for (const row of r.recordset) testRate.set(row.TestCode, row.Price);
+    }
 
+    if (rateTypeId != null && profileIds.length > 0) {
+      const req = pool.request().input('rt', sql.Int, rateTypeId);
+      const params = profileIds
+        .map((id, i) => {
+          req.input(`p${i}`, sql.Int, id);
+          return `@p${i}`;
+        })
+        .join(',');
+      const r = await req.query<{ profilecode: number; Price: number }>(
+        `SELECT profilecode, Price FROM dbo.tbl_med_profile_rates_with_pcc_types
+         WHERE RateTypeId = @rt AND IsActive = 1 AND profilecode IN (${params})`,
+      );
+      for (const row of r.recordset) profileRate.set(row.profilecode, row.Price);
+    }
+
+    // ── MRP fallback for ids the cached catalogue didn't answer ───────
+    const missingTestIds = testIds.filter((id) => !testMrp.has(id));
+    const missingProfileIds = profileIds.filter((id) => !profileMrp.has(id));
+
+    if (missingTestIds.length > 0) {
+      const req = pool.request();
+      const params = missingTestIds
+        .map((id, i) => {
+          req.input(`mt${i}`, sql.Int, id);
+          return `@mt${i}`;
+        })
+        .join(',');
+      const r = await req.query<{ id: number; mrp: number | null }>(
+        `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_master WHERE id IN (${params})`,
+      );
+      for (const row of r.recordset) testMrp.set(row.id, row.mrp);
+    }
+
+    if (missingProfileIds.length > 0) {
+      const req = pool.request();
+      const params = missingProfileIds
+        .map((id, i) => {
+          req.input(`mp${i}`, sql.Int, id);
+          return `@mp${i}`;
+        })
+        .join(',');
+      const r = await req.query<{ id: number; mrp: number | null }>(
+        `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_profile_master WHERE id IN (${params})`,
+      );
+      for (const row of r.recordset) profileMrp.set(row.id, row.mrp);
+    }
+  });
+
+  // ── Assemble: rate-list price first, else MRP fallback ──────────────
   return items.map((it) => {
-    let mrp: number | null | undefined;
-    if (it.testMasterId != null) mrp = testMap.get(it.testMasterId);
-    else if (it.profileCode != null) mrp = profileMap.get(it.profileCode);
-    const rate = mrp ?? null;
-    return {
-      rate,
-      source: rate != null ? ('mrp' as const) : ('none' as const),
-      rateTypeId: null,
-    };
+    if (it.testMasterId != null) {
+      const rl = testRate.get(it.testMasterId);
+      if (rl != null) return { rate: rl, source: 'ratelist', rateTypeId };
+      const mrp = testMrp.get(it.testMasterId) ?? null;
+      return { rate: mrp, source: mrp != null ? 'mrp' : 'none', rateTypeId: null };
+    }
+    if (it.profileCode != null) {
+      const rl = profileRate.get(it.profileCode);
+      if (rl != null) return { rate: rl, source: 'ratelist', rateTypeId };
+      const mrp = profileMrp.get(it.profileCode) ?? null;
+      return { rate: mrp, source: mrp != null ? 'mrp' : 'none', rateTypeId: null };
+    }
+    return { rate: null, source: 'none', rateTypeId: null };
   });
 }
