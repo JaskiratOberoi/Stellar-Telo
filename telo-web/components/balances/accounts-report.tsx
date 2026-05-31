@@ -6,10 +6,11 @@
  * Rendered as `hidden print:block` in the balances page wrapper.
  */
 
-import type { PendingBillRow } from '@/db/read/ledger';
+import type { PendingBillRow, BillReceiptRow } from '@/db/read/ledger';
 import type { MccInvoiceConfig } from '@/db/read/invoiceConfig';
 import type { ReceiptTotals } from '@/db/read/receipts';
 import { fmtIST } from '@/lib/datetime';
+import { Fragment } from 'react';
 
 interface AccountsReportProps {
   mccName: string | null;
@@ -18,6 +19,7 @@ interface AccountsReportProps {
   from: string;
   to: string;
   bills: PendingBillRow[];
+  receiptsByBill: Record<number, BillReceiptRow[]>;
   totalBalance: number;
   /** Receipt-date-keyed cash-flow totals (see db/read/receipts.ts). */
   receipts: ReceiptTotals;
@@ -32,6 +34,7 @@ export function AccountsReport({
   from,
   to,
   bills,
+  receiptsByBill,
   totalBalance,
   receipts,
 }: AccountsReportProps) {
@@ -186,21 +189,59 @@ export function AccountsReport({
               </tr>
             </thead>
             <tbody>
-              {bills.map((b, idx) => (
-                <tr key={b.billId} className="border-b border-gray-100">
-                  <Td className="text-gray-500">{idx + 1}</Td>
-                  <Td>{fmtIST(b.billDate, 'date')}</Td>
-                  <Td className="font-mono text-[10px]">
-                    {b.billNumber ?? b.billId}
-                  </Td>
-                  <Td>{b.patientName ?? '—'}</Td>
-                  <Td className="text-gray-700">{b.doctorName ?? '—'}</Td>
-                  <Td className="text-[10px]">{b.paymentType ?? '—'}</Td>
-                  <Td className="text-right">{inr(b.amount)}</Td>
-                  <Td className="text-right">{inr(b.amountPaid)}</Td>
-                  <Td className="text-right font-medium">{inr(b.balance)}</Td>
-                </tr>
-              ))}
+              {bills.map((b, idx) => {
+                const txns = receiptsByBill[b.billId] ?? [];
+                return (
+                  <Fragment key={b.billId}>
+                    <tr key={b.billId} className="border-b border-gray-100">
+                      <Td className="text-gray-500">{idx + 1}</Td>
+                      <Td>{fmtIST(b.billDate, 'date')}</Td>
+                      <Td className="font-mono text-[10px]">
+                        {b.billNumber ?? b.billId}
+                      </Td>
+                      <Td>{b.patientName ?? '—'}</Td>
+                      <Td className="text-gray-700">{b.doctorName ?? '—'}</Td>
+                      <Td className="text-[10px]">{b.paymentType ?? '—'}</Td>
+                      <Td className="text-right">{inr(b.amount)}</Td>
+                      <Td className="text-right">{inr(b.amountPaid)}</Td>
+                      <Td className="text-right font-medium">{inr(b.balance)}</Td>
+                    </tr>
+                    {txns.map((tx, ti) => {
+                      const isRefund = tx.kind === 'refund';
+                      return (
+                        <tr
+                          key={`${b.billId}-tx-${ti}`}
+                          className="border-b border-gray-50 bg-gray-50/60 text-[9px] text-gray-600"
+                        >
+                          <Td>{''}</Td>
+                          <Td>{tx.date ? fmtIST(tx.date) : '—'}</Td>
+                          <Td className="font-mono text-[9px]">
+                            {tx.txnId ?? '—'}
+                          </Td>
+                          <Td colSpan={2}>
+                            {tx.method ?? 'Cash'}
+                            {isRefund && (
+                              <span className="ml-1 rounded border border-red-300 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-red-700">
+                                refund
+                              </span>
+                            )}
+                          </Td>
+                          <Td className="font-mono text-[9px]">
+                            {tx.reference ?? '—'}
+                          </Td>
+                          <Td colSpan={2}>{''}</Td>
+                          <Td
+                            className={`text-right ${isRefund ? 'text-red-700' : ''}`}
+                          >
+                            {isRefund ? '− ' : ''}
+                            {inr(tx.amount)}
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="border-t border-gray-400 bg-gray-50 font-semibold">
@@ -220,6 +261,7 @@ export function AccountsReport({
           * Paid is each bill&apos;s current paid total (may include payments
           made outside this period). For period cash-flow, see the
           &ldquo;Collected in period&rdquo; figure in the Summary above.
+          Transaction sub-rows list every payment/refund with its Telo txn ID.
         </p>
       </div>
 

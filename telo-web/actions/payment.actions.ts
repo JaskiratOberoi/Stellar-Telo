@@ -101,7 +101,7 @@ export async function recordRefundAction(
     }
     const { billId, method, amount, txnRef } = parsed.data;
 
-    const user = await requireCapability('payment:capture');
+    const user = await requireCapability('payment:refund');
     const scope = await getMccScope(user.uid);
     const order = await getOrder(billId, scope);
     if (!order) return { ok: false, error: 'Order not found in your scope.' };

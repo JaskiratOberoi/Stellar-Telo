@@ -98,7 +98,8 @@ async function ReceiptBody({
 
   const canCapture = hasCapability(caps, 'payment:capture');
   const canPay = canViewBill && order.balance > 0 && canCapture;
-  const canRefund = canViewBill && order.amountPaid > 0 && canCapture;
+  const canRefund =
+    canViewBill && order.amountPaid > 0 && hasCapability(caps, 'payment:refund');
 
   const dateLabel = fmtIST(order.billDate);
   const genderLabel =
@@ -370,6 +371,12 @@ function ReceiptRow({
         <span className="text-zinc-500">{dateLabel}</span>
         <span className="mx-1 text-zinc-300">·</span>
         <span className="text-zinc-900">{rcpt.method ?? 'Cash'}</span>
+        {rcpt.txnId && (
+          <>
+            <span className="mx-1 text-zinc-300">·</span>
+            <span className="font-mono text-zinc-700">{rcpt.txnId}</span>
+          </>
+        )}
         {rcpt.reference && (
           <>
             <span className="mx-1 text-zinc-300">·</span>

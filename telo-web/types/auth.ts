@@ -20,6 +20,7 @@ export type Capability =
   | 'patient:view'
   | 'bill:view'
   | 'payment:capture'
+  | 'payment:refund'
   | 'rate:view'
   | 'rate:manage'
   | 'balance:view'

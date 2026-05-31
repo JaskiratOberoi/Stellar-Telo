@@ -16,6 +16,7 @@ export interface RecordRefundResult {
   errorCode: string | null;
   message: string | null;
   balance: number | null;
+  txnId: string | null;
 }
 
 /**
@@ -44,6 +45,7 @@ export async function recordRefund(args: {
         error_code: string | null;
         message: string | null;
         balance: number | null;
+        txn_id: string | null;
       }>('dbo.usp_telo_record_refund');
     const row = r.recordset[0];
     return {
@@ -51,6 +53,7 @@ export async function recordRefund(args: {
       errorCode: row?.error_code ?? null,
       message: row?.message ?? null,
       balance: row?.balance ?? null,
+      txnId: row?.txn_id?.trim() || null,
     };
   });
 }

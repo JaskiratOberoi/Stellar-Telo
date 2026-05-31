@@ -27,13 +27,35 @@ import { Button } from '@/components/ui/button';
 const PRINT_SETTLE_MS = 150;
 const IMAGE_WAIT_TIMEOUT_MS = 4_000;
 const POST_PRINT_CLEANUP_MS = 5_000;
+const LOAD_TIMEOUT_MS = 30_000;
+
+function removeIframe(iframe: HTMLIFrameElement) {
+  if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+}
+
+function scheduleIframeCleanup(iframe: HTMLIFrameElement) {
+  let removed = false;
+  const cleanup = () => {
+    if (removed) return;
+    removed = true;
+    removeIframe(iframe);
+  };
+  const win = iframe.contentWindow;
+  if (win) {
+    win.addEventListener('afterprint', cleanup, { once: true });
+  }
+  // Some browsers (notably Chrome "Save as PDF") fire afterprint on the
+  // opener/parent window rather than the iframe — listen on both.
+  window.addEventListener('afterprint', cleanup, { once: true });
+  window.setTimeout(cleanup, POST_PRINT_CLEANUP_MS);
+}
 
 function printFragment(
   fragmentUrl: string,
   htmlClass: 'print-bill' | 'print-lab',
   title: string,
 ): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
     iframe.setAttribute('tabindex', '-1');
@@ -49,49 +71,66 @@ function printFragment(
     iframe.src = fragmentUrl;
     document.body.appendChild(iframe);
 
-    let done = false;
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    let settled = false;
+    const finishOk = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(loadTimeout);
       resolve();
     };
+    const finishErr = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(loadTimeout);
+      removeIframe(iframe);
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
+    const loadTimeout = window.setTimeout(() => {
+      console.error('print fragment load timed out');
+      finishErr(new Error('Print timed out'));
+    }, LOAD_TIMEOUT_MS);
 
     iframe.addEventListener(
       'load',
-      async () => {
-        const doc = iframe.contentDocument;
-        if (doc) {
-          // The fragment page renders inside the root layout (<html class="dark">).
-          // Tag it with the print-bill/print-lab class so the @media print rules
-          // in globals.css apply identically to the legacy in-page print flow.
-          doc.documentElement.classList.add(htmlClass);
-          // Chrome uses the document title as the default PDF filename.
-          doc.title = title;
-        }
-
-        // Wait for every image in the fragment to settle before printing —
-        // without this Chrome snapshots the preview before the bill logo
-        // finishes loading and the print comes out missing the image. The
-        // server already serves it with ETag caching, so repeat prints are
-        // instant from the browser cache.
-        await waitForImagesToSettle(iframe);
-
-        window.setTimeout(() => {
+      () => {
+        void (async () => {
           try {
+            const doc = iframe.contentDocument;
+            if (doc) {
+              // The fragment page renders inside the root layout (<html class="dark">).
+              // Tag it with the print-bill/print-lab class so the @media print rules
+              // in globals.css apply identically to the legacy in-page print flow.
+              doc.documentElement.classList.add(htmlClass);
+              // Chrome uses the document title as the default PDF filename.
+              doc.title = title;
+            }
+
+            // Wait for every image in the fragment to settle before printing —
+            // without this Chrome snapshots the preview before the bill logo
+            // finishes loading and the print comes out missing the image. The
+            // server already serves it with ETag caching, so repeat prints are
+            // instant from the browser cache.
+            await waitForImagesToSettle(iframe);
+            await new Promise<void>((r) =>
+              window.setTimeout(r, PRINT_SETTLE_MS),
+            );
+
             iframe.contentWindow?.focus();
             iframe.contentWindow?.print();
+
+            // Resolve as soon as the dialog opens so the button label resets.
+            // Keep the iframe alive until afterprint — removing it early blanks
+            // the print preview. afterprint is unreliable on iframe windows when
+            // the user picks "Save as PDF", so scheduleIframeCleanup also
+            // listens on the parent window and falls back to a timeout.
+            finishOk();
+            scheduleIframeCleanup(iframe);
           } catch (err) {
-            console.error('print failed', err);
-            cleanup();
-            return;
+            console.error('print fragment prepare failed', err);
+            finishErr(err);
           }
-          const win = iframe.contentWindow;
-          if (win) {
-            win.addEventListener('afterprint', cleanup, { once: true });
-          }
-          window.setTimeout(cleanup, POST_PRINT_CLEANUP_MS);
-        }, PRINT_SETTLE_MS);
+        })();
       },
       { once: true },
     );
@@ -99,7 +138,7 @@ function printFragment(
       'error',
       () => {
         console.error('print fragment failed to load');
-        cleanup();
+        finishErr(new Error('Print fragment failed to load'));
       },
       { once: true },
     );

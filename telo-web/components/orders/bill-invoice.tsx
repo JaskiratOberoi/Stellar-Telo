@@ -249,6 +249,9 @@ export function BillInvoice({
                 <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500">
                   Reference
                 </th>
+                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
+                  Txn ID
+                </th>
                 <th className="py-1 text-right font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
                   Amount (₹)
                 </th>
@@ -273,6 +276,9 @@ export function BillInvoice({
                     </td>
                     <td className="py-0.5 pr-2 font-mono text-[10px] text-gray-600">
                       {rcpt.reference ?? '—'}
+                    </td>
+                    <td className="py-0.5 pr-2 font-mono text-[10px] text-gray-700">
+                      {rcpt.txnId ?? '—'}
                     </td>
                     <td
                       className={`py-0.5 text-right ${isRefund ? 'text-red-700' : ''}`}

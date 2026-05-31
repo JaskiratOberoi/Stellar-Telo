@@ -14,7 +14,7 @@
  * Idempotent on @gatewayRef: a repeated webhook for the same payment id is a
  * no-op (returns ok with already_recorded=1) so payment retries are safe.
  *
- * Returns: { ok, error_code, message, already_recorded BIT, balance INT }
+ * Returns: { ok, error_code, message, already_recorded BIT, balance INT, txn_id VARCHAR(24) }
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_record_receipt
     @billId      INT,
@@ -27,13 +27,13 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @bal INT;
+    DECLARE @bal INT, @rid INT, @txn VARCHAR(24);
 
     IF NOT EXISTS (SELECT 1 FROM dbo.tbl_billing_patient_detail WHERE id = @billId)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'NOT_FOUND',
                message = N'Unknown bill', already_recorded = CAST(0 AS BIT),
-               balance = CAST(NULL AS INT);
+               balance = CAST(NULL AS INT), txn_id = CAST(NULL AS VARCHAR(24));
         RETURN;
     END
 
@@ -43,9 +43,13 @@ BEGIN
         WHERE bill_id = @billId AND card_number = @gatewayRef)
     BEGIN
         SELECT @bal = Balance FROM dbo.tbl_billing_patient_detail WHERE id = @billId;
+        SELECT @txn = t.txn_id
+        FROM dbo.telo_txn t
+        JOIN dbo.tbl_billing_patient_amount_receipt r ON r.id = t.receipt_id
+        WHERE r.bill_id = @billId AND r.card_number = @gatewayRef;
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
                message = N'Already recorded', already_recorded = CAST(1 AS BIT),
-               balance = @bal;
+               balance = @bal, txn_id = @txn;
         RETURN;
     END
 
@@ -59,6 +63,16 @@ BEGIN
             (@billId, GETDATE(), @amount,
              CONCAT(N'telo:', ISNULL(@userId, 0)), '1',
              @payMode, @gatewayRef);
+        SET @rid = SCOPE_IDENTITY();
+        SET @txn = CONCAT(
+            N'TXN',
+            RIGHT(
+                CONCAT(N'00000000', CONVERT(VARCHAR(20), NEXT VALUE FOR dbo.telo_txn_seq)),
+                8
+            )
+        );
+        INSERT INTO dbo.telo_txn (receipt_id, bill_id, txn_id)
+        VALUES (@rid, @billId, @txn);
 
         UPDATE dbo.tbl_billing_patient_detail
         SET amount_paid = ISNULL(amount_paid, 0) + @amount,
@@ -74,12 +88,13 @@ BEGIN
 
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
                message = CAST(NULL AS NVARCHAR(200)),
-               already_recorded = CAST(0 AS BIT), balance = @bal;
+               already_recorded = CAST(0 AS BIT), balance = @bal, txn_id = @txn;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK;
         SELECT ok = CAST(0 AS BIT), error_code = 'INTERNAL',
                message = LEFT(ERROR_MESSAGE(), 200),
-               already_recorded = CAST(0 AS BIT), balance = CAST(NULL AS INT);
+               already_recorded = CAST(0 AS BIT), balance = CAST(NULL AS INT),
+               txn_id = CAST(NULL AS VARCHAR(24));
     END CATCH
 END

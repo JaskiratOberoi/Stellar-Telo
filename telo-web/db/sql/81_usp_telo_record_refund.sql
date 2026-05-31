@@ -12,7 +12,7 @@
  * does NOT post to the LIS client account (tbl_med_mcc_account_*) — Telo's
  * payments and refunds are tracked entirely in Telo's billing tables.
  *
- * Returns { ok, error_code, message, balance INT }.
+ * Returns { ok, error_code, message, balance INT, txn_id VARCHAR(24) }.
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_record_refund
     @billId     INT,
@@ -25,13 +25,13 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @paid INT, @bal INT;
+    DECLARE @paid INT, @bal INT, @rid INT, @txn VARCHAR(24);
 
     IF @amount IS NULL OR @amount <= 0
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'Refund amount must be positive',
-               balance = CAST(NULL AS INT);
+               balance = CAST(NULL AS INT), txn_id = CAST(NULL AS VARCHAR(24));
         RETURN;
     END
 
@@ -40,14 +40,15 @@ BEGIN
     IF @@ROWCOUNT = 0
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'NOT_FOUND',
-               message = N'Unknown bill', balance = CAST(NULL AS INT);
+               message = N'Unknown bill', balance = CAST(NULL AS INT),
+               txn_id = CAST(NULL AS VARCHAR(24));
         RETURN;
     END
     IF @amount > @paid
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = CONCAT(N'Refund exceeds amount paid (₹', @paid, N')'),
-               balance = @bal;
+               balance = @bal, txn_id = CAST(NULL AS VARCHAR(24));
         RETURN;
     END
 
@@ -62,6 +63,16 @@ BEGIN
              CONCAT(N'telo:', ISNULL(@userId, 0)), '2',
              LEFT(CONCAT(N'Refund - ', ISNULL(@payMode, N'Cash')), 50),
              @reference);
+        SET @rid = SCOPE_IDENTITY();
+        SET @txn = CONCAT(
+            N'TXN',
+            RIGHT(
+                CONCAT(N'00000000', CONVERT(VARCHAR(20), NEXT VALUE FOR dbo.telo_txn_seq)),
+                8
+            )
+        );
+        INSERT INTO dbo.telo_txn (receipt_id, bill_id, txn_id)
+        VALUES (@rid, @billId, @txn);
 
         UPDATE dbo.tbl_billing_patient_detail
         SET amount_paid = ISNULL(amount_paid, 0) - @amount,
@@ -75,12 +86,12 @@ BEGIN
         COMMIT;
 
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
-               message = CAST(NULL AS NVARCHAR(200)), balance = @bal;
+               message = CAST(NULL AS NVARCHAR(200)), balance = @bal, txn_id = @txn;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK;
         SELECT ok = CAST(0 AS BIT), error_code = 'INTERNAL',
                message = LEFT(ERROR_MESSAGE(), 200),
-               balance = CAST(NULL AS INT);
+               balance = CAST(NULL AS INT), txn_id = CAST(NULL AS VARCHAR(24));
     END CATCH
 END

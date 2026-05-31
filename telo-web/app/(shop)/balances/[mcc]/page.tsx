@@ -121,6 +121,7 @@ export default async function BalanceMccPage({
           from={from}
           to={to}
           bills={data.bills}
+          receiptsByBill={data.receiptsByBill}
           totalBalance={data.totalBalance}
           receipts={receipts}
         />

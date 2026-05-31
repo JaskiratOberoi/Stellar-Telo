@@ -6,8 +6,10 @@ import { getMccScope } from '@/auth/scope';
 import {
   summarizeTeloAccounts,
   listTeloBillsForMcc,
+  listTeloReceiptsForBills,
   type AccountsRow,
   type PendingBillRow,
+  type BillReceiptRow,
 } from '@/db/read/ledger';
 
 export interface AccountsTotals {
@@ -41,6 +43,7 @@ export interface AccountsSummary {
 export interface LedgerForMcc {
   mccId: number;
   bills: PendingBillRow[];
+  receiptsByBill: Record<number, BillReceiptRow[]>;
   totalBalance: number;
   range: { from: string; to: string };
   fetchedAt: string;
@@ -124,6 +127,7 @@ export async function getLedgerForMcc(
     return {
       mccId,
       bills: [],
+      receiptsByBill: {},
       totalBalance: 0,
       range: args,
       fetchedAt: new Date().toISOString(),
@@ -131,9 +135,15 @@ export async function getLedgerForMcc(
   }
   const scope = await getMccScope(user.uid);
   const bills = await listTeloBillsForMcc(mccId, scope, args.from, args.to);
+  const receiptRows = await listTeloReceiptsForBills(bills.map((b) => b.billId));
+  const receiptsByBill: Record<number, BillReceiptRow[]> = {};
+  for (const row of receiptRows) {
+    (receiptsByBill[row.billId] ??= []).push(row);
+  }
   return {
     mccId,
     bills,
+    receiptsByBill,
     totalBalance: bills.reduce((a, b) => a + b.balance, 0),
     range: args,
     fetchedAt: new Date().toISOString(),

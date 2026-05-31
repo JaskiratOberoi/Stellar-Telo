@@ -28,6 +28,7 @@ export interface RecordReceiptResult {
   message: string | null;
   alreadyRecorded: boolean;
   balance: number | null;
+  txnId: string | null;
 }
 
 /**
@@ -56,6 +57,7 @@ export async function recordReceipt(args: {
         message: string | null;
         already_recorded: boolean;
         balance: number | null;
+        txn_id: string | null;
       }>('dbo.usp_telo_record_receipt');
     const row = r.recordset[0];
     return {
@@ -64,6 +66,7 @@ export async function recordReceipt(args: {
       message: row?.message ?? null,
       alreadyRecorded: row?.already_recorded === true,
       balance: row?.balance ?? null,
+      txnId: row?.txn_id?.trim() || null,
     };
   });
 }

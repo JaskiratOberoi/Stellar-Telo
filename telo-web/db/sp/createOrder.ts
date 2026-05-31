@@ -50,6 +50,7 @@ export interface CreateOrderResult {
   total: number;
   sampleCount: number;
   samples: IssuedSample[];
+  txnId: string | null;
 }
 
 function buildTestListTvp(items: CartItem[]): sql.Table {
@@ -141,6 +142,7 @@ export async function createOrder(
         bill_number: number | null;
         total: number;
         sample_count: number;
+        txn_id: string | null;
       }>,
       Array<{
         sample_id: number;
@@ -168,6 +170,7 @@ export async function createOrder(
       total: status?.total ?? 0,
       sampleCount: status?.sample_count ?? samples.length,
       samples,
+      txnId: status?.txn_id?.trim() || null,
     };
   });
 }

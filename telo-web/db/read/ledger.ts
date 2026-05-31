@@ -36,6 +36,17 @@ export interface PendingBillRow {
   ageType: number | null;
 }
 
+/** One payment or refund row for a bill (with Telo txn id). */
+export interface BillReceiptRow {
+  billId: number;
+  date: string | null;
+  method: string | null;
+  reference: string | null;
+  txnId: string | null;
+  amount: number;
+  kind: 'payment' | 'refund';
+}
+
 function scopeParams(req: sql.Request, scope: number[]): string {
   return scope
     .map((c, i) => {
@@ -264,6 +275,59 @@ export async function listTeloBillsForMcc(
         x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
           ? Number(String(x.ageType).trim())
           : null,
+    }));
+  });
+}
+
+/**
+ * All payment/refund transactions for the given bill ids (lifetime history).
+ * Used by the printable account statement to list txn ids per bill.
+ */
+export async function listTeloReceiptsForBills(
+  billIds: number[],
+): Promise<BillReceiptRow[]> {
+  const ids = billIds.filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return [];
+  return withRetry(async () => {
+    const pool = await getPool();
+    const req = pool.request();
+    const inClause = ids
+      .map((id, i) => {
+        req.input(`bid${i}`, sql.Int, id);
+        return `@bid${i}`;
+      })
+      .join(', ');
+    const r = await req.query<{
+      billId: number;
+      date: Date | null;
+      method: string | null;
+      reference: string | null;
+      txnId: string | null;
+      amount: number;
+      status: string | null;
+    }>(`
+      SELECT r.bill_id AS billId,
+             r.recd_date AS date,
+             r.pay_mode AS method,
+             r.card_number AS reference,
+             t.txn_id AS txnId,
+             r.amount,
+             r.receive_status AS status
+      FROM dbo.tbl_billing_patient_amount_receipt r
+      LEFT JOIN dbo.telo_txn t ON t.receipt_id = r.id
+      JOIN dbo.tbl_billing_patient_detail b ON b.id = r.bill_id
+      WHERE b.addedby LIKE 'telo:%'
+        AND r.bill_id IN (${inClause})
+      ORDER BY r.bill_id, r.id
+    `);
+    return r.recordset.map((x) => ({
+      billId: x.billId,
+      date: x.date ? x.date.toISOString() : null,
+      method: x.method?.trim() || null,
+      reference: x.reference?.trim() || null,
+      txnId: x.txnId?.trim() || null,
+      amount: Number(x.amount ?? 0),
+      kind: x.status === '2' ? 'refund' as const : 'payment' as const,
     }));
   });
 }

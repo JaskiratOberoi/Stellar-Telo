@@ -38,6 +38,7 @@ export interface OrderReceipt {
   amount: number;
   method: string | null;
   reference: string | null;
+  txnId: string | null;
   kind: 'payment' | 'refund';
 }
 
@@ -261,15 +262,18 @@ export async function getOrder(
         method: string | null;
         reference: string | null;
         status: string | null;
+        txnId: string | null;
       }>(`
-        SELECT recd_date AS date,
-               amount,
-               pay_mode AS method,
-               card_number AS reference,
-               receive_status AS status
-        FROM dbo.tbl_billing_patient_amount_receipt
-        WHERE bill_id = @bid
-        ORDER BY id
+        SELECT r.recd_date AS date,
+               r.amount,
+               r.pay_mode AS method,
+               r.card_number AS reference,
+               r.receive_status AS status,
+               t.txn_id AS txnId
+        FROM dbo.tbl_billing_patient_amount_receipt r
+        LEFT JOIN dbo.telo_txn t ON t.receipt_id = r.id
+        WHERE r.bill_id = @bid
+        ORDER BY r.id
       `);
 
     // Samples: only available for Telo-created orders (patient_id in medid).
@@ -316,6 +320,7 @@ export async function getOrder(
       amount: Number(x.amount ?? 0),
       method: x.method?.trim() || null,
       reference: x.reference?.trim() || null,
+      txnId: x.txnId?.trim() || null,
       kind: x.status === '2' ? 'refund' : 'payment',
     }));
 

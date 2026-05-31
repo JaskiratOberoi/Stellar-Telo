@@ -27,6 +27,7 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'patient:view',
     'bill:view',
     'payment:capture',
+    'payment:refund',
     'rate:view',
     'rate:manage',
     'balance:view',

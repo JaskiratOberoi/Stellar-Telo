@@ -68,7 +68,8 @@ BEGIN
 
     DECLARE @pid INT, @billId INT, @billNo INT,
             @total INT = 0, @rateTypeId INT, @buCode INT, @pname NVARCHAR(200),
-            @o BIT, @ec VARCHAR(20), @sampleCount INT = 0;
+            @o BIT, @ec VARCHAR(20), @sampleCount INT = 0,
+            @rid INT, @txn VARCHAR(24);
 
     /* ---- declared variable for SID-validation messaging ------------------- */
     DECLARE @extraTypes NVARCHAR(200), @dupVailids NVARCHAR(400);
@@ -446,12 +447,25 @@ BEGIN
         FROM @lines l;
 
         /* ⑥ receipt (only if paid now) */
+        SET @txn = NULL;
         IF ISNULL(@receiptAmount,0) > 0
+        BEGIN
             INSERT INTO dbo.tbl_billing_patient_amount_receipt
                 (bill_id, recd_date, amount, receivedby, receive_status, pay_mode)
             VALUES
                 (@billId, GETDATE(), @receiptAmount,
                  CONCAT(N'telo:', @userId), '1', @paymentType);
+            SET @rid = SCOPE_IDENTITY();
+            SET @txn = CONCAT(
+                N'TXN',
+                RIGHT(
+                    CONCAT(N'00000000', CONVERT(VARCHAR(20), NEXT VALUE FOR dbo.telo_txn_seq)),
+                    8
+                )
+            );
+            INSERT INTO dbo.telo_txn (receipt_id, bill_id, txn_id)
+            VALUES (@rid, @billId, @txn);
+        END
 
         /* NO franchise-wallet posting here. The LIS debits the franchise
            account when the order is moved Accessioning → Worksheet via the
@@ -465,7 +479,7 @@ BEGIN
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
                message = CAST(NULL AS NVARCHAR(400)),
                patient_id = @pid, bill_id = @billId, bill_number = @billNo,
-               total = @total, sample_count = @sampleCount;
+               total = @total, sample_count = @sampleCount, txn_id = @txn;
         SELECT
             ins.sample_id,
             ins.vailid,
