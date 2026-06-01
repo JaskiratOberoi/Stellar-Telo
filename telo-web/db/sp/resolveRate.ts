@@ -1,6 +1,5 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
-import { loadCatalog } from '@/db/read/catalog';
 
 export type RateSource = 'mrp' | 'special' | 'ratelist' | 'fallback' | 'none';
 
@@ -82,18 +81,12 @@ export async function resolveRatesBatch(
 ): Promise<ResolvedRate[]> {
   if (items.length === 0) return [];
 
-  // ── MRP fallback maps from the cached catalogue ─────────────────────
+  // MRP fallback maps — filled LIVE below for exactly the items being priced,
+  // so an MRP edited in the LIS during the day bills immediately (no cached-
+  // catalogue lag). Only the cart's handful of ids are queried, not the whole
+  // catalogue, so this is cheaper than the previous full-catalogue prefill.
   const testMrp = new Map<number, number | null>();
   const profileMrp = new Map<number, number | null>();
-  try {
-    const catalog = await loadCatalog();
-    for (const c of catalog) {
-      if (c.kind === 'test') testMrp.set(c.id, c.mrp);
-      else profileMrp.set(c.id, c.mrp);
-    }
-  } catch {
-    /* fall through to DB lookups for everything */
-  }
 
   const uniq = (xs: (number | null | undefined)[]) =>
     Array.from(
@@ -152,13 +145,10 @@ export async function resolveRatesBatch(
       for (const row of r.recordset) profileRate.set(row.profilecode, row.Price);
     }
 
-    // ── MRP fallback for ids the cached catalogue didn't answer ───────
-    const missingTestIds = testIds.filter((id) => !testMrp.has(id));
-    const missingProfileIds = profileIds.filter((id) => !profileMrp.has(id));
-
-    if (missingTestIds.length > 0) {
+    // ── Live MRP fallback for every item being priced (real-time) ─────
+    if (testIds.length > 0) {
       const req = pool.request();
-      const params = missingTestIds
+      const params = testIds
         .map((id, i) => {
           req.input(`mt${i}`, sql.Int, id);
           return `@mt${i}`;
@@ -170,9 +160,9 @@ export async function resolveRatesBatch(
       for (const row of r.recordset) testMrp.set(row.id, row.mrp);
     }
 
-    if (missingProfileIds.length > 0) {
+    if (profileIds.length > 0) {
       const req = pool.request();
-      const params = missingProfileIds
+      const params = profileIds
         .map((id, i) => {
           req.input(`mp${i}`, sql.Int, id);
           return `@mp${i}`;

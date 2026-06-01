@@ -36,6 +36,21 @@ export async function invalidateMccScope(userId: number): Promise<void> {
 }
 
 /**
+ * The user's OWN collection centre id(s) — their PCC_Id / sub_pcc_id. Passed to
+ * fetchScopedMccUnits so a user's own centre is shown even when the LIS flags
+ * the unit inactive (it never affects which centres are *in scope*, only
+ * whether an in-scope own centre is hidden by the inactive filter).
+ */
+export function ownCentreIds(user: {
+  pccId: number | null;
+  subPccId: number | null;
+}): number[] {
+  return [user.pccId, user.subPccId].filter(
+    (n): n is number => typeof n === 'number' && n > 0,
+  );
+}
+
+/**
  * Defence-in-depth gate. Every order/bill mutation calls this before invoking
  * the write SP (the SP also re-validates server-side).
  */

@@ -1,6 +1,6 @@
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getMccScope } from '@/auth/scope';
+import { getMccScope, ownCentreIds } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { loadCatalogPricedForMcc } from '@/db/read/catalog';
 import { CatalogBrowser } from '@/components/catalog/catalog-browser';
@@ -19,7 +19,7 @@ export default async function CatalogPage({
   // not the global MRP master. Default to the account's first in-scope client;
   // multi-client users can switch via the ?mcc= selector in CatalogBrowser.
   const scope = await getMccScope(user.uid);
-  const units = await fetchScopedMccUnits(scope);
+  const units = await fetchScopedMccUnits(scope, ownCentreIds(user));
 
   const sp = await searchParams;
   const requested = sp.mcc && /^\d+$/.test(sp.mcc) ? Number(sp.mcc) : null;

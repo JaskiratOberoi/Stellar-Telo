@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getMccScope } from '@/auth/scope';
+import { getMccScope, ownCentreIds } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getCart } from '@/db/cartStore';
 import { RegisterForm } from '@/components/register/register-form';
@@ -15,7 +15,7 @@ export default async function NewOrderCreatePage() {
 
   const scope = await getMccScope(user.uid);
   const [units, cart] = await Promise.all([
-    fetchScopedMccUnits(scope),
+    fetchScopedMccUnits(scope, ownCentreIds(user)),
     getCart(user.uid),
   ]);
 

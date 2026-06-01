@@ -42,8 +42,10 @@ export default async function PrintFragmentPage({
   const order = canViewBill ? orderRaw : redactFinancialFields(orderRaw);
 
   const mccId = order.mccCode;
+  // Self-include the order's own MCC so its name resolves even if the LIS flags
+  // that centre inactive (e.g. a client centre like DL0002).
   const [mccUnits, invoiceConfig] = await Promise.all([
-    mccId != null ? fetchScopedMccUnits([mccId]) : Promise.resolve([]),
+    mccId != null ? fetchScopedMccUnits([mccId], [mccId]) : Promise.resolve([]),
     mccId != null ? getMccInvoiceConfig(mccId) : Promise.resolve(null),
   ]);
   const mccName = mccUnits[0]?.name ?? null;

@@ -74,7 +74,8 @@ export default async function BalanceMccPage({
   const scope = await getMccScope(user.uid);
   const [data, mccs, invoiceConfig, receipts] = await Promise.all([
     getLedgerForMcc(mccId, { from, to }),
-    fetchScopedMccUnits([mccId]),
+    // Self-include this MCC so its name resolves even if the LIS flags it inactive.
+    fetchScopedMccUnits([mccId], [mccId]),
     getMccInvoiceConfig(mccId),
     getReceiptsInPeriod(scope, from, to, { mccId }),
   ]);

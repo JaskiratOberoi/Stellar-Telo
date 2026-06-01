@@ -92,8 +92,10 @@ async function ReceiptBody({
   // templates are rendered on demand by `/print/orders/[id]/[kind]`, which
   // re-fetches the config when the user actually clicks print.
   const mccId = order.mccCode;
+  // Self-include the order's own MCC so its name resolves even if the LIS flags
+  // that centre inactive (e.g. a client centre like DL0002).
   const mccUnits =
-    mccId != null ? await fetchScopedMccUnits([mccId]) : [];
+    mccId != null ? await fetchScopedMccUnits([mccId], [mccId]) : [];
   const mccName = mccUnits[0]?.name ?? null;
 
   const canCapture = hasCapability(caps, 'payment:capture');

@@ -122,12 +122,21 @@ export async function fetchMccUnitsByIds(
  * Resolve the user's in-scope MCC unit ids to display rows. Scope is by unit
  * id (the mapping table's mcc_code); Listec's /api/mcc-units keys by code, so
  * we read id/code/name straight from tbl_med_mcc_unit_master here.
+ *
+ * Inactive units are normally hidden (decommissioned centres). `ownIds` lists
+ * units to surface even when `IsActive = 0` — used for the caller's OWN centre
+ * (their PCC_Id / sub_pcc_id, or the specific MCC of an order being viewed), so
+ * a client whose centre the LIS keeps flagged inactive can still see and order
+ * for it. Other users' inactive mapped centres stay hidden, exactly as before.
  */
 export async function fetchScopedMccUnits(
   scopeIds: number[],
+  ownIds: number[] = [],
 ): Promise<ScopedMcc[]> {
   const ids = scopeIds.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
+  // Only honour own-ids that are actually in scope.
+  const own = ownIds.filter((n) => Number.isInteger(n) && ids.includes(n));
 
   return withRetry(async () => {
     const pool = await getPool();
@@ -136,6 +145,13 @@ export async function fetchScopedMccUnits(
       req.input(`u${i}`, sql.Int, id);
       return `@u${i}`;
     });
+    const ownParams = own.map((id, i) => {
+      req.input(`o${i}`, sql.Int, id);
+      return `@o${i}`;
+    });
+    const activeClause = ownParams.length
+      ? `(IsActive = 1 OR id IN (${ownParams.join(',')}))`
+      : `IsActive = 1`;
     const r = await req.query<{
       id: number;
       code: string;
@@ -143,7 +159,7 @@ export async function fetchScopedMccUnits(
     }>(`
       SELECT id, MCCUnitCode AS code, MCCUnitName AS name
       FROM dbo.tbl_med_mcc_unit_master
-      WHERE id IN (${params.join(',')}) AND IsActive = 1
+      WHERE id IN (${params.join(',')}) AND ${activeClause}
       ORDER BY MCCUnitName
     `);
     return r.recordset.map((x) => ({
