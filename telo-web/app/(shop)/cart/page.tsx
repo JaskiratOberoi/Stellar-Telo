@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getMccScope } from '@/auth/scope';
+import { getMccScope, ownCentreIds } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getPricedCart } from '@/actions/cart.actions';
 import { MccSelector } from '@/components/cart/mcc-selector';
@@ -36,7 +36,7 @@ export default async function CartPage() {
   if (!hasCapability(user.caps, 'order:create')) redirect('/dashboard');
 
   const scope = await getMccScope(user.uid);
-  const units = await fetchScopedMccUnits(scope);
+  const units = await fetchScopedMccUnits(scope, ownCentreIds(user));
   const cart = await getPricedCart();
 
   const checkoutReady =
