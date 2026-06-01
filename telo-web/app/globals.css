@@ -127,4 +127,19 @@
   table {
     break-inside: avoid;
   }
+
+  /* Account statement bills table is intentionally multi-page: let it flow
+     across pages instead of being shoved whole onto page 2 (which left page 1
+     with a big blank lower half). Repeat the header on each page and keep
+     individual rows from splitting. Scoped so the single-page bill/lab
+     invoices keep their `break-inside: avoid` behaviour above. */
+  [data-accounts-report] table {
+    break-inside: auto;
+  }
+  [data-accounts-report] thead {
+    display: table-header-group;
+  }
+  [data-accounts-report] tr {
+    break-inside: avoid;
+  }
 }

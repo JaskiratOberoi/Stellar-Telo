@@ -63,7 +63,10 @@ export function AccountsReport({
   const collectedPct = totalBilled > 0 ? ((totalPaid / totalBilled) * 100) | 0 : 0;
 
   return (
-    <div className="w-full bg-white text-black font-sans text-[11px] leading-snug">
+    <div
+      data-accounts-report
+      className="w-full bg-white text-black font-sans text-[11px] leading-snug"
+    >
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="border border-gray-400 px-5 py-4 text-center">
         <p className="text-lg font-bold tracking-tight">{labName}</p>
