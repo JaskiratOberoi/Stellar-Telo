@@ -38,6 +38,7 @@ async function main() {
     .input('vailid', sql.NVarChar(50), vailid)
     .input('patientId', sql.Int, 0)
     .input('name', sql.NVarChar(200), 'TELO VERIFY ' + new Date().toISOString().slice(0, 16))
+    .input('initial', sql.NVarChar(10), 'Mr')
     .input('age', sql.Int, 30)
     .input('gender', sql.Int, 1)
     .input('mobile', sql.VarChar(20), '9999900000')

@@ -68,6 +68,9 @@ BEGIN
     DECLARE @code NVARCHAR(50) =
         LEFT(CONCAT(@mccCode, N'-Telo-', @initials), 50);
 
+    /* createdby is the intentional 'telo:<userId>' origin marker (Telo read
+       paths key on createdby/addedby LIKE 'telo:%'); the '-Telo-' doctor_code
+       already brands the row for humans. */
     INSERT INTO dbo.tbl_med_mcc_doctors
         (doctor_name, doctor_code, pcc_code, IsActive, createdby, createddate)
     VALUES

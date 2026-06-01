@@ -43,6 +43,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     @sids             dbo.TeloSampleSid READONLY,
     @patientId        INT            = 0,
     @name             NVARCHAR(200)  = NULL,
+    @initial          NVARCHAR(10)   = NULL,
     @age              INT            = NULL,
     @gender           INT            = NULL,
     @ageType          INT            = NULL,
@@ -70,6 +71,22 @@ BEGIN
             @total INT = 0, @rateTypeId INT, @buCode INT, @pname NVARCHAR(200),
             @o BIT, @ec VARCHAR(20), @sampleCount INT = 0,
             @rid INT, @txn VARCHAR(24);
+
+    /* addedby/createdby/receivedby is stamped 'telo:<userId>'. This is an
+       INTENTIONAL Telo origin marker, not a defect: every Telo read path
+       (the New-Order/pending-accession worklist in orders.ts, the ledger and
+       receipts reports, the txn backfill) finds Telo orders with
+       `addedby LIKE 'telo:%'`. It does NOT break the LIS report download — that
+       failure was caused by NULL initial/MRNID (fixed below); hundreds of
+       thousands of normal LIS rows carry a non-Username addedby and print fine.
+       Keep the marker so Telo can identify its own orders. */
+
+    /* Salutation kept in patient_master.initial (separate from name) — the LIS
+       report download dereferences it, so it must never be NULL. Falls back to
+       a gender-derived title when the form left it blank. */
+    DECLARE @initialFinal NVARCHAR(10) =
+        COALESCE(NULLIF(LTRIM(RTRIM(@initial)), N''),
+                 CASE @gender WHEN 1 THEN N'Mr' WHEN 2 THEN N'Ms' ELSE N'Mr' END);
 
     /* ---- declared variable for SID-validation messaging ------------------- */
     DECLARE @extraTypes NVARCHAR(200), @dupVailids NVARCHAR(400);
@@ -329,18 +346,27 @@ BEGIN
         IF @patientId IS NULL OR @patientId = 0
         BEGIN
             INSERT INTO dbo.tbl_med_mcc_patient_master
-                (mcc_code, name, age, gender, age_type, sample_date,
+                (mcc_code, name, initial, age, gender, age_type, sample_date,
                  sample_time, ref_doctor, ref_customer, Status,
                  Clinical_History, mobile_number, order_number, email,
                  MRNID, addedby, addeddate)
             VALUES
-                (@mcc, @name, @age, @gender, @ageType,
+                (@mcc, @name, @initialFinal, @age, @gender, @ageType,
                  CAST(GETDATE() AS DATE),
                  GETDATE(), @refDoctor, @refCustomer, 1,
                  @clinicalHistory, @mobile, '', @email,
                  @mrnId, CONCAT(N'telo:', @userId), GETDATE());
             SET @pid = SCOPE_IDENTITY();
             SET @pname = @name;
+
+            /* Mirror the LIS order form: MRNID is never blank — when the form
+               supplied none, it backfills the patient id. The report download
+               path dereferences MRNID, so a NULL here is what crashed Telo
+               reports. */
+            IF @mrnId IS NULL OR LTRIM(RTRIM(@mrnId)) = ''
+                UPDATE dbo.tbl_med_mcc_patient_master
+                SET MRNID = CONVERT(VARCHAR(50), @pid)
+                WHERE id = @pid;
         END
         ELSE
         BEGIN

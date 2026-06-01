@@ -342,12 +342,23 @@ export async function registerOrder(
     const refCust = parseRefValue(f.refCustomerJson);
     const clinicalPdf = await readClinicalPdf(formData);
 
+    // Match the LIS order form exactly: it keeps the salutation in
+    // patient_master.initial (separate from `name`, which stays bare — verified
+    // against 12,691/12,694 normal authorized records) and never leaves
+    // `initial` blank. Telo previously folded the salutation into `name` and
+    // left `initial` NULL, which crashed the LIS report-download path. Pass the
+    // chosen title (or a gender-derived default) as `initial` and keep `name`
+    // clean. The SP applies the same `initial` fallback as a guard.
+    const genderInitial = f.gender === 2 ? 'Ms' : 'Mr';
+    const initial = (f.title && f.title.trim()) || genderInitial;
+
     const result = await createOrder({
       userId: user.uid,
       mcc: f.mcc,
       sampleSids,
       patientId: 0,
-      name: f.title ? `${f.title} ${f.name}` : f.name,
+      name: f.name,
+      initial,
       age: f.age,
       gender: f.gender ?? null,
       ageType: f.ageType ?? null,

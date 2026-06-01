@@ -36,6 +36,10 @@ BEGIN
             @extraTypes NVARCHAR(200), @dupVailids NVARCHAR(400),
             @filledTypes NVARCHAR(400);
 
+    /* Sample rows are stamped 'telo:<userId>' — the intentional Telo origin
+       marker every Telo read path keys on (addedby LIKE 'telo:%'). See
+       usp_telo_create_order for the full rationale. */
+
     DECLARE @emptySamples TABLE (
         sample_id INT, vailid NVARCHAR(50),
         sample_type_id INT, sample_type_name NVARCHAR(100)

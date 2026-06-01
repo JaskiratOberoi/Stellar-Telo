@@ -20,6 +20,7 @@ export interface CreateOrderInput {
   sampleSids: SampleSid[]; // one entry per distinct sample type the order needs
   patientId?: number; // 0/undefined = create new
   name?: string;
+  initial?: string | null; // salutation (Mr/Ms/...) — kept separate from name, like the LIS form
   age?: number | null;
   gender?: number | null;
   ageType?: number | null;
@@ -112,6 +113,7 @@ export async function createOrder(
       .input('sids', buildSidTvp(input.sampleSids))
       .input('patientId', sql.Int, input.patientId ?? 0)
       .input('name', sql.NVarChar(200), input.name ?? null)
+      .input('initial', sql.NVarChar(10), input.initial ?? null)
       .input('age', sql.Int, input.age ?? null)
       .input('gender', sql.Int, input.gender ?? null)
       .input('ageType', sql.Int, input.ageType ?? null)
