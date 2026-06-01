@@ -28,8 +28,11 @@ export async function POST(req: Request) {
   let sid: unknown;
   let panel: unknown;
   let date: unknown;
+  let patientName: unknown;
+  let split: unknown;
+  let exclude: unknown;
   try {
-    ({ sid, panel, date } = await req.json());
+    ({ sid, panel, date, patientName, split, exclude } = await req.json());
   } catch {
     return new NextResponse('Bad request', { status: 400 });
   }
@@ -38,10 +41,26 @@ export async function POST(req: Request) {
   }
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';
+  const splitParam = split === true || split === '1' || split === 'true' ? '&split=1' : '';
+  // Tests the user unticked in the preview — dropped from the rendered PDF.
+  const excludeList = Array.isArray(exclude)
+    ? exclude.filter(
+        (s): s is string => typeof s === 'string' && /^\d+:\d+(?::\d+)?$/.test(s),
+      )
+    : [];
+  const excludeParam = excludeList.length
+    ? `&exclude=${encodeURIComponent(excludeList.join(','))}`
+    : '';
+  // Filename = patient name + SID (never the test name).
+  const safeName =
+    (typeof patientName === 'string' ? patientName : '')
+      .replace(/[^\w]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'Report';
+  const fileName = `${safeName}_${sid.trim()}.pdf`;
 
   const fragmentPath = `/print/reporting/${encodeURIComponent(sid.trim())}?pdf=1${
     panelId ? `&panel=${encodeURIComponent(panelId)}` : ''
-  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}`;
+  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}${splitParam}${excludeParam}`;
 
   try {
     const content = await renderFragmentToPdf(
@@ -54,7 +73,7 @@ export async function POST(req: Request) {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="TSH-${sid.trim()}.pdf"`,
+        'Content-Disposition': `attachment; filename="${fileName}"`,
         'Cache-Control': 'no-store',
       },
     });
