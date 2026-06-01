@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { FileText, Search } from 'lucide-react';
 import {
   searchReports,
@@ -18,19 +18,25 @@ import {
 } from '@/components/ui/table';
 import { fmtIST } from '@/lib/datetime';
 import { ReportPreview } from '@/components/reporting/report-preview';
-import { REPORT_PANELS, DEFAULT_PANEL_ID } from '@/lib/report/panels';
+import { REPORT_FILTERS, DEFAULT_FILTER_ID } from '@/lib/report/panels';
+
+/** Split the LIS test-names CSV into clean individual test names. */
+function splitTestNames(s: string | null): string[] {
+  if (!s) return [];
+  return s
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .split(',')
+    .map((t) => t.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-};
 
 export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
-  const [from, setFrom] = useState(daysAgo(7));
+  const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
-  const [panel, setPanel] = useState(DEFAULT_PANEL_ID);
+  const [panel, setPanel] = useState(DEFAULT_FILTER_ID);
   const [clientCode, setClientCode] = useState('');
   const [businessUnit, setBusinessUnit] = useState('');
   const [sid, setSid] = useState('');
@@ -38,7 +44,7 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
   const [patientName, setPatientName] = useState('');
 
   const [rows, setRows] = useState<ReportSearchRow[] | null>(null);
-  const [searchedPanel, setSearchedPanel] = useState(DEFAULT_PANEL_ID);
+  const [searchedPanel, setSearchedPanel] = useState(DEFAULT_FILTER_ID);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
   const [pending, startTransition] = useTransition();
@@ -67,6 +73,12 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
     });
   }
 
+  // Auto-load today's samples on first open, like the LIS worksheet.
+  useEffect(() => {
+    runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-5">
       {/* ── Filters ─────────────────────────────────────────────────────── */}
@@ -83,13 +95,13 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
         <Field label="To">
           <Input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
         </Field>
-        <Field label="Report">
+        <Field label="Test filter">
           <select
             value={panel}
             onChange={(e) => setPanel(e.target.value)}
             className="flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
           >
-            {REPORT_PANELS.map((p) => (
+            {REPORT_FILTERS.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
               </option>
@@ -149,56 +161,74 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
       )}
 
       {/* ── Results ─────────────────────────────────────────────────────── */}
+      {pending && rows == null && (
+        <p className="rounded-lg border border-white/10 p-6 text-center text-sm text-muted-foreground">
+          Loading samples…
+        </p>
+      )}
       {rows != null && (
         <div className="rounded-lg border border-white/10">
           {rows.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
-              No TSH results found for these filters.
+              No results found for these filters.
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>PID</TableHead>
-                  <TableHead>SID</TableHead>
-                  <TableHead>Age / Gender</TableHead>
                   <TableHead>Client</TableHead>
-                  <TableHead>TSH</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>PID</TableHead>
+                  <TableHead>Patient Name</TableHead>
+                  <TableHead>SID</TableHead>
+                  <TableHead>Test Names</TableHead>
                   <TableHead>Reported</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Report</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.sid}>
-                    <TableCell className="font-medium">{r.patientName ?? '—'}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.pid}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.sid}</TableCell>
-                    <TableCell>{r.ageGender}</TableCell>
-                    <TableCell>{r.clientCode ?? '—'}</TableCell>
-                    <TableCell>
-                      <span className={r.abnormal ? 'font-semibold text-red-500' : ''}>
-                        {r.value ?? '—'}
-                        {r.unit ? ` ${r.unit}` : ''}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs">{r.status ?? '—'}</TableCell>
-                    <TableCell className="text-xs">{fmtIST(r.reportedAt)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => setSelected(r)}
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {rows.map((r) => {
+                  const tests = splitTestNames(r.testNames);
+                  return (
+                    <TableRow key={r.sid} className="align-top">
+                      <TableCell className="text-xs">{r.clientCode ?? '—'}</TableCell>
+                      <TableCell className="font-mono text-xs">{r.pid}</TableCell>
+                      <TableCell className="font-medium">
+                        {r.patientName ?? '—'}
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          {r.ageGender}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{r.sid}</TableCell>
+                      <TableCell className="max-w-[26rem]">
+                        {tests.length > 0 ? (
+                          <ul className="space-y-0.5">
+                            {tests.map((t, i) => (
+                              <li key={i} className="text-xs leading-snug">
+                                {t}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{fmtIST(r.reportedAt)}</TableCell>
+                      <TableCell className="text-xs">{r.status ?? '—'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => setSelected(r)}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

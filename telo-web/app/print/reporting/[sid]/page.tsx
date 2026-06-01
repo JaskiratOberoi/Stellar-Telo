@@ -2,19 +2,14 @@ import { notFound } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getWorksheetReports } from '@/lib/listec';
-import { getTestMeta } from '@/db/read/testMeta';
-import { getAgeSpecificRange } from '@/db/read/ageRange';
 import {
   resolveBusinessUnit,
   getSignersForBusinessUnit,
 } from '@/db/read/signatures';
 import { getReferringDoctor } from '@/db/read/refDoctor';
-import { getPanel } from '@/lib/report/panels';
-import {
-  TshReport,
-  type TshReportData,
-  type TshReportResult,
-} from '@/components/reporting/tsh-report';
+import { getSampleReport } from '@/db/read/sampleReport';
+import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
+import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,21 +21,30 @@ function ymd(d: Date): string {
 }
 
 /**
- * Print fragment for a single report, keyed by SID + panel. Rendered (a) inside
+ * Print fragment for one sample's full report, keyed by SID. Rendered (a) inside
  * the Reporting tab's preview iframe and (b) by headless Chromium for the
- * on-letterhead PDF (`?pdf=1`). SID is unique, so we query a wide date window.
+ * on-letterhead PDF (`?pdf=1`). The worksheet feed supplies the header/demographics;
+ * the grouped results come from getSampleReport (direct, report-ordered).
  */
 export default async function ReportingPrintFragment({
   params,
   searchParams,
 }: {
   params: Promise<{ sid: string }>;
-  searchParams: Promise<{ pdf?: string; panel?: string; date?: string }>;
+  searchParams: Promise<{ pdf?: string; date?: string; split?: string; exclude?: string }>;
 }) {
   const { sid } = await params;
   const sp = await searchParams;
   const pdfMode = sp.pdf === '1' || sp.pdf === 'true';
-  const panel = getPanel(sp.panel);
+  const splitByDepartment = sp.split === '1' || sp.split === 'true';
+
+  // Tests the user unticked in the preview. Keys are "deptIndex:itemIndex" for a
+  // top-level item, or "deptIndex:itemIndex:childIndex" for a panel child. Only
+  // honoured by the PDF render; the preview manages selection client-side.
+  const excludedKeys = (sp.exclude ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^\d+:\d+(?::\d+)?$/.test(s));
 
   const user = await requireSession();
   if (!hasCapability(user.caps, 'report:view')) notFound();
@@ -48,8 +52,8 @@ export default async function ReportingPrintFragment({
   const decodedSid = decodeURIComponent(sid).trim();
   if (!decodedSid) notFound();
 
-  // Query a tight window around the sample's date when known (the worksheet SP
-  // crawls over wide ranges); fall back to a broad window only if no hint.
+  // Tight worksheet window around the sample's date when known (the SP crawls
+  // wide ranges); fall back to a broad window only if no hint.
   const hint = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? new Date(sp.date) : null;
   let fromDate = '2015-01-01';
   let toDate: string;
@@ -70,71 +74,31 @@ export default async function ReportingPrintFragment({
     fromDate,
     toDate,
     sid: decodedSid,
-    testCode: panel.anchorCode,
     pageSize: 5,
   });
   const row = rows.find((r) => r.sid === decodedSid) ?? rows[0];
   if (!row) notFound();
 
-  // Per-code metadata (method + interpretation) for the panel's analytes.
-  const metas = await Promise.all(panel.codes.map((c) => getTestMeta(c)));
-  const metaByCode = new Map(
-    panel.codes.map((c, i) => [c.toUpperCase(), metas[i]]),
-  );
-
-  // Analyte rows: each panel code present in the sample, in panel order. The
-  // bio-ref range is resolved to the patient's age band when available
-  // (falls back to the validated free-text range stored on the result).
-  const results: TshReportResult[] = (
-    await Promise.all(
-      panel.codes.map(async (code): Promise<TshReportResult | null> => {
-        const up = code.toUpperCase();
-        const r = row.results.find(
-          (x) => (x.test_code ?? '').trim().toUpperCase() === up,
-        );
-        if (!r) return null;
-        const meta = metaByCode.get(up);
-        const ageRange = meta
-          ? await getAgeSpecificRange(meta.id, row.age, row.age_unit)
-          : null;
-        return {
-          testName: r.test_name?.trim() || meta?.reportTestName || code,
-          method: meta?.method ?? null,
-          value: r.value,
-          unit: r.unit,
-          normalRange: ageRange ?? r.normal_range,
-          abnormal: r.abnormal,
-          comments: r.comments,
-        };
-      }),
-    )
-  ).filter((r): r is TshReportResult => r != null);
-
-  // Section header from the sample's own Profile row (only for multi-analyte panels).
-  const profileRow =
-    panel.codes.length > 1
-      ? row.results.find((x) => (x.test_type ?? '').toLowerCase() === 'profile')
-      : undefined;
-  const sectionTitle = profileRow?.test_name?.trim()
-    ? profileRow.test_name.trim().toUpperCase()
-    : null;
-
-  const interpretation =
-    metaByCode.get(panel.interpretationCode.toUpperCase())?.interpretation ?? null;
-
-  const [bu, refDoctor] = await Promise.all([
+  const [report, bu, refDoctor] = await Promise.all([
+    getSampleReport(decodedSid, row.age, row.age_unit),
     resolveBusinessUnit(row.business_unit),
     getReferringDoctor(row.pid),
   ]);
-  // Single signatory: the primary pathologist (DOC_TYPE = 1), falling back to
-  // the first available signer if none is flagged primary.
+
+  // Single signatory: the primary pathologist (DOC_TYPE = 1).
   const rawSigners = bu ? await getSignersForBusinessUnit(bu.id) : [];
-  const pathologist =
-    rawSigners.find((s) => s.docType === 1) ?? rawSigners[0] ?? null;
+  const pathologist = rawSigners.find((s) => s.docType === 1) ?? rawSigners[0] ?? null;
   const signers = pathologist ? [pathologist] : [];
 
-  const data: TshReportData = {
+  // Aggregate static notes for the test codes present on this report.
+  const staticNotes = Array.from(
+    new Set(report.codes.flatMap((c) => STATIC_NOTES_BY_CODE[c] ?? [])),
+  );
+
+  const data: LabReportData = {
     pdf: pdfMode,
+    splitByDepartment,
+    excludedKeys,
     patientName: row.patient_name,
     pid: row.pid,
     sid: row.sid,
@@ -149,9 +113,8 @@ export default async function ReportingPrintFragment({
     statusLabel: row.status,
     billNumber: row.bill_number,
     clinicalHistory: row.clinical_history,
-    sectionTitle,
-    results,
-    meta: { interpretation },
+    departments: report.departments,
+    staticNotes,
     processedAt: bu
       ? { name: bu.name, address: bu.address, city: bu.city, phone: bu.phone }
       : null,
@@ -165,19 +128,20 @@ export default async function ReportingPrintFragment({
 
   return (
     <>
-      {/* In PDF mode: drop the global A4 margins so the component's own padding
-          places content within the letterhead's clear zone, and force a
-          transparent page background so the letterhead pdf-lib draws behind the
-          content shows through (globals.css otherwise paints the body white in
-          print, which would hide it). */}
+      {/* PDF mode: apply letterhead-safe @page margins so EVERY printed page
+          (not just the first/last) keeps a clear zone away from the letterhead
+          header and footer, and force a transparent page background so the
+          letterhead shows through. @page margins (unlike container padding)
+          repeat on continuation pages — this is what prevents content from
+          overlapping the letterhead on multi-page reports. */}
       {pdfMode && (
         <style>
           {
-            '@page{size:A4 portrait;margin:0}@media print{html,body{background:transparent !important;background-color:transparent !important}}'
+            '@page{size:A4 portrait;margin:26mm 14mm 34mm 14mm}@media print{html,body{background:transparent !important;background-color:transparent !important}}'
           }
         </style>
       )}
-      <TshReport data={data} />
+      <LabReport data={data} />
     </>
   );
 }
