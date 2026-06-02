@@ -6,7 +6,7 @@ import type { DayStats } from '@/db/read/stats';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { fmtIST } from '@/lib/datetime';
+import { fmtIST, todayIST, addDaysIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 
 // Polling cadence — bumped 30s → 60s. Combined with visibility-gating below
@@ -15,12 +15,10 @@ import { cn } from '@/lib/utils';
 // (memo TTL) — i.e. effectively one query per minute regardless of audience.
 const POLL_MS = 60_000;
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const shiftISO = (iso: string, days: number) => {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-};
+// IST calendar day (see lib/datetime) — UTC dates put "Today" on the previous
+// day between 00:00–05:30 IST.
+const todayISO = () => todayIST();
+const shiftISO = (iso: string, days: number) => addDaysIST(iso, days);
 
 const STATUS_COLORS: Record<string, string> = {
   Authorized: 'bg-secondary/15 text-secondary',

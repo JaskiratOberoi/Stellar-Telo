@@ -6,23 +6,39 @@
 import type { OrderDetail } from '@/db/read/orders';
 import type { MccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { fmtIST } from '@/lib/datetime';
+import { resolveInvoiceDefaults } from '@/lib/invoice-defaults';
 
 interface BillInvoiceProps {
   order: OrderDetail;
   /** MCCUnitName from tbl_med_mcc_unit_master */
   mccName: string | null;
+  /** MCCUnitCode — used for MDCARE-aware signatory default. */
+  mccCode?: string | null;
   /** Per-MCC branding config from telo_mcc_invoice_config (may be null) */
   config: MccInvoiceConfig | null;
+  /** LIS centre fallback for the header address block. */
+  centreFallback?: { address: string | null; city: string | null } | null;
 }
 
 // (No currency formatting — the lab receipt is a pre-analytical document
 // and intentionally omits all monetary breakdowns; see BillInvoice for those.)
 
-export function LabInvoice({ order, mccName, config }: BillInvoiceProps) {
+export function LabInvoice({
+  order,
+  mccName,
+  mccCode = null,
+  config,
+  centreFallback,
+}: BillInvoiceProps) {
   const labName = config?.labName?.trim() || mccName?.trim() || 'Diagnostic Centre';
-  const address = config?.address?.trim() || null;
+  const address = config?.address?.trim() || centreFallback?.address?.trim() || null;
+  const city    = config?.city?.trim()    || centreFallback?.city?.trim()    || null;
+  const stateNm = config?.state?.trim()   || null;
+  const pincode = config?.pincode?.trim() || null;
   const phone   = config?.phone?.trim()   || null;
   const email   = config?.email?.trim()   || null;
+  const addressLine = [address, city, stateNm, pincode].filter(Boolean).join(', ');
+  const { showSignatory } = resolveInvoiceDefaults(config, mccCode);
 
   const dateLabel = fmtIST(order.billDate);
   const genderLabel =
@@ -43,8 +59,8 @@ export function LabInvoice({ order, mccName, config }: BillInvoiceProps) {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-4 text-center">
         <p className="text-lg font-bold tracking-tight">{labName}</p>
-        {address && (
-          <p className="mt-0.5 text-gray-600">{address}</p>
+        {addressLine && (
+          <p className="mt-0.5 text-gray-600">{addressLine}</p>
         )}
         {(phone || email) && (
           <p className="mt-0.5 text-gray-600">
@@ -160,11 +176,13 @@ export function LabInvoice({ order, mccName, config }: BillInvoiceProps) {
         <p className="text-gray-400 text-[9px]">
           This is a computer-generated receipt.
         </p>
-        <div className="text-right">
-          <div className="mb-6 border-b border-gray-400 inline-block w-36" />
-          <p className="font-semibold">Authorised Signatory</p>
-          <p className="text-gray-500">{labName}</p>
-        </div>
+        {showSignatory && (
+          <div className="text-right">
+            <div className="mb-6 border-b border-gray-400 inline-block w-36" />
+            <p className="font-semibold">Authorised Signatory</p>
+            <p className="text-gray-500">{labName}</p>
+          </div>
+        )}
       </div>
     </div>
   );

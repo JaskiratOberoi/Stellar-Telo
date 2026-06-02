@@ -3,7 +3,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { getOrder, redactFinancialFields } from '@/db/read/orders';
-import { fetchScopedMccUnits } from '@/db/read/mccUnits';
+import { fetchScopedMccUnits, getMccCentreByCode } from '@/db/read/mccUnits';
 import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { customLogoApiPath } from '@/lib/invoice-logo';
 import { LabInvoice } from '@/components/orders/lab-invoice';
@@ -54,6 +54,11 @@ export default async function PrintFragmentPage({
     mccId != null && invoiceConfig?.hasTopRightLogo
       ? customLogoApiPath(mccId)
       : null;
+  // LIS centre — header address fallback when invoice config leaves it blank.
+  const centre = mccAccountCode ? await getMccCentreByCode(mccAccountCode) : null;
+  const centreFallback = centre
+    ? { address: centre.address ?? null, city: centre.city ?? null }
+    : null;
 
   // The print iframe loads this page with an explicit @media print stylesheet
   // applied via the surrounding <html class="print-bill|print-lab">. The
@@ -62,7 +67,13 @@ export default async function PrintFragmentPage({
   if (kind === 'lab') {
     return (
       <div data-invoice="lab">
-        <LabInvoice order={order} mccName={mccName} config={invoiceConfig} />
+        <LabInvoice
+          order={order}
+          mccName={mccName}
+          mccCode={mccAccountCode}
+          config={invoiceConfig}
+          centreFallback={centreFallback}
+        />
       </div>
     );
   }
@@ -74,6 +85,7 @@ export default async function PrintFragmentPage({
         mccName={mccName}
         mccCode={mccAccountCode}
         config={invoiceConfig}
+        centreFallback={centreFallback}
         customLogoSrc={customLogoSrc}
       />
     </div>

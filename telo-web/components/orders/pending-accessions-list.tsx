@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getPendingAccessions, type PendingAccessionsFeed } from '@/actions/orders.actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PrintBillButton, PrintLabButton } from '@/components/orders/print-bill-button';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import {
@@ -19,9 +20,12 @@ import {
 export function PendingAccessionsList({
   initial,
   canCreate,
+  highlightBillId,
 }: {
   initial: PendingAccessionsFeed;
   canCreate: boolean;
+  /** A just-registered bill id to highlight (from ?created=). */
+  highlightBillId?: number;
 }) {
   const [feed, setFeed] = useState<PendingAccessionsFeed>(initial);
   const [busy, setBusy] = useState(false);
@@ -80,7 +84,7 @@ export function PendingAccessionsList({
             {canViewBill && (
               <TableHead className="w-24 text-right">Amount</TableHead>
             )}
-            <TableHead className="w-32 text-right">Action</TableHead>
+            <TableHead className="w-64 text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -103,7 +107,11 @@ export function PendingAccessionsList({
               return (
                 <TableRow
                   key={o.billId}
-                  className="group transition-transform hover:-translate-y-px"
+                  className={cn(
+                    'group transition-transform hover:-translate-y-px',
+                    highlightBillId === o.billId &&
+                      'bg-secondary/10 ring-1 ring-secondary/40',
+                  )}
                 >
                   <TableCell>
                     <Link
@@ -136,24 +144,30 @@ export function PendingAccessionsList({
                     </TableCell>
                   )}
                   <TableCell className="text-right">
-                    <Button
-                      asChild
-                      size="sm"
-                      variant={complete ? 'outline' : 'default'}
-                    >
-                      <Link
-                        href={href}
-                        aria-label={
-                          complete
-                            ? `View Sample IDs for bill ${o.billNumber ?? o.billId}`
-                            : `Add ${remaining} Sample ID${remaining === 1 ? '' : 's'} for bill ${o.billNumber ?? o.billId}`
-                        }
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <Button
+                        asChild
+                        size="sm"
+                        variant={complete ? 'outline' : 'default'}
                       >
-                        {complete
-                          ? 'View SIDs'
-                          : `Add SID${remaining === 1 ? '' : 's'}`}
-                      </Link>
-                    </Button>
+                        <Link
+                          href={href}
+                          aria-label={
+                            complete
+                              ? `View Sample IDs for bill ${o.billNumber ?? o.billId}`
+                              : `Add ${remaining} Sample ID${remaining === 1 ? '' : 's'} for bill ${o.billNumber ?? o.billId}`
+                          }
+                        >
+                          {complete
+                            ? 'View SIDs'
+                            : `Add SID${remaining === 1 ? '' : 's'}`}
+                        </Link>
+                      </Button>
+                      <PrintLabButton billId={o.billId} billNumber={o.billNumber} />
+                      {canViewBill && (
+                        <PrintBillButton billId={o.billId} billNumber={o.billNumber} />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );

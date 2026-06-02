@@ -15,6 +15,31 @@ function toRole(value: string | null): TeloRole | null {
   return TELO_ROLES.has(value as TeloRole) ? (value as TeloRole) : null;
 }
 
+/**
+ * Whether a user is "MRP only" — hides the B2B Orders tab. Reads
+ * telo_account.mrp_only (false when no row, or if the column isn't deployed
+ * yet). Resilient: any read failure resolves to false (the user simply sees
+ * the B2B tab), never throws into a page render.
+ */
+export async function fetchMrpOnly(userId: number): Promise<boolean> {
+  if (!Number.isInteger(userId) || userId <= 0) return false;
+  try {
+    return await withRetry(async () => {
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input('uid', sql.Int, userId)
+        .query<{ mrpOnly: boolean }>(
+          `SELECT CAST(ISNULL(mrp_only, 0) AS BIT) AS mrpOnly
+           FROM dbo.telo_account WHERE user_id = @uid`,
+        );
+      return !!r.recordset[0]?.mrpOnly;
+    });
+  } catch {
+    return false;
+  }
+}
+
 /** Telo role for one user (used by the auth flow). null if no row. */
 export async function fetchTeloRole(userId: number): Promise<TeloRole | null> {
   if (!Number.isInteger(userId) || userId <= 0) return null;
@@ -47,6 +72,9 @@ export interface TeloUserRow {
   /** True when a `dbo.telo_account` row exists — i.e. Telo manages this
    *  account's LIS/Telo gates and the LIS-access toggle applies. */
   hasTeloAccount: boolean;
+  /** `telo_account.mrp_only` — when true the B2B Orders tab is hidden for this
+   *  user (false for native LIS users / no row). */
+  mrpOnly: boolean;
   lisUsertypeId: number | null;
   lisUsertypeName: string | null;
   teloRole: TeloRole | null;
@@ -71,6 +99,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       teloActive: boolean;
       lisAccess: boolean;
       hasTeloAccount: number; // 0/1 from CASE
+      mrpOnly: boolean;
       lisUsertypeId: number | null;
       lisUsertypeName: string | null;
       teloRole: string | null;
@@ -85,6 +114,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
              CAST(ISNULL(ta.telo_active, u.IsActive) AS BIT) AS teloActive,
              CAST(ISNULL(ta.lis_access, u.IsActive) AS BIT)  AS lisAccess,
              CASE WHEN ta.user_id IS NOT NULL THEN 1 ELSE 0 END AS hasTeloAccount,
+             CAST(ISNULL(ta.mrp_only, 0) AS BIT) AS mrpOnly,
              u.usertypeid AS lisUsertypeId,
              ut.Name AS lisUsertypeName,
              r.role AS teloRole,
@@ -112,6 +142,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       teloActive: !!x.teloActive,
       lisAccess: !!x.lisAccess,
       hasTeloAccount: Number(x.hasTeloAccount) === 1,
+      mrpOnly: !!x.mrpOnly,
       lisUsertypeId: x.lisUsertypeId,
       lisUsertypeName: x.lisUsertypeName?.trim() ?? null,
       teloRole: toRole(x.teloRole),

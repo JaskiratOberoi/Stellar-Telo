@@ -5,6 +5,7 @@ import { getMccScope } from '@/auth/scope';
 import { cached } from '@/lib/cache';
 import { AppError } from '@/lib/errors';
 import { getStats, type DayStats } from '@/db/read/stats';
+import { todayIST } from '@/lib/datetime';
 
 // Short Redis memoization so N concurrent dashboards in the same user's
 // scope collapse to ~1 Noble query / 30s. Per-user key because scope can
@@ -28,7 +29,7 @@ const EMPTY = (d: string): DayStats => ({
  * such users away, but the action is the real enforcement point.
  */
 export async function getDashboardStats(dateISO?: string): Promise<DayStats> {
-  const d = (dateISO ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const d = (dateISO ?? todayIST()).slice(0, 10);
   let user;
   try {
     user = await requireCapability('dashboard:view');

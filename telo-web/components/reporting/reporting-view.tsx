@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { fmtIST } from '@/lib/datetime';
+import { fmtIST, todayIST } from '@/lib/datetime';
 import { ReportPreview } from '@/components/reporting/report-preview';
 import { REPORT_FILTERS, DEFAULT_FILTER_ID } from '@/lib/report/panels';
 
@@ -31,7 +31,7 @@ function splitTestNames(s: string | null): string[] {
     .filter(Boolean);
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayIST();
 
 export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
   const [from, setFrom] = useState(today());

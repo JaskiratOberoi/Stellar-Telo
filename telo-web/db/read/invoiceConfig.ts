@@ -9,6 +9,10 @@ export interface MccInvoiceConfig {
   mccId: number;
   labName: string | null;
   address: string | null;
+  /** Header line 2 — falls back to the LIS centre when blank. */
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
   phone: string | null;
   email: string | null;
   /** True when a custom top-right logo is stored in Telo config (not LIS). */
@@ -19,6 +23,12 @@ export interface MccInvoiceConfig {
   customLogoVisible: boolean;
   /** Name shown above the Notes block on the printed bill (e.g. receptionist). */
   preparedBy: string | null;
+  /** "On behalf of …" line: 'client' name, 'qugen', or null = auto (MDCARE-aware). */
+  onBehalfMode: 'client' | 'qugen' | null;
+  /** Footer disclaimer: true/false, or null = auto (MDCARE-aware). */
+  showDisclaimer: boolean | null;
+  /** Authorised Signatory block: true/false, or null = auto (MDCARE-aware). */
+  showSignatory: boolean | null;
 }
 
 export interface MccInvoiceLogoBytes {
@@ -32,6 +42,9 @@ interface RawRow {
   mccId: number;
   labName: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
   phone: string | null;
   email: string | null;
   hasTopRightLogo: number;
@@ -39,14 +52,21 @@ interface RawRow {
   nobleLogoVisible: number | null;
   customLogoVisible: number | null;
   preparedBy: string | null;
+  onBehalfMode: string | null;
+  showDisclaimer: number | boolean | null;
+  showSignatory: number | boolean | null;
 }
 
 function mapRow(row: RawRow): MccInvoiceConfig {
   const pos = (row.nobleLogoPosition ?? '').toLowerCase();
+  const obm = (row.onBehalfMode ?? '').toLowerCase();
   return {
     mccId: row.mccId,
     labName: row.labName,
     address: row.address,
+    city: row.city,
+    state: row.state,
+    pincode: row.pincode,
     phone: row.phone,
     email: row.email,
     // `hasTopRightLogo` is derived in SQL as CASE ... THEN 1 ELSE 0 END so it
@@ -63,6 +83,10 @@ function mapRow(row: RawRow): MccInvoiceConfig {
     nobleLogoVisible: row.nobleLogoVisible == null ? true : Boolean(row.nobleLogoVisible),
     customLogoVisible: row.customLogoVisible == null ? true : Boolean(row.customLogoVisible),
     preparedBy: row.preparedBy,
+    onBehalfMode: obm === 'qugen' ? 'qugen' : obm === 'client' ? 'client' : null,
+    // null stays null (= "auto" — resolved MDCARE-aware at render time).
+    showDisclaimer: row.showDisclaimer == null ? null : Boolean(row.showDisclaimer),
+    showSignatory: row.showSignatory == null ? null : Boolean(row.showSignatory),
   };
 }
 
@@ -119,25 +143,17 @@ export async function getMccInvoiceConfig(
       const r = await pool
         .request()
         .input('mid', sql.Int, mccId)
-        .query<{
-          mccId: number;
-          labName: string | null;
-          address: string | null;
-          phone: string | null;
-          email: string | null;
-          hasTopRightLogo: number;
-          nobleLogoPosition: string | null;
-          nobleLogoVisible: number | null;
-          customLogoVisible: number | null;
-          preparedBy: string | null;
-        }>(`
+        .query<RawRow>(`
           SELECT mcc_id AS mccId, lab_name AS labName,
-                 address, phone, email,
+                 address, city, state, pincode, phone, email,
                  CASE WHEN top_right_logo_mime IS NOT NULL THEN 1 ELSE 0 END AS hasTopRightLogo,
                  noble_logo_position  AS nobleLogoPosition,
                  noble_logo_visible   AS nobleLogoVisible,
                  custom_logo_visible  AS customLogoVisible,
-                 prepared_by          AS preparedBy
+                 prepared_by          AS preparedBy,
+                 on_behalf_mode       AS onBehalfMode,
+                 show_disclaimer      AS showDisclaimer,
+                 show_signatory       AS showSignatory
           FROM ${TABLE}
           WHERE mcc_id = @mid
         `);
@@ -163,25 +179,17 @@ export async function getAllMccInvoiceConfigs(): Promise<MccInvoiceConfig[]> {
       const pool = await getPool();
       const r = await pool
         .request()
-        .query<{
-          mccId: number;
-          labName: string | null;
-          address: string | null;
-          phone: string | null;
-          email: string | null;
-          hasTopRightLogo: number;
-          nobleLogoPosition: string | null;
-          nobleLogoVisible: number | null;
-          customLogoVisible: number | null;
-          preparedBy: string | null;
-        }>(`
+        .query<RawRow>(`
           SELECT mcc_id AS mccId, lab_name AS labName,
-                 address, phone, email,
+                 address, city, state, pincode, phone, email,
                  CASE WHEN top_right_logo_mime IS NOT NULL THEN 1 ELSE 0 END AS hasTopRightLogo,
                  noble_logo_position  AS nobleLogoPosition,
                  noble_logo_visible   AS nobleLogoVisible,
                  custom_logo_visible  AS customLogoVisible,
-                 prepared_by          AS preparedBy
+                 prepared_by          AS preparedBy,
+                 on_behalf_mode       AS onBehalfMode,
+                 show_disclaimer      AS showDisclaimer,
+                 show_signatory       AS showSignatory
           FROM ${TABLE}
           ORDER BY mcc_id
         `);

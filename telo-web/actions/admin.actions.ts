@@ -27,6 +27,7 @@ import {
   adminResetPassword,
   adminSetActive,
   adminSetLisAccess,
+  adminSetMrpOnly,
 } from '@/db/sp/adminUsers';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { audit } from '@/lib/audit';
@@ -537,6 +538,44 @@ export async function setLisAccessAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong updating LIS access.');
+  }
+}
+
+const mrpOnlySchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  enabled: z.preprocess((v) => v === 'true' || v === true, z.boolean()),
+});
+
+/**
+ * Toggle the per-account "MRP only" flag. When enabled, the user only sees the
+ * classic New-Order tab; the B2B Orders tab is hidden. This is a UI-visibility
+ * flag read live (fetchMrpOnly), so no session-version bump is needed.
+ */
+export async function setMrpOnlyAction(
+  _prev: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'mrp');
+    const parsed = mrpOnlySchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('Invalid request.');
+    const { userId, enabled } = parsed.data;
+
+    const res = await adminSetMrpOnly({ userId, enabled, actor: actor.uid });
+    if (!res.ok) return err(res.message || 'Could not update MRP-only setting.');
+
+    audit({
+      kind: 'admin.user.mrp_only',
+      actor: actor.uid,
+      target: userId,
+      enabled,
+    });
+    revalidatePath('/admin/users');
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating the MRP-only setting.');
   }
 }
 

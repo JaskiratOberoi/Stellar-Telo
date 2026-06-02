@@ -57,6 +57,10 @@ export interface OrderDetail extends OrderSummary {
   samples: OrderSample[];
   receipts: OrderReceipt[];
   patientId: number | null;
+  /** First + last name of the LIS user who registered the bill (from the
+   *  `addedby='telo:<id>'` marker). Used as the bill's "Prepared by" for
+   *  non-MDCARE clients. Null for non-Telo bills or blank names. */
+  preparedByUser: string | null;
 }
 
 export interface RegistrationSummary {
@@ -206,6 +210,7 @@ export async function getOrder(
       discount: number;
       amountPaid: number;
       patientId: number | null;
+      preparedByUser: string | null;
     }>(`
       SELECT b.id AS billId, b.bill_number AS billNumber,
              b.bill_date AS billDate, b.patientname AS patientName,
@@ -217,12 +222,17 @@ export async function getOrder(
              p.Clinical_History AS clinicalHistory,
              b.discount_amount AS discount, b.amount_paid AS amountPaid,
              -- Telo writes patient_id into medid so we can join bill→patient.
-             TRY_CONVERT(INT, b.medid) AS patientId
+             TRY_CONVERT(INT, b.medid) AS patientId,
+             -- Registering Telo user (addedby='telo:<id>') → "Prepared by".
+             NULLIF(LTRIM(RTRIM(CONCAT(uu.firstname, ' ', uu.lastname))), '') AS preparedByUser
       FROM dbo.tbl_billing_patient_detail b
       LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
       LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
       LEFT JOIN dbo.tbl_med_mcc_patient_master p
             ON p.id = TRY_CONVERT(INT, b.medid)
+      LEFT JOIN dbo.tbl_med_user_master uu
+            ON b.addedby LIKE 'telo:%'
+           AND uu.id = TRY_CONVERT(INT, STUFF(b.addedby, 1, 5, ''))
       WHERE b.id = @bid ${scopeClause}
     `);
     const h = head.recordset[0];
@@ -351,6 +361,7 @@ export async function getOrder(
       discount: Number(h.discount ?? 0),
       amountPaid: Number(h.amountPaid ?? 0),
       patientId: h.patientId,
+      preparedByUser: h.preparedByUser?.trim() || null,
       lines: lr.recordset.map((x) => ({
         testCode: x.testCode,
         testName: x.testName,

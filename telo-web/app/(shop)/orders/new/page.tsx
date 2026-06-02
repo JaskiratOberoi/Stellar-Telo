@@ -6,13 +6,20 @@ import { PendingAccessionsList } from '@/components/orders/pending-accessions-li
 
 export const dynamic = 'force-dynamic';
 
-export default async function NewOrderWorklistPage() {
+export default async function NewOrderWorklistPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
   const user = await requireSession();
   // Worklist visible to anyone who can view orders (Technician included).
   if (!hasCapability(user.caps, 'order:view')) redirect('/dashboard');
 
   const feed = await getPendingAccessions();
   const canCreate = hasCapability(user.caps, 'order:create');
+  const sp = await searchParams;
+  const createdId = sp.created ? Number(sp.created) : NaN;
+  const highlightBillId = Number.isInteger(createdId) ? createdId : undefined;
 
   return (
     <div className="space-y-3">
@@ -24,7 +31,11 @@ export default async function NewOrderWorklistPage() {
             : 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes.'}
         </p>
       </div>
-      <PendingAccessionsList initial={feed} canCreate={canCreate} />
+      <PendingAccessionsList
+        initial={feed}
+        canCreate={canCreate}
+        highlightBillId={highlightBillId}
+      />
     </div>
   );
 }

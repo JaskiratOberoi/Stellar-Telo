@@ -7,6 +7,7 @@ import {
   resetPasswordAction,
   setActiveAction,
   setLisAccessAction,
+  setMrpOnlyAction,
   updateUserAction,
   getEditableUserScope,
   searchMccUnitsAction,
@@ -366,6 +367,10 @@ function UserRow({
                 userId={user.id}
                 enabled={!user.lisAccess}
               />
+            )}
+            {/* MRP-only toggle (hides B2B Orders) — Telo-managed accounts only. */}
+            {user.hasTeloAccount && (
+              <SetMrpOnlyButton userId={user.id} enabled={!user.mrpOnly} />
             )}
             {/* Edit is Telo-only — see updateUserAction guard. */}
             {user.createdByTelo && (
@@ -831,6 +836,38 @@ function SetLisAccessButton({
         }
       >
         {enabled ? 'Enable LIS' : 'Lock LIS'}
+      </button>
+    </form>
+  );
+}
+
+function SetMrpOnlyButton({
+  userId,
+  enabled,
+}: {
+  userId: number;
+  enabled: boolean; // target state (toggle): true = set MRP-only (hide B2B)
+}) {
+  const [, action, pending] = useActionState(setMrpOnlyAction, initial);
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+      <button
+        type="submit"
+        disabled={pending}
+        title={
+          enabled
+            ? 'MRP only — hide the B2B Orders tab for this account'
+            : 'Allow the B2B Orders tab for this account'
+        }
+        className={
+          enabled
+            ? 'text-amber-500 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            : 'text-secondary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+        }
+      >
+        {enabled ? 'Set MRP-only' : 'Allow B2B'}
       </button>
     </form>
   );

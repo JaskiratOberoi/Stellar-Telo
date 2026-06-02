@@ -7,6 +7,7 @@ import {
   summarizeTeloAccounts,
   listTeloBillsForMcc,
   listTeloReceiptsForBills,
+  searchTeloBills,
   type AccountsRow,
   type PendingBillRow,
   type BillReceiptRow,
@@ -115,6 +116,37 @@ export async function getAccountsSummary(args: {
     filters,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+export interface AccountsSearchResult {
+  bills: PendingBillRow[];
+  range: { from: string; to: string };
+  fetchedAt: string;
+}
+
+/**
+ * Free-text Accounts search across the caller's scope + active filters. Returns
+ * matching Telo bills (patient / bill # / doctor / customer), capped at 200.
+ */
+export async function searchAccountsBills(args: {
+  from: string;
+  to: string;
+  q: string;
+  mccId?: number | null;
+  paymentMode?: PaymentModeFilter;
+}): Promise<AccountsSearchResult> {
+  const range = { from: args.from, to: args.to };
+  const user = await currentUser();
+  if (!user || !hasCapability(user.caps, 'balance:view')) {
+    return { bills: [], range, fetchedAt: new Date().toISOString() };
+  }
+  const scope = await getMccScope(user.uid);
+  const bills = await searchTeloBills(scope, args.from, args.to, args.q ?? '', {
+    mccId: args.mccId ?? null,
+    paymentMode:
+      args.paymentMode && args.paymentMode !== 'all' ? args.paymentMode : null,
+  });
+  return { bills, range, fetchedAt: new Date().toISOString() };
 }
 
 /** Drill-down: Telo bills for one MCC within the same date window. */

@@ -7,7 +7,7 @@ import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { getReceiptsInPeriod } from '@/db/read/receipts';
 import { getMccScope } from '@/auth/scope';
-import { fmtIST } from '@/lib/datetime';
+import { fmtIST, todayIST, addDaysIST, firstOfMonthIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { AccountsReport } from '@/components/balances/accounts-report';
 import { PrintReportButton } from '@/components/balances/print-report-button';
@@ -23,23 +23,19 @@ import {
 export const dynamic = 'force-dynamic';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const today = (): string => new Date().toISOString().slice(0, 10);
-const firstOfMonth = (): string => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
+// IST calendar-day boundaries (see lib/datetime) — UTC dates skewed these by a
+// day in the early-IST-morning window.
+const today = (): string => todayIST();
+const firstOfMonth = (): string => firstOfMonthIST();
 // Monday-start week (Indian business convention is Mon–Sun, not Sun–Sat).
 const firstOfWeek = (): string => {
-  const d = new Date();
-  const day = d.getDay(); // 0=Sun..6=Sat
+  const t = todayIST();
+  const [y, m, d] = t.split('-').map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun..6=Sat
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return addDaysIST(t, diff);
 };
-const firstOfYear = (): string => {
-  const d = new Date();
-  return new Date(d.getFullYear(), 0, 1).toISOString().slice(0, 10);
-};
+const firstOfYear = (): string => `${todayIST().slice(0, 4)}-01-01`;
 // Patient age label — ageType 1=Years (default), 2=Months, 3=Days.
 function fmtPatientAge(
   age: number | null,

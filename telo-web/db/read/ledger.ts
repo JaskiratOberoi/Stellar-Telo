@@ -97,8 +97,11 @@ export async function summarizeTeloAccounts(
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
-    req.input('from', sql.DateTime, new Date(fromIso));
-    req.input('to', sql.DateTime, new Date(toIso));
+    // Bind the IST calendar day as a date string and CAST in SQL — binding a
+    // JS Date as DATETIME made @from = UTC-midnight = 05:30 IST, which dropped
+    // bills stamped 00:00–05:30 IST on the from-day.
+    req.input('from', sql.VarChar(10), fromIso);
+    req.input('to', sql.VarChar(10), toIso);
     let scopeClause = unrestricted
       ? ''
       : `AND b.mcc_code IN (${scopeParams(req, ids)})`;
@@ -154,8 +157,8 @@ export async function summarizeTeloAccounts(
       FROM dbo.tbl_billing_patient_detail b
       JOIN dbo.tbl_med_mcc_unit_master m ON m.id = b.mcc_code
       WHERE b.addedby LIKE 'telo:%'
-        AND b.bill_date >= @from
-        AND b.bill_date <  DATEADD(day, 1, @to)
+        AND b.bill_date >= CAST(@from AS DATE)
+        AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
         ${scopeClause}
         ${paymentClause}
       GROUP BY m.id, m.MCCUnitCode, m.MCCUnitName
@@ -220,8 +223,8 @@ export async function listTeloBillsForMcc(
     const r = await pool
       .request()
       .input('mcc', sql.Int, mccId)
-      .input('from', sql.DateTime, new Date(fromIso))
-      .input('to', sql.DateTime, new Date(toIso))
+      .input('from', sql.VarChar(10), fromIso)
+      .input('to', sql.VarChar(10), toIso)
       .query<{
         billId: number;
         billNumber: number | null;
@@ -253,8 +256,8 @@ export async function listTeloBillsForMcc(
         LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
         WHERE b.addedby LIKE 'telo:%'
           AND b.mcc_code = @mcc
-          AND b.bill_date >= @from
-          AND b.bill_date <  DATEADD(day, 1, @to)
+          AND b.bill_date >= CAST(@from AS DATE)
+          AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
         ORDER BY b.bill_date DESC, b.id DESC
       `);
     return r.recordset.map((x) => ({
@@ -271,6 +274,118 @@ export async function listTeloBillsForMcc(
       paymentType: x.paymentType ? x.paymentType.trim() : null,
       age: x.age,
       // age_type is stored as VARCHAR(10) on the bill — parse to int.
+      ageType:
+        x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
+          ? Number(String(x.ageType).trim())
+          : null,
+    }));
+  });
+}
+
+/**
+ * Free-text search over Telo bills across the caller's full MCC scope within
+ * the date window, honouring the same center + payment-mode filters as the
+ * rollup. Matches patient name, bill number, ref doctor, or ref customer.
+ * Capped at 200 rows. Powers the Accounts page search box.
+ */
+export async function searchTeloBills(
+  scope: number[],
+  fromIso: string,
+  toIso: string,
+  query: string,
+  filters: {
+    mccId?: number | null;
+    paymentMode?: 'cash' | 'credit' | null;
+  } = {},
+): Promise<PendingBillRow[]> {
+  const needle = (query ?? '').trim();
+  if (!needle) return [];
+  const ids = scope.filter((n) => Number.isInteger(n));
+  if (ids.length === 0) return [];
+  const unrestricted = ids.length > 1000;
+
+  return withRetry(async () => {
+    const pool = await getPool();
+    const req = pool.request();
+    req.input('from', sql.VarChar(10), fromIso);
+    req.input('to', sql.VarChar(10), toIso);
+    // Escape LIKE wildcards in the user's needle so '%'/'_' are literal.
+    const escaped = needle.replace(/[[%_]/g, (c) => `[${c}]`);
+    req.input('q', sql.NVarChar(120), `%${escaped}%`);
+
+    let scopeClause = unrestricted
+      ? ''
+      : `AND b.mcc_code IN (${scopeParams(req, ids)})`;
+    if (
+      filters.mccId != null &&
+      Number.isInteger(filters.mccId) &&
+      (unrestricted || ids.includes(filters.mccId))
+    ) {
+      req.input('mccOne', sql.Int, filters.mccId);
+      scopeClause = 'AND b.mcc_code = @mccOne';
+    }
+    let paymentClause = '';
+    if (filters.paymentMode === 'credit') {
+      paymentClause = `AND b.payment_type LIKE '%CREDIT%'`;
+    } else if (filters.paymentMode === 'cash') {
+      paymentClause = `AND (b.payment_type IS NULL OR b.payment_type NOT LIKE '%CREDIT%')`;
+    }
+
+    const r = await req.query<{
+      billId: number;
+      billNumber: number | null;
+      billDate: Date | null;
+      patientName: string | null;
+      patientId: number | null;
+      amount: number;
+      amountPaid: number;
+      balance: number;
+      doctorName: string | null;
+      customerName: string | null;
+      paymentType: string | null;
+      age: number | null;
+      ageType: string | null;
+    }>(`
+      SELECT TOP (200)
+        b.id AS billId, b.bill_number AS billNumber,
+        b.bill_date AS billDate, b.patientname AS patientName,
+        TRY_CONVERT(INT, b.medid) AS patientId,
+        b.amount AS amount, b.amount_paid AS amountPaid,
+        b.Balance AS balance,
+        d.doctor_name AS doctorName,
+        c.customer_name AS customerName,
+        b.payment_type AS paymentType,
+        b.age AS age,
+        b.age_type AS ageType
+      FROM dbo.tbl_billing_patient_detail b
+      LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
+      LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
+      WHERE b.addedby LIKE 'telo:%'
+        AND b.bill_date >= CAST(@from AS DATE)
+        AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
+        ${scopeClause}
+        ${paymentClause}
+        AND (
+              b.patientname LIKE @q
+           OR CONVERT(VARCHAR(20), b.bill_number) LIKE @q
+           OR d.doctor_name LIKE @q
+           OR c.customer_name LIKE @q
+        )
+      ORDER BY b.bill_date DESC, b.id DESC
+    `);
+    return r.recordset.map((x) => ({
+      billId: x.billId,
+      billNumber: x.billNumber,
+      billDate: x.billDate ? x.billDate.toISOString() : null,
+      patientName: x.patientName ? x.patientName.trim() : null,
+      patientId: x.patientId,
+      amount: Number(x.amount ?? 0),
+      amountPaid: Number(x.amountPaid ?? 0),
+      balance: Number(x.balance ?? 0),
+      doctorName: x.doctorName ? x.doctorName.trim() : null,
+      customerName: x.customerName ? x.customerName.trim() : null,
+      paymentType: x.paymentType ? x.paymentType.trim() : null,
+      age: x.age,
       ageType:
         x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
           ? Number(String(x.ageType).trim())

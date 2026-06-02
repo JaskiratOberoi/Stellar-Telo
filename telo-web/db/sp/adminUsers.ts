@@ -154,3 +154,28 @@ export async function adminSetLisAccess(args: {
     };
   });
 }
+
+/** Sets the per-account "MRP only" flag (hides the B2B Orders tab). */
+export async function adminSetMrpOnly(args: {
+  userId: number;
+  enabled: boolean;
+  actor: number;
+}): Promise<AdminSpResult> {
+  return withRetry(async () => {
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input('userId', sql.Int, args.userId)
+      .input('enabled', sql.Bit, args.enabled ? 1 : 0)
+      .input('actor', sql.Int, args.actor)
+      .execute<{ ok: boolean; error_code: string | null; message: string | null }>(
+        'dbo.usp_telo_admin_set_mrp_only',
+      );
+    const row = r.recordset[0];
+    return {
+      ok: row?.ok === true,
+      errorCode: row?.error_code ?? null,
+      message: row?.message ?? null,
+    };
+  });
+}
