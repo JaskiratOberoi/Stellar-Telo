@@ -475,9 +475,9 @@ function PatientMetaBlock({
       <div className="border-b border-gray-300 pb-2">
         <div className="grid grid-cols-2 gap-x-10 gap-y-0.5">
           <Meta label="Name" value={data.patientName ?? '—'} strong />
-          <Meta label="Patient Id" value={String(data.pid)} mono />
-          <Meta label="Lab No. / SID" value={data.sid} mono strong />
           <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
+          <Meta label="Lab No. / SID" value={data.sid} mono strong />
+          <Meta label="Patient Id" value={String(data.pid)} mono />
           <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
           <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
           {data.specimens && data.specimens.length > 0 && (
