@@ -186,7 +186,9 @@ export async function getSampleReport(
   // stored text.
   const AGE_BANDED = /\b(adult|paediatric|pediatric|newborn|year|month|week|trimester)\b/i;
   const toRow = (x: RawRow): SampleReportRow => {
-    const stored = clean(x.normalRange);
+    // Preserve the LIS's per-band line breaks in the reference range so the
+    // report can show each band on its own line (formatRange finishes the job).
+    const stored = cleanMultiline(x.normalRange);
     const ageRange =
       stored && AGE_BANDED.test(stored) && x.testid != null
         ? rangeByTestId.get(x.testid) ?? null

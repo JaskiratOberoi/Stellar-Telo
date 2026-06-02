@@ -60,23 +60,51 @@ function splitInterp(s: string): { heading: string; body: string } {
   return { heading, body };
 }
 
+/** Normalise comparator shorthand the way the LIS prints it: ">="/"<=" become
+ *  ≥/≤, and a bare "=" used before a number (an open upper band like
+ *  "High = 240") becomes ≥ — single values like "13.5 - 17.5" are untouched. */
+function normalizeComparators(line: string): string {
+  return line
+    .replace(/>\s*=/g, '≥')
+    .replace(/<\s*=/g, '≤')
+    .replace(/(^|[\s(])=(?=\s*-?\d)/g, '$1≥');
+}
+
+/** Split a colon-labelled run-on (e.g. "Desirable: > 60 Optimal: 40-59 …") into
+ *  one "Label: value" per segment. Returns the line unchanged if not labelled. */
+function splitColonSegments(line: string): string[] {
+  if ((line.match(/:/g) ?? []).length < 2) return [line];
+  const re = /([A-Za-z][A-Za-z /]*?)\s*:\s*(.*?)(?=\s+[A-Za-z][A-Za-z /]*?\s*:|$)/g;
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    const v = m[2].trim();
+    out.push(v ? `${m[1].trim()}: ${v}` : m[1].trim());
+  }
+  return out.length >= 2 ? out : [line];
+}
+
 /**
- * Format a biological-reference range. A single value (e.g. "0.35 - 5.50") is
- * returned as-is; a labeled multi-segment range (e.g. "Non Pregnant: 2.8-29.2
- * Pregnant: 9.7-208.5 …") breaks into one "Label: value" line per segment.
+ * Format a biological-reference range, one band per line. The LIS stores most
+ * banded ranges with line breaks already (e.g. "Desirable < 200\nBorderline
+ * High 200 - 239\nHigh = 240"); we keep those, split any run-on band (a new
+ * Title-case label right after a number) and colon-labelled run-ons, and
+ * normalise comparators. A plain value ("0.35 - 5.50") is returned as-is.
  */
 function formatRange(s: string | null): string {
   if (!s) return '—';
-  const t = s.replace(/\s+/g, ' ').trim();
-  const re = /([A-Za-z][A-Za-z ]*?)\s*:\s*(.*?)(?=\s+[A-Za-z][A-Za-z ]*?\s*:|$)/g;
-  const parts: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(t)) !== null) {
-    const label = m[1].trim();
-    const val = m[2].trim();
-    parts.push(val ? `${label}: ${val}` : label);
-  }
-  return parts.length >= 2 ? parts.join('\n') : t;
+  const lines = s
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .flatMap(splitColonSegments)
+    // Break a run-on like "…200 - 239 High 240" before a Title-case band label
+    // that follows a number.
+    .flatMap((l) => l.replace(/(\d)\s+(?=[A-Z][a-z])/g, '$1\n').split('\n'))
+    .map((l) => normalizeComparators(l.trim()))
+    .filter(Boolean);
+  return lines.length ? lines.join('\n') : s.trim();
 }
 
 export interface LabReportSigner {
