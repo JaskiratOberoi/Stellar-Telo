@@ -444,7 +444,7 @@ function ReportColgroup() {
 /** The repeating column-header row. */
 function ColumnHeaderRow() {
   return (
-    <tr className="border-b border-gray-400">
+    <tr className="border-b border-gray-400 text-[12px]">
       <th className="py-1 pr-3 text-left font-semibold">Test Name</th>
       <th className="py-1 pr-3 text-left font-semibold">Value</th>
       <th className="py-1 pr-3 text-left font-semibold">Unit</th>
@@ -855,7 +855,7 @@ function ResultRow({
         <td className={`py-1 pr-3 ${indentClass ?? ''}`}>
           <div className="flex items-start gap-1.5">
             {lead}
-            <div className="text-[13px] font-medium">{row.name ?? '—'}</div>
+            <div className="text-[12px] font-medium">{row.name ?? '—'}</div>
           </div>
         </td>
         <td className="py-1 pr-3">
