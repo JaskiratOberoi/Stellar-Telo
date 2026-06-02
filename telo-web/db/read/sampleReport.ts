@@ -27,6 +27,8 @@ import { getAgeSpecificRange } from '@/db/read/ageRange';
  */
 
 export interface SampleReportRow {
+  /** Uppercased test code (for matching static notes by code). */
+  code: string | null;
   name: string | null;
   method: string | null;
   value: string | null;
@@ -170,6 +172,7 @@ export async function getSampleReport(
         ? rangeByTestId.get(x.testid) ?? null
         : null;
     return {
+      code: x.testcode ? x.testcode.trim().toUpperCase() : null,
       name: clean(x.testname),
       method: clean(x.method),
       value: clean(x.value),

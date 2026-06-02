@@ -9,7 +9,6 @@ import {
 import { getReferringDoctor } from '@/db/read/refDoctor';
 import { getMccCentreByCode } from '@/db/read/mccUnits';
 import { getSampleReport } from '@/db/read/sampleReport';
-import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
 export const dynamic = 'force-dynamic';
@@ -94,11 +93,6 @@ export default async function ReportingPrintFragment({
     .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
     .slice(0, 3);
 
-  // Aggregate static notes for the test codes present on this report.
-  const staticNotes = Array.from(
-    new Set(report.codes.flatMap((c) => STATIC_NOTES_BY_CODE[c] ?? [])),
-  );
-
   const data: LabReportData = {
     pdf: pdfMode,
     splitByDepartment,
@@ -120,7 +114,6 @@ export default async function ReportingPrintFragment({
     specimens: report.specimens,
     collectionCentre,
     departments: report.departments,
-    staticNotes,
     processedAt: bu
       ? { name: bu.name, address: bu.address, city: bu.city, phone: bu.phone }
       : null,

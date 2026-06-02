@@ -20,6 +20,7 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { fmtIST } from '@/lib/datetime';
+import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import type {
   SampleReportBlock,
   SampleReportDepartment,
@@ -27,6 +28,24 @@ import type {
   SampleReportPanel,
   SampleReportRow,
 } from '@/db/read/sampleReport';
+
+/** Static "Note" lines for the given test codes (deduped union), e.g. the TSH
+ *  notes. Used to print a test/profile's notes at the end of ITS section. */
+function notesForCodes(codes: (string | null | undefined)[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const c of codes) {
+    const key = (c ?? '').trim().toUpperCase();
+    if (!key) continue;
+    for (const n of STATIC_NOTES_BY_CODE[key] ?? []) {
+      if (!seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+      }
+    }
+  }
+  return out;
+}
 
 /** Derive a heading + body from LIS interpretation text whose leading label
  *  (e.g. "CLINICAL SIGNIFICANCE :", "Note:", "Interpretation:-") becomes the
@@ -101,8 +120,6 @@ export interface LabReportData {
     email: string | null;
   } | null;
   departments: SampleReportDepartment[];
-  /** Extra static "Note" lines (e.g. TSH notes) for codes present. */
-  staticNotes: string[];
   processedAt: {
     name: string | null;
     address: string | null;
@@ -425,20 +442,6 @@ export function LabReport({ data }: { data: LabReportData }) {
             })
           )}
 
-          {/* Static notes (e.g. TSH). */}
-          {data.staticNotes.length > 0 && (
-            <tr>
-              <td colSpan={5} className="pt-3">
-                <p className="mb-0.5 font-semibold">Note</p>
-                <ol className="list-decimal space-y-0.5 pl-5 text-[10px] leading-tight text-gray-800">
-                  {data.staticNotes.map((n, i) => (
-                    <li key={i}>{n}</li>
-                  ))}
-                </ol>
-              </td>
-            </tr>
-          )}
-
           {/* End marker — printed once, after all content. */}
           <tr>
             <td colSpan={5} className="pt-3 text-center text-[10px] font-semibold tracking-wide text-gray-600">
@@ -510,12 +513,13 @@ function PanelBlock({
     : kids;
   if (pdf && visibleKids.length === 0) return null;
 
-  // A profile's interpretations belong BELOW the whole profile, not interleaved
-  // between its result rows. Collect each included child's interpretation
-  // (deduped) and print them after all the rows. Excluded/off children (which
+  // A profile's interpretations + static notes belong BELOW the whole profile,
+  // not interleaved between its result rows. Collect each included child's
+  // interpretation (deduped) and its test codes. Excluded/off children (which
   // won't be in the PDF) don't contribute.
   const panelInterps: string[] = [];
   const seenInterp = new Set<string>();
+  const panelCodes: (string | null)[] = [];
   for (const { child, ckey } of kids) {
     if (panelOff || excluded.has(ckey)) continue;
     const t = (
@@ -525,7 +529,13 @@ function PanelBlock({
       seenInterp.add(t);
       panelInterps.push(t);
     }
+    if (child.kind === 'group' && child.group) {
+      for (const r of child.group.rows) panelCodes.push(r.code);
+    } else if (child.row) {
+      panelCodes.push(child.row.code);
+    }
   }
+  const panelNotes = notesForCodes(panelCodes);
 
   return (
     <>
@@ -556,6 +566,7 @@ function PanelBlock({
       {panelInterps.map((t, i) => (
         <InterpretationRow key={`pi-${i}`} text={t} dim={panelOff} />
       ))}
+      <NoteRow notes={panelNotes} dim={panelOff} />
     </>
   );
 }
@@ -649,6 +660,9 @@ function GroupBlock({
       {!hideInterpretation && group.interpretation && (
         <InterpretationRow text={group.interpretation} dim={excluded} />
       )}
+      {!hideInterpretation && (
+        <NoteRow notes={notesForCodes(group.rows.map((r) => r.code))} dim={excluded} />
+      )}
     </>
   );
 }
@@ -689,6 +703,7 @@ function SingleBlock({
       {!hideInterpretation && interpretation && (
         <InterpretationRow text={interpretation} dim={excluded} />
       )}
+      {!hideInterpretation && <NoteRow notes={notesForCodes([row.code])} dim={excluded} />}
     </>
   );
 }
@@ -742,6 +757,26 @@ function InterpretationRow({ text, dim }: { text: string; dim?: boolean }) {
         <div className="border border-gray-300 p-1.5 [break-inside:avoid]">
           <p className="mb-0.5 font-semibold">{heading}</p>
           <p className="whitespace-pre-line text-[9px] leading-tight text-gray-700">{body}</p>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** A test/profile's static "Note" list, printed at the end of ITS section and
+ *  kept together (never split across a page). */
+function NoteRow({ notes, dim }: { notes: string[]; dim?: boolean }) {
+  if (notes.length === 0) return null;
+  return (
+    <tr className={dim ? 'opacity-40' : ''}>
+      <td colSpan={5} className="pt-1">
+        <div className="[break-inside:avoid]">
+          <p className="mb-0.5 font-semibold">Note</p>
+          <ol className="list-decimal space-y-0.5 pl-5 text-[10px] leading-tight text-gray-800">
+            {notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ol>
         </div>
       </td>
     </tr>
