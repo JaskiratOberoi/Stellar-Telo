@@ -85,10 +85,12 @@ export default async function ReportingPrintFragment({
     getReferringDoctor(row.pid),
   ]);
 
-  // Single signatory: the primary pathologist (DOC_TYPE = 1).
+  // All configured signatories, ordered primary → secondary (DOC_TYPE asc),
+  // capped at three so the footer never overflows the page width.
   const rawSigners = bu ? await getSignersForBusinessUnit(bu.id) : [];
-  const pathologist = rawSigners.find((s) => s.docType === 1) ?? rawSigners[0] ?? null;
-  const signers = pathologist ? [pathologist] : [];
+  const signers = [...rawSigners]
+    .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
+    .slice(0, 3);
 
   // Aggregate static notes for the test codes present on this report.
   const staticNotes = Array.from(
@@ -113,6 +115,7 @@ export default async function ReportingPrintFragment({
     statusLabel: row.status,
     billNumber: row.bill_number,
     clinicalHistory: row.clinical_history,
+    specimens: report.specimens,
     departments: report.departments,
     staticNotes,
     processedAt: bu

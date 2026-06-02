@@ -81,6 +81,9 @@ export interface SampleReport {
   departments: SampleReportDepartment[];
   /** Distinct test codes present (for static-notes lookup). */
   codes: string[];
+  /** Distinct specimen / sample types present (e.g. "Whole Blood EDTA",
+   *  "Serum"), in first-seen order — shown in the report header. */
+  specimens: string[];
 }
 
 interface RawRow {
@@ -98,6 +101,7 @@ interface RawRow {
   method: string | null;
   interpretation: string | null;
   deptName: string | null;
+  specimen: string | null;
 }
 
 const clean = (s: string | null | undefined): string | null => {
@@ -111,7 +115,7 @@ export async function getSampleReport(
   ageUnit: string | null,
 ): Promise<SampleReport> {
   const sidTrim = vailid.trim();
-  if (!sidTrim) return { departments: [], codes: [] };
+  if (!sidTrim) return { departments: [], codes: [], specimens: [] };
 
   const raw = await withRetry(async () => {
     const pool = await getPool();
@@ -132,10 +136,12 @@ export async function getSampleReport(
                res.profile_id                     AS profileId,
                m.Method                           AS method,
                CAST(m.Interpretation AS NVARCHAR(MAX)) AS interpretation,
-               d.Name                             AS deptName
+               d.Name                             AS deptName,
+               sm.Sampletype                      AS specimen
         FROM dbo.tbl_med_mcc_patient_test_result res
         LEFT JOIN dbo.tbl_med_test_master m       ON m.id = res.testid
         LEFT JOIN dbo.tbl_med_department_master d ON d.id = m.DepartmentId
+        LEFT JOIN dbo.tbl_med_sample_master sm    ON sm.id = m.SampleId
         WHERE res.vailid = @sid
         ORDER BY res.id
       `);
@@ -178,6 +184,7 @@ export async function getSampleReport(
   const deptOrder: string[] = [];
   const deptItems = new Map<string, SampleReportItem[]>();
   const codes = new Set<string>();
+  const specimens = new Set<string>();
 
   const pushItem = (dept: string, item: SampleReportItem) => {
     if (!deptItems.has(dept)) {
@@ -205,6 +212,8 @@ export async function getSampleReport(
     const dept = clean(x.deptName) ?? 'OTHER';
     const type = (x.testtype ?? '').trim();
     if (x.testcode) codes.add(x.testcode.trim().toUpperCase());
+    const spec = clean(x.specimen);
+    if (spec) specimens.add(spec);
 
     // Does this row belong to the open panel? Membership is by shared
     // profile_id within the same department.
@@ -285,5 +294,5 @@ export async function getSampleReport(
     items: deptItems.get(name)!,
   }));
 
-  return { departments, codes: [...codes] };
+  return { departments, codes: [...codes], specimens: [...specimens] };
 }

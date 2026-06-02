@@ -88,6 +88,8 @@ export interface LabReportData {
   statusLabel: string | null;
   billNumber: string | null;
   clinicalHistory: string | null;
+  /** Distinct specimen / sample types on this sample (e.g. "Serum"). */
+  specimens?: string[];
   departments: SampleReportDepartment[];
   /** Extra static "Note" lines (e.g. TSH notes) for codes present. */
   staticNotes: string[];
@@ -209,16 +211,17 @@ export function LabReport({ data }: { data: LabReportData }) {
           large gaps — both avoided by this flat single-table layout.) */}
       <table className="w-full table-fixed border-collapse">
         <colgroup>
-          <col className="w-[38%]" />
-          <col className="w-[17%]" />
-          <col className="w-[13%]" />
-          <col className="w-[32%]" />
+          <col className="w-[33%]" />
+          <col className="w-[12%]" />
+          <col className="w-[11%]" />
+          <col className="w-[24%]" />
+          <col className="w-[20%]" />
         </colgroup>
 
         {/* ── Patient header + column headers — repeat at the top of every page ── */}
         <thead>
           <tr>
-            <td colSpan={4} className="p-0 align-top">
+            <td colSpan={5} className="p-0 align-top">
               <div className="grid grid-cols-2 gap-x-10 gap-y-0.5 border-b border-gray-300 pb-2">
                 <Meta label="Name" value={data.patientName ?? '—'} strong />
                 <Meta label="Patient Id" value={String(data.pid)} mono />
@@ -226,10 +229,14 @@ export function LabReport({ data }: { data: LabReportData }) {
                 <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
                 <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
                 <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
+                {data.specimens && data.specimens.length > 0 && (
+                  <Meta label="Specimen" value={data.specimens.join(', ')} />
+                )}
                 <Meta label="Report Status" value={data.statusLabel ?? '—'} />
                 <Meta label="Collected" value={fmtIST(data.collectedAt)} />
                 <Meta label="Registered" value={fmtIST(data.registeredAt)} />
                 <Meta label="Reported" value={fmtIST(data.reportedAt)} />
+                <Meta label="Printed" value={fmtIST(data.printedAt)} />
                 {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
               </div>
 
@@ -261,28 +268,31 @@ export function LabReport({ data }: { data: LabReportData }) {
           </tr>
           <tr className="border-b border-gray-400">
             <th className="py-1 pr-3 text-left font-semibold">Test Name</th>
-            <th className="py-1 pr-3 text-left font-semibold">Results</th>
-            <th className="py-1 pr-3 text-left font-semibold">Units</th>
-            <th className="py-1 text-left font-semibold">Bio. Ref. Interval</th>
+            <th className="py-1 pr-3 text-left font-semibold">Value</th>
+            <th className="py-1 pr-3 text-left font-semibold">Unit</th>
+            <th className="py-1 pr-3 text-left font-semibold">Biological Ref Interval</th>
+            <th className="py-1 text-left font-semibold">Method</th>
           </tr>
         </thead>
 
         {/* ── Signatures + footer — repeat at the bottom of every page ───── */}
         <tfoot>
           <tr>
-            <td colSpan={4} className="p-0 align-bottom">
+            <td colSpan={5} className="p-0 align-bottom">
               {data.signers.length > 0 && (
-                <div className="flex flex-wrap items-end justify-end gap-8 pt-3 [break-inside:avoid]">
+                <div className="flex items-end justify-between gap-6 pt-3 [break-inside:avoid]">
                   {data.signers.map((s) => (
-                    <div key={s.id} className="text-right text-[10px] [break-inside:avoid]">
+                    <div key={s.id} className="flex-1 text-center text-[10px] [break-inside:avoid]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`/api/reporting/signature/${s.id}`}
                         alt={s.doctorName ?? 'Signature'}
-                        className="mb-0.5 ml-auto h-9 w-auto object-contain"
+                        className="mb-0.5 mx-auto h-9 w-auto object-contain"
                       />
-                      <p className="font-semibold">{s.doctorName ?? ''}</p>
-                      {s.designation && <p className="text-gray-600">{s.designation}</p>}
+                      <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
+                      {s.designation && (
+                        <p className="leading-tight text-gray-600">{s.designation}</p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -305,7 +315,7 @@ export function LabReport({ data }: { data: LabReportData }) {
         <tbody>
           {data.departments.length === 0 ? (
             <tr>
-              <td colSpan={4} className="py-4 text-center text-gray-500">
+              <td colSpan={5} className="py-4 text-center text-gray-500">
                 No results available for this sample.
               </td>
             </tr>
@@ -331,7 +341,7 @@ export function LabReport({ data }: { data: LabReportData }) {
                 <Fragment key={di}>
                   <tr className={data.splitByDepartment && di > 0 ? '[break-before:page]' : ''}>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]"
                     >
                       {dept.name}
@@ -385,7 +395,7 @@ export function LabReport({ data }: { data: LabReportData }) {
           {/* Static notes (e.g. TSH). */}
           {data.staticNotes.length > 0 && (
             <tr>
-              <td colSpan={4} className="pt-3">
+              <td colSpan={5} className="pt-3">
                 <p className="mb-0.5 font-semibold">Note</p>
                 <ol className="list-decimal space-y-0.5 pl-5 text-[10px] leading-tight text-gray-800">
                   {data.staticNotes.map((n, i) => (
@@ -398,8 +408,8 @@ export function LabReport({ data }: { data: LabReportData }) {
 
           {/* End marker — printed once, after all content. */}
           <tr>
-            <td colSpan={4} className="pt-3 text-center text-[9px] font-medium text-gray-500">
-              -- End of report --
+            <td colSpan={5} className="pt-3 text-center text-[10px] font-semibold tracking-wide text-gray-600">
+              *** End of Report ***
             </td>
           </tr>
         </tbody>
@@ -470,7 +480,7 @@ function PanelBlock({
   return (
     <>
       <tr className={`[break-inside:avoid] ${panelOff ? 'opacity-40' : ''}`}>
-        <td colSpan={4} className="pt-2.5 align-top">
+        <td colSpan={5} className="pt-2.5 align-top">
           <span className="flex items-start gap-1.5">
             {interactive && (
               <IncludeToggle
@@ -554,7 +564,7 @@ function GroupBlock({
   return (
     <>
       <tr className={`[break-inside:avoid] ${dim}`}>
-        <td colSpan={4} className={`pt-2 align-top ${indent ? 'pl-4' : ''}`}>
+        <td colSpan={5} className={`pt-2 align-top ${indent ? 'pl-4' : ''}`}>
           <span className="flex items-start gap-1.5">
             {interactive && (
               <IncludeToggle
@@ -633,10 +643,7 @@ function ResultRow({
         <td className={`py-1 pr-3 ${indentClass ?? ''}`}>
           <div className="flex items-start gap-1.5">
             {lead}
-            <div>
-              <div className="font-medium">{row.name ?? '—'}</div>
-              {row.method && <div className="text-[9px] italic text-gray-500">(Method: {row.method})</div>}
-            </div>
+            <div className="font-medium">{row.name ?? '—'}</div>
           </div>
         </td>
         <td className="py-1 pr-3">
@@ -646,10 +653,11 @@ function ResultRow({
         <td className="whitespace-pre-line py-1 text-[10px] leading-snug text-gray-700">
           {formatRange(row.range)}
         </td>
+        <td className="py-1 text-[9px] leading-snug text-gray-600">{row.method ?? '—'}</td>
       </tr>
       {row.comments && (
         <tr className={dimClass}>
-          <td colSpan={4} className="pb-1 text-[10px] text-gray-700">
+          <td colSpan={5} className="pb-1 text-[10px] text-gray-700">
             <span className="font-semibold">Comments:</span> {row.comments}
           </td>
         </tr>
@@ -662,7 +670,7 @@ function InterpretationRow({ text, dim }: { text: string; dim?: boolean }) {
   const { heading, body } = splitInterp(text);
   return (
     <tr className={dim ? 'opacity-40' : ''}>
-      <td colSpan={4} className="py-1">
+      <td colSpan={5} className="py-1">
         <div className="border border-gray-300 p-1.5 [break-inside:avoid]">
           <p className="mb-0.5 font-semibold">{heading}</p>
           <p className="whitespace-pre-line text-[9px] leading-tight text-gray-700">{body}</p>
