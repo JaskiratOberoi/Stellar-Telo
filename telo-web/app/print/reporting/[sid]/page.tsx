@@ -7,6 +7,7 @@ import {
   getSignersForBusinessUnit,
 } from '@/db/read/signatures';
 import { getReferringDoctor } from '@/db/read/refDoctor';
+import { getMccCentreByCode } from '@/db/read/mccUnits';
 import { getSampleReport } from '@/db/read/sampleReport';
 import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
@@ -79,10 +80,11 @@ export default async function ReportingPrintFragment({
   const row = rows.find((r) => r.sid === decodedSid) ?? rows[0];
   if (!row) notFound();
 
-  const [report, bu, refDoctor] = await Promise.all([
+  const [report, bu, refDoctor, collectionCentre] = await Promise.all([
     getSampleReport(decodedSid, row.age, row.age_unit),
     resolveBusinessUnit(row.business_unit),
     getReferringDoctor(row.pid),
+    getMccCentreByCode(row.client_code),
   ]);
 
   // All configured signatories, ordered primary → secondary (DOC_TYPE asc),
@@ -116,6 +118,7 @@ export default async function ReportingPrintFragment({
     billNumber: row.bill_number,
     clinicalHistory: row.clinical_history,
     specimens: report.specimens,
+    collectionCentre,
     departments: report.departments,
     staticNotes,
     processedAt: bu

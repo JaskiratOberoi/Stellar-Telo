@@ -7,6 +7,62 @@ export interface ScopedMcc {
   name: string | null;
 }
 
+/** A collection centre's contact details, for the report's "Collected at". */
+export interface CollectionCentre {
+  code: string;
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+/**
+ * The collection centre (MCC unit) for a report's client/customer code, with
+ * its address + contact details — shown as "Collected at" in the report header.
+ * Keyed by MCCUnitCode (== the sample's client_code). Read live; the per-report
+ * lookup is a single indexed row. Returns null when the code has no centre.
+ */
+export async function getMccCentreByCode(
+  code: string | null | undefined,
+): Promise<CollectionCentre | null> {
+  const c = (code ?? '').trim();
+  if (!c) return null;
+  return withRetry(async () => {
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input('c', sql.NVarChar(50), c)
+      .query<{
+        code: string;
+        name: string | null;
+        address: string | null;
+        city: string | null;
+        phone: string | null;
+        email: string | null;
+      }>(`
+        SELECT TOP 1 MCCUnitCode AS code, MCCUnitName AS name,
+               address, city, phone, email
+        FROM dbo.tbl_med_mcc_unit_master
+        WHERE MCCUnitCode = @c
+      `);
+    const x = r.recordset[0];
+    if (!x) return null;
+    const trim = (s: string | null) => {
+      const t = (s ?? '').trim();
+      return t || null;
+    };
+    return {
+      code: (x.code ?? '').trim(),
+      name: trim(x.name),
+      address: trim(x.address),
+      city: trim(x.city),
+      phone: trim(x.phone),
+      email: trim(x.email),
+    };
+  });
+}
+
 /**
  * Every active MCC unit. Returned to admin/user-management so a Super Admin
  * can assign a client-code scope when onboarding a new user. ~1.7k rows —

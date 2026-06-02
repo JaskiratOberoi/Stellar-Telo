@@ -90,6 +90,16 @@ export interface LabReportData {
   clinicalHistory: string | null;
   /** Distinct specimen / sample types on this sample (e.g. "Serum"). */
   specimens?: string[];
+  /** The collection centre (where the sample was drawn) — shown as "Collected
+   *  at" in the header with its address + contact details. */
+  collectionCentre?: {
+    code: string;
+    name: string | null;
+    address: string | null;
+    city: string | null;
+    phone: string | null;
+    email: string | null;
+  } | null;
   departments: SampleReportDepartment[];
   /** Extra static "Note" lines (e.g. TSH notes) for codes present. */
   staticNotes: string[];
@@ -133,6 +143,15 @@ export function LabReport({ data }: { data: LabReportData }) {
   ]
     .filter(Boolean)
     .join(', ');
+
+  // Signature footer placement: 1 → right; 2 → spread to both edges; 3–4 →
+  // equal columns left-to-right.
+  const signerJustify = data.signers.length === 1 ? 'justify-end' : 'justify-between';
+  const signerBlockCls = data.signers.length >= 3 ? 'flex-1 text-center' : 'text-center';
+
+  // "Collected at" — collection-centre name + address + contact.
+  const cc = data.collectionCentre;
+  const ccAddress = cc ? [cc.address, cc.city].filter(Boolean).join(', ') : '';
 
   // Which items/children are unticked. Preview owns this set live; PDF mode is
   // seeded from the keys passed in by the route and never changes.
@@ -240,6 +259,25 @@ export function LabReport({ data }: { data: LabReportData }) {
                 {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
               </div>
 
+              {cc && (
+                <div className="mt-1.5 flex items-baseline gap-2 text-[10px] leading-snug text-gray-700">
+                  <span className="w-28 shrink-0 text-gray-500">Collected at</span>
+                  <span className="text-gray-400">:</span>
+                  <span>
+                    <span className="font-semibold">{cc.name ?? cc.code}</span>
+                    {ccAddress && <>, {ccAddress}</>}
+                    {(cc.email || cc.phone) && (
+                      <span className="text-gray-600">
+                        {' — '}
+                        {cc.email ? `Email: ${cc.email}` : ''}
+                        {cc.email && cc.phone ? ' · ' : ''}
+                        {cc.phone ? `Ph: ${cc.phone}` : ''}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+
               {data.clinicalHistory && (
                 <p className="mt-1 text-[11px] text-gray-600">
                   <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
@@ -269,9 +307,9 @@ export function LabReport({ data }: { data: LabReportData }) {
           <tr>
             <td colSpan={5} className="p-0 align-bottom">
               {data.signers.length > 0 && (
-                <div className="flex items-end justify-between gap-6 pt-3 [break-inside:avoid]">
+                <div className={`flex items-end gap-6 pt-3 [break-inside:avoid] ${signerJustify}`}>
                   {data.signers.map((s) => (
-                    <div key={s.id} className="flex-1 text-center text-[10px] [break-inside:avoid]">
+                    <div key={s.id} className={`text-[10px] [break-inside:avoid] ${signerBlockCls}`}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={`/api/reporting/signature/${s.id}`}
