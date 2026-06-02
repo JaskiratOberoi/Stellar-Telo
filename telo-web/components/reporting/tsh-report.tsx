@@ -722,12 +722,7 @@ function GroupBlock({
                 disabled={disabled}
               />
             )}
-            <span>
-              <span className="font-bold uppercase tracking-wide">{group.title ?? ''}</span>
-              {group.method && (
-                <span className="ml-1 text-[9px] italic text-gray-500">(Method: {group.method})</span>
-              )}
-            </span>
+            <span className="font-bold uppercase tracking-wide">{group.title ?? ''}</span>
           </span>
         </td>
       </tr>
