@@ -259,12 +259,30 @@ export function LabReport({ data }: { data: LabReportData }) {
     );
   }, [interactive, excluded, data.sid, totalLeaves, remainingLeaves]);
 
-  // Build page sections: each profile (panel) is its own section/page; runs of
-  // consecutive standalone tests/groups form one section. In split mode every
-  // section starts on a new page and shows the department band; in continuous
-  // mode the band shows once per department and nothing breaks.
+  // Build page sections: each profile (panel) is its own section/page; a
+  // standalone test/group that carries its OWN interpretation or notes (e.g.
+  // Vitamin D, Vitamin B12 — long clinical commentary) also gets its own
+  // section/page; only "bare" standalones (T3, T4 …) coalesce into one run. In
+  // split mode every section starts on a new page and shows the department band;
+  // in continuous mode the band shows once per department and nothing breaks.
+  //
+  // Keeping a heavy-commentary test alone per page is also what avoids the
+  // blank-page artifact: a section taller than one page fragments the flex/
+  // mt-auto footer layout and can bump its whole table onto the next page.
   type SecEntry = { item: SampleReportItem; di: number; ii: number; key: string };
   type Section = { deptName: string; deptStart: boolean; entries: SecEntry[] };
+  const entryHasOwnContent = (item: SampleReportItem): boolean => {
+    if (item.kind === 'single') {
+      return !!item.interpretation || notesForCodes([item.row?.code]).length > 0;
+    }
+    if (item.kind === 'group' && item.group) {
+      return (
+        !!item.group.interpretation ||
+        notesForCodes(item.group.rows.map((r) => r.code)).length > 0
+      );
+    }
+    return false;
+  };
   const sections: Section[] = [];
   data.departments.forEach((dept, di) => {
     const entries: SecEntry[] = dept.items
@@ -281,7 +299,9 @@ export function LabReport({ data }: { data: LabReportData }) {
     let firstInDept = true;
     let run: Section | null = null;
     for (const entry of entries) {
-      if (entry.item.kind === 'panel') {
+      if (entry.item.kind === 'panel' || entryHasOwnContent(entry.item)) {
+        // A profile, or a standalone test/group with its own commentary, takes a
+        // dedicated section (own page in split mode).
         sections.push({ deptName: dept.name, deptStart: firstInDept, entries: [entry] });
         run = null;
       } else {
