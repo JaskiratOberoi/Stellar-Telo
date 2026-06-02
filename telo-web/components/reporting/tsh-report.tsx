@@ -855,11 +855,11 @@ function ResultRow({
         <td className={`py-1 pr-3 ${indentClass ?? ''}`}>
           <div className="flex items-start gap-1.5">
             {lead}
-            <div className="font-medium">{row.name ?? '—'}</div>
+            <div className="text-[13px] font-medium">{row.name ?? '—'}</div>
           </div>
         </td>
         <td className="py-1 pr-3">
-          <span className={row.abnormal ? 'font-bold text-red-700' : ''}>{row.value ?? '—'}</span>
+          <span className={row.abnormal ? 'text-[13px] font-bold text-red-700' : ''}>{row.value ?? '—'}</span>
         </td>
         <td className="py-1 pr-3">{row.unit ?? '—'}</td>
         <td className="whitespace-pre-line py-1 text-[10px] leading-snug text-gray-700">
