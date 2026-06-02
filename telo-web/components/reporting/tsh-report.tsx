@@ -110,6 +110,10 @@ export interface LabReportData {
   clinicalHistory: string | null;
   /** Distinct specimen / sample types on this sample (e.g. "Serum"). */
   specimens?: string[];
+  /** profile_id → Telo profile-level clinical-significance text. Shown once
+   *  below the whole profile; individual constituent interpretations are
+   *  suppressed inside a profile. */
+  profileInterpretations?: Record<number, string>;
   /** The collection centre (where the sample was drawn) — shown as "Collected
    *  at" in the header with its address + contact details. */
   collectionCentre?: {
@@ -257,6 +261,11 @@ export function LabReport({ data }: { data: LabReportData }) {
           excluded={excluded}
           onToggle={toggle}
           pdf={!!data.pdf}
+          interpretation={
+            item.panel.profileId != null
+              ? (data.profileInterpretations?.[item.panel.profileId] ?? null)
+              : null
+          }
         />
       );
     }
@@ -574,6 +583,7 @@ function PanelBlock({
   excluded,
   onToggle,
   pdf,
+  interpretation,
 }: {
   panel: SampleReportPanel;
   panelKey: string;
@@ -582,6 +592,9 @@ function PanelBlock({
   excluded: Set<string>;
   onToggle: (key: string) => void;
   pdf: boolean;
+  /** The profile's own clinical-significance text (Telo sidecar), printed once
+   *  below the whole profile. Constituent test interpretations are suppressed. */
+  interpretation: string | null;
 }) {
   const panelOff = excluded.has(panelKey);
   const kids = panel.children.map((child, ci) => ({ child, ckey: childKeyFor(ci) }));
@@ -590,22 +603,11 @@ function PanelBlock({
     : kids;
   if (pdf && visibleKids.length === 0) return null;
 
-  // A profile's interpretations + static notes belong BELOW the whole profile,
-  // not interleaved between its result rows. Collect each included child's
-  // interpretation (deduped) and its test codes. Excluded/off children (which
-  // won't be in the PDF) don't contribute.
-  const panelInterps: string[] = [];
-  const seenInterp = new Set<string>();
+  // Static notes (e.g. TSH) still attach to the profile, from the included
+  // children's test codes.
   const panelCodes: (string | null)[] = [];
   for (const { child, ckey } of kids) {
     if (panelOff || excluded.has(ckey)) continue;
-    const t = (
-      child.kind === 'group' ? child.group?.interpretation : child.interpretation
-    )?.trim();
-    if (t && !seenInterp.has(t)) {
-      seenInterp.add(t);
-      panelInterps.push(t);
-    }
     if (child.kind === 'group' && child.group) {
       for (const r of child.group.rows) panelCodes.push(r.code);
     } else if (child.row) {
@@ -640,9 +642,7 @@ function PanelBlock({
           onToggle: () => onToggle(ckey),
         }),
       )}
-      {panelInterps.map((t, i) => (
-        <InterpretationRow key={`pi-${i}`} text={t} dim={panelOff} />
-      ))}
+      {interpretation && <InterpretationRow text={interpretation} dim={panelOff} />}
       <NoteRow notes={panelNotes} dim={panelOff} />
     </>
   );

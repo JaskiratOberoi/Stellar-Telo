@@ -59,6 +59,9 @@ export interface SampleReportBlock {
 /** A profile panel (e.g. "LIVER FUNCTION TEST") grouping several child blocks
  *  that share its profile_id. */
 export interface SampleReportPanel {
+  /** tbl_med_test_profile_master.id — used to look up the profile's Telo
+   *  clinical-significance interpretation. */
+  profileId: number | null;
   title: string | null;
   children: SampleReportBlock[];
 }
@@ -231,7 +234,7 @@ export async function getSampleReport(
       head = null;
       const item: SampleReportItem = {
         kind: 'panel',
-        panel: { title: clean(x.testname), children: [] },
+        panel: { profileId: x.profileId ?? null, title: clean(x.testname), children: [] },
       };
       panel = { dept, pid: x.profileId ?? -1, item };
       pushItem(dept, item);

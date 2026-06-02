@@ -8,6 +8,7 @@ import {
 } from '@/db/read/signatures';
 import { getReferringDoctor } from '@/db/read/refDoctor';
 import { getMccCentreByCode } from '@/db/read/mccUnits';
+import { getProfileInterpretations } from '@/db/read/profileInterpretations';
 import { getSampleReport } from '@/db/read/sampleReport';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
@@ -79,12 +80,14 @@ export default async function ReportingPrintFragment({
   const row = rows.find((r) => r.sid === decodedSid) ?? rows[0];
   if (!row) notFound();
 
-  const [report, bu, refDoctor, collectionCentre] = await Promise.all([
-    getSampleReport(decodedSid, row.age, row.age_unit),
-    resolveBusinessUnit(row.business_unit),
-    getReferringDoctor(row.pid),
-    getMccCentreByCode(row.client_code),
-  ]);
+  const [report, bu, refDoctor, collectionCentre, profileInterpretations] =
+    await Promise.all([
+      getSampleReport(decodedSid, row.age, row.age_unit),
+      resolveBusinessUnit(row.business_unit),
+      getReferringDoctor(row.pid),
+      getMccCentreByCode(row.client_code),
+      getProfileInterpretations(),
+    ]);
 
   // All configured signatories, ordered primary → secondary (DOC_TYPE asc),
   // capped at three so the footer never overflows the page width.
@@ -113,6 +116,7 @@ export default async function ReportingPrintFragment({
     clinicalHistory: row.clinical_history,
     specimens: report.specimens,
     collectionCentre,
+    profileInterpretations,
     departments: report.departments,
     processedAt: bu
       ? { name: bu.name, address: bu.address, city: bu.city, phone: bu.phone }

@@ -25,12 +25,20 @@ export default async function AdminUsersPage() {
             governs LIS-side access only.
           </p>
         </div>
-        <a
-          href="/admin/invoice"
-          className="shrink-0 text-sm text-muted-foreground underline hover:text-foreground"
-        >
-          Invoice settings →
-        </a>
+        <div className="flex shrink-0 items-center gap-4">
+          <a
+            href="/admin/interpretations"
+            className="text-sm text-muted-foreground underline hover:text-foreground"
+          >
+            Profile interpretations →
+          </a>
+          <a
+            href="/admin/invoice"
+            className="text-sm text-muted-foreground underline hover:text-foreground"
+          >
+            Invoice settings →
+          </a>
+        </div>
       </div>
       <UserManagement initial={overview} currentUid={user.uid} />
     </div>

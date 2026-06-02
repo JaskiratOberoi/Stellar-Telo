@@ -17,6 +17,11 @@ import {
   type ScopedMcc,
 } from '@/db/read/mccUnits';
 import {
+  listProfilesWithInterpretation,
+  upsertProfileInterpretation,
+  type ProfileInterpRow,
+} from '@/db/read/profileInterpretations';
+import {
   adminCreateUser,
   adminSetRole,
   adminResetPassword,
@@ -532,6 +537,50 @@ export async function setLisAccessAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong updating LIS access.');
+  }
+}
+
+// ── Profile-level clinical-significance (telo_profile_interpretation) ────────
+
+/** All active profiles + their current Telo interpretation (admin editor). */
+export async function getProfileInterpretationsOverview(): Promise<ProfileInterpRow[]> {
+  await requireCapability('user:manage');
+  return listProfilesWithInterpretation();
+}
+
+const profileInterpSchema = z.object({
+  profileId: z.coerce.number().int().positive(),
+  interpretation: z.string().max(8000),
+});
+
+/** Upsert one profile's clinical-significance text. */
+export async function saveProfileInterpretationAction(input: {
+  profileId: number;
+  interpretation: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  let actor;
+  try {
+    actor = await requireCapability('user:manage');
+  } catch {
+    return { ok: false, error: 'Not authorized.' };
+  }
+  const parsed = profileInterpSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Invalid input.' };
+  try {
+    await upsertProfileInterpretation(
+      parsed.data.profileId,
+      parsed.data.interpretation,
+      actor.uid,
+    );
+    audit({
+      kind: 'admin.profile_interpretation.save',
+      actor: actor.uid,
+      target: parsed.data.profileId,
+    });
+    revalidatePath('/admin/interpretations');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Save failed.' };
   }
 }
 
