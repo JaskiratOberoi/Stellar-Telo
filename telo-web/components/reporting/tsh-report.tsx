@@ -64,10 +64,22 @@ function splitInterp(s: string): { heading: string; body: string } {
  *  ≥/≤, and a bare "=" used before a number (an open upper band like
  *  "High = 240") becomes ≥ — single values like "13.5 - 17.5" are untouched. */
 function normalizeComparators(line: string): string {
-  return line
+  const out = line
     .replace(/>\s*=/g, '≥')
     .replace(/<\s*=/g, '≤')
     .replace(/(^|[\s(])=(?=\s*-?\d)/g, '$1≥');
+  // An open-ended top band stored without any comparator (e.g. "Very High 190",
+  // following "High 160-189") means "≥ 190". Only fire on a severity-banded
+  // label that ends in a bare number with no existing comparator or range dash,
+  // so plain/gendered/age single values stay untouched.
+  if (
+    /\b(very high|high|low|borderline|critical|severe|undesirable)\b/i.test(out) &&
+    !/[<>≥≤=]/.test(out) &&
+    !/\d\s*[-–]\s*\d/.test(out)
+  ) {
+    return out.replace(/^(.*[A-Za-z])\s+(\d+(?:\.\d+)?)\s*$/, '$1 ≥ $2');
+  }
+  return out;
 }
 
 /** Split a colon-labelled run-on (e.g. "Desirable: > 60 Optimal: 40-59 …") into
