@@ -154,23 +154,6 @@ export function LabReport({ data }: { data: LabReportData }) {
   // non-interactive and instead drops the excluded items outright.
   const interactive = !data.pdf;
 
-  const processedAtLine = [
-    data.processedAt?.name,
-    data.processedAt?.address,
-    data.processedAt?.city,
-  ]
-    .filter(Boolean)
-    .join(', ');
-
-  // Signature footer placement: 1 → right; 2 → spread to both edges; 3–4 →
-  // equal columns left-to-right.
-  const signerJustify = data.signers.length === 1 ? 'justify-end' : 'justify-between';
-  const signerBlockCls = data.signers.length >= 3 ? 'flex-1 text-center' : 'text-center';
-
-  // "Collected at" — collection-centre name + address + contact.
-  const cc = data.collectionCentre;
-  const ccAddress = cc ? [cc.address, cc.city].filter(Boolean).join(', ') : '';
-
   // Which items/children are unticked. Preview owns this set live; PDF mode is
   // seeded from the keys passed in by the route and never changes.
   const [excluded, setExcluded] = useState<Set<string>>(
@@ -303,6 +286,16 @@ export function LabReport({ data }: { data: LabReportData }) {
     return null;
   };
 
+  const deptBandCls =
+    'bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]';
+  const endMarker = (
+    <tr>
+      <td colSpan={5} className="pt-3 text-center text-[10px] font-semibold tracking-wide text-gray-600">
+        *** End of Report ***
+      </td>
+    </tr>
+  );
+
   return (
     <div
       className={`mx-auto w-full max-w-[820px] text-black font-sans text-[11px] leading-snug ${
@@ -317,169 +310,224 @@ export function LabReport({ data }: { data: LabReportData }) {
         </div>
       )}
 
-      {/* The whole report is ONE table. The browser reprints the patient block +
-          column headers (<thead>) at the top of every PDF page and the signature
-          (<tfoot>) at the bottom of every page, and the test rows (<tbody>)
-          fragment cleanly across pages. (Nesting a per-department <table> here
-          fails to fragment and blanks the first page; a flex container leaves
-          large gaps — both avoided by this flat single-table layout.) */}
-      <table className="w-full table-fixed border-collapse">
-        <colgroup>
-          <col className="w-[33%]" />
-          <col className="w-[12%]" />
-          <col className="w-[11%]" />
-          <col className="w-[24%]" />
-          <col className="w-[20%]" />
-        </colgroup>
-
-        {/* ── Patient header + column headers — repeat at the top of every page ── */}
-        <thead>
-          <tr>
-            <td colSpan={5} className="p-0 align-top">
-              <div className="grid grid-cols-2 gap-x-10 gap-y-0.5 border-b border-gray-300 pb-2">
-                <Meta label="Name" value={data.patientName ?? '—'} strong />
-                <Meta label="Patient Id" value={String(data.pid)} mono />
-                <Meta label="Lab No. / SID" value={data.sid} mono strong />
-                <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
-                <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
-                <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
-                {data.specimens && data.specimens.length > 0 && (
-                  <Meta label="Specimen" value={data.specimens.join(', ')} />
-                )}
-                <Meta label="Report Status" value={data.statusLabel ?? '—'} />
-                <Meta label="Collected" value={fmtIST(data.collectedAt)} />
-                <Meta label="Registered" value={fmtIST(data.registeredAt)} />
-                <Meta label="Reported" value={fmtIST(data.reportedAt)} />
-                <Meta label="Printed" value={fmtIST(data.printedAt)} />
-                {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
-              </div>
-
-              {cc && (
-                <div className="mt-1.5 flex items-baseline gap-2 text-[10px] leading-snug text-gray-700">
-                  <span className="w-28 shrink-0 text-gray-500">Collected at</span>
-                  <span className="text-gray-400">:</span>
-                  <span>
-                    <span className="font-semibold">{cc.name ?? cc.code}</span>
-                    {ccAddress && <>, {ccAddress}</>}
-                    {(cc.email || cc.phone) && (
-                      <span className="text-gray-600">
-                        {' — '}
-                        {cc.email ? `Email: ${cc.email}` : ''}
-                        {cc.email && cc.phone ? ' · ' : ''}
-                        {cc.phone ? `Ph: ${cc.phone}` : ''}
-                      </span>
-                    )}
-                  </span>
-                </div>
-              )}
-
-              {data.clinicalHistory && (
-                <p className="mt-1 text-[11px] text-gray-600">
-                  <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
-                </p>
-              )}
-
-              {/* Tick-box hint (preview only). */}
-              {interactive && totalLeaves > 0 && (
-                <p className="mt-2 text-center text-[10px] italic text-gray-500 print:hidden">
-                  Tick the tests to include. Unticking a profile drops all its tests;
-                  unticked tests are left out of the download and the saved PDF.
-                </p>
-              )}
-            </td>
-          </tr>
-          <tr className="border-b border-gray-400">
-            <th className="py-1 pr-3 text-left font-semibold">Test Name</th>
-            <th className="py-1 pr-3 text-left font-semibold">Value</th>
-            <th className="py-1 pr-3 text-left font-semibold">Unit</th>
-            <th className="py-1 pr-3 text-left font-semibold">Biological Ref Interval</th>
-            <th className="py-1 text-left font-semibold">Method</th>
-          </tr>
-        </thead>
-
-        {/* ── Signatures + footer — repeat at the bottom of every page ───── */}
-        <tfoot>
-          <tr>
-            <td colSpan={5} className="p-0 align-bottom">
-              {data.signers.length > 0 && (
-                <div className={`flex items-end gap-6 pt-3 [break-inside:avoid] ${signerJustify}`}>
-                  {data.signers.map((s) => (
-                    <div key={s.id} className={`text-[10px] [break-inside:avoid] ${signerBlockCls}`}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`/api/reporting/signature/${s.id}`}
-                        alt={s.doctorName ?? 'Signature'}
-                        className="mb-0.5 mx-auto h-9 w-auto object-contain"
-                      />
-                      <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
-                      {s.designation && (
-                        <p className="leading-tight text-gray-600">{s.designation}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="mt-2 border-t border-gray-300 pt-1.5 text-[9px] text-gray-500">
-                {processedAtLine && (
-                  <p>
-                    <span className="font-semibold">Processed at:</span> {processedAtLine}
-                    {data.processedAt?.phone ? ` — Ph: ${data.processedAt.phone}` : ''}
-                  </p>
-                )}
-                <p className="mt-0.5">
-                  This is an electronically authenticated report. Report printed date:{' '}
-                  {fmtIST(data.printedAt)}
-                </p>
-                <p className="mt-0.5">
-                  NOTE: Assay results should be correlated clinically with other clinical
-                  findings and the total clinical status of the patient.
-                </p>
-              </div>
-            </td>
-          </tr>
-        </tfoot>
-
-        {/* ── Sections (one profile per page in split mode) + end marker ─── */}
-        <tbody>
-          {sections.length === 0 ? (
+      {sections.length === 0 ? (
+        <p className="py-4 text-center text-gray-500">No results available for this sample.</p>
+      ) : data.splitByDepartment ? (
+        /* SPLIT: each section is a full-page flex column — patient header on
+           top, results in the middle, signature/footer pinned to the bottom of
+           the page (margin-top:auto inside a page-height min-height). Each
+           profile gets its own page via break-before. */
+        sections.map((sec, si) => (
+          <div
+            key={si}
+            className={`flex min-h-[237mm] flex-col ${si > 0 ? '[break-before:page]' : ''}`}
+          >
+            <PatientMetaBlock data={data} interactive={interactive} totalLeaves={totalLeaves} />
+            <table className="w-full table-fixed border-collapse">
+              <ReportColgroup />
+              <thead>
+                <ColumnHeaderRow />
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={5} className={deptBandCls}>
+                    {sec.deptName}
+                  </td>
+                </tr>
+                {sec.entries.map((entry) => renderTopItem(entry))}
+                {si === sections.length - 1 && endMarker}
+              </tbody>
+            </table>
+            <div className="mt-auto">
+              <ReportFooterBlock data={data} />
+            </div>
+          </div>
+        ))
+      ) : (
+        /* CONTINUOUS: one table — patient header + column headers repeat at the
+           top of each page (thead), signature/footer at the end (tfoot), rows
+           flow. Department band shows once per department. */
+        <table className="w-full table-fixed border-collapse">
+          <ReportColgroup />
+          <thead>
             <tr>
-              <td colSpan={5} className="py-4 text-center text-gray-500">
-                No results available for this sample.
+              <td colSpan={5} className="p-0 align-top">
+                <PatientMetaBlock data={data} interactive={interactive} totalLeaves={totalLeaves} />
               </td>
             </tr>
-          ) : (
-            sections.map((sec, si) => {
-              // In split mode every section starts a new page and shows the dept
-              // band; in continuous mode the band shows once per department.
-              const showBand = !!data.splitByDepartment || sec.deptStart;
-              const breakBefore = !!data.splitByDepartment && si > 0;
-              return (
-                <Fragment key={si}>
-                  {showBand && (
-                    <tr className={breakBefore ? '[break-before:page]' : ''}>
-                      <td
-                        colSpan={5}
-                        className="bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]"
-                      >
-                        {sec.deptName}
-                      </td>
-                    </tr>
-                  )}
-                  {sec.entries.map((entry) => renderTopItem(entry))}
-                </Fragment>
-              );
-            })
-          )}
-
-          {/* End marker — printed once, after all content. */}
-          <tr>
-            <td colSpan={5} className="pt-3 text-center text-[10px] font-semibold tracking-wide text-gray-600">
-              *** End of Report ***
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            <ColumnHeaderRow />
+          </thead>
+          <tfoot>
+            <tr>
+              <td colSpan={5} className="p-0 align-bottom">
+                <ReportFooterBlock data={data} />
+              </td>
+            </tr>
+          </tfoot>
+          <tbody>
+            {sections.map((sec, si) => (
+              <Fragment key={si}>
+                {sec.deptStart && (
+                  <tr>
+                    <td colSpan={5} className={deptBandCls}>
+                      {sec.deptName}
+                    </td>
+                  </tr>
+                )}
+                {sec.entries.map((entry) => renderTopItem(entry))}
+              </Fragment>
+            ))}
+            {endMarker}
+          </tbody>
+        </table>
+      )}
     </div>
+  );
+}
+
+/** Shared 5-column layout for the results table. */
+function ReportColgroup() {
+  return (
+    <colgroup>
+      <col className="w-[33%]" />
+      <col className="w-[12%]" />
+      <col className="w-[11%]" />
+      <col className="w-[24%]" />
+      <col className="w-[20%]" />
+    </colgroup>
+  );
+}
+
+/** The repeating column-header row. */
+function ColumnHeaderRow() {
+  return (
+    <tr className="border-b border-gray-400">
+      <th className="py-1 pr-3 text-left font-semibold">Test Name</th>
+      <th className="py-1 pr-3 text-left font-semibold">Value</th>
+      <th className="py-1 pr-3 text-left font-semibold">Unit</th>
+      <th className="py-1 pr-3 text-left font-semibold">Biological Ref Interval</th>
+      <th className="py-1 text-left font-semibold">Method</th>
+    </tr>
+  );
+}
+
+/** Patient/sample demographics + "Collected at" + clinical history (+ the
+ *  preview tick-box hint). Shown atop each page in split mode, once in
+ *  continuous mode. */
+function PatientMetaBlock({
+  data,
+  interactive,
+  totalLeaves,
+}: {
+  data: LabReportData;
+  interactive: boolean;
+  totalLeaves: number;
+}) {
+  const cc = data.collectionCentre;
+  const ccAddress = cc ? [cc.address, cc.city].filter(Boolean).join(', ') : '';
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-x-10 gap-y-0.5 border-b border-gray-300 pb-2">
+        <Meta label="Name" value={data.patientName ?? '—'} strong />
+        <Meta label="Patient Id" value={String(data.pid)} mono />
+        <Meta label="Lab No. / SID" value={data.sid} mono strong />
+        <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
+        <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
+        <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
+        {data.specimens && data.specimens.length > 0 && (
+          <Meta label="Specimen" value={data.specimens.join(', ')} />
+        )}
+        <Meta label="Report Status" value={data.statusLabel ?? '—'} />
+        <Meta label="Collected" value={fmtIST(data.collectedAt)} />
+        <Meta label="Registered" value={fmtIST(data.registeredAt)} />
+        <Meta label="Reported" value={fmtIST(data.reportedAt)} />
+        <Meta label="Printed" value={fmtIST(data.printedAt)} />
+        {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
+      </div>
+
+      {cc && (
+        <div className="mt-1.5 flex items-baseline gap-2 text-[10px] leading-snug text-gray-700">
+          <span className="w-28 shrink-0 text-gray-500">Collected at</span>
+          <span className="text-gray-400">:</span>
+          <span>
+            <span className="font-semibold">{cc.name ?? cc.code}</span>
+            {ccAddress && <>, {ccAddress}</>}
+            {(cc.email || cc.phone) && (
+              <span className="text-gray-600">
+                {' — '}
+                {cc.email ? `Email: ${cc.email}` : ''}
+                {cc.email && cc.phone ? ' · ' : ''}
+                {cc.phone ? `Ph: ${cc.phone}` : ''}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+
+      {data.clinicalHistory && (
+        <p className="mt-1 text-[11px] text-gray-600">
+          <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
+        </p>
+      )}
+
+      {/* Tick-box hint (preview only). */}
+      {interactive && totalLeaves > 0 && (
+        <p className="mt-2 text-center text-[10px] italic text-gray-500 print:hidden">
+          Tick the tests to include. Unticking a profile drops all its tests;
+          unticked tests are left out of the download and the saved PDF.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Signatures (placed by count: 1 → right, 2 → both edges, 3–4 → spread) plus
+ *  the processed-at / authentication / NOTE footer lines. */
+function ReportFooterBlock({ data }: { data: LabReportData }) {
+  const processedAtLine = [
+    data.processedAt?.name,
+    data.processedAt?.address,
+    data.processedAt?.city,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const justify = data.signers.length === 1 ? 'justify-end' : 'justify-between';
+  const blockCls = data.signers.length >= 3 ? 'flex-1 text-center' : 'text-center';
+  return (
+    <>
+      {data.signers.length > 0 && (
+        <div className={`flex items-end gap-6 pt-3 [break-inside:avoid] ${justify}`}>
+          {data.signers.map((s) => (
+            <div key={s.id} className={`text-[10px] [break-inside:avoid] ${blockCls}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/reporting/signature/${s.id}`}
+                alt={s.doctorName ?? 'Signature'}
+                className="mb-0.5 mx-auto h-9 w-auto object-contain"
+              />
+              <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
+              {s.designation && <p className="leading-tight text-gray-600">{s.designation}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 border-t border-gray-300 pt-1.5 text-[9px] text-gray-500">
+        {processedAtLine && (
+          <p>
+            <span className="font-semibold">Processed at:</span> {processedAtLine}
+            {data.processedAt?.phone ? ` — Ph: ${data.processedAt.phone}` : ''}
+          </p>
+        )}
+        <p className="mt-0.5">
+          This is an electronically authenticated report. Report printed date:{' '}
+          {fmtIST(data.printedAt)}
+        </p>
+        <p className="mt-0.5">
+          NOTE: Assay results should be correlated clinically with other clinical
+          findings and the total clinical status of the patient.
+        </p>
+      </div>
+    </>
   );
 }
 
