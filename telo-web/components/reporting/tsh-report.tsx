@@ -510,6 +510,23 @@ function PanelBlock({
     : kids;
   if (pdf && visibleKids.length === 0) return null;
 
+  // A profile's interpretations belong BELOW the whole profile, not interleaved
+  // between its result rows. Collect each included child's interpretation
+  // (deduped) and print them after all the rows. Excluded/off children (which
+  // won't be in the PDF) don't contribute.
+  const panelInterps: string[] = [];
+  const seenInterp = new Set<string>();
+  for (const { child, ckey } of kids) {
+    if (panelOff || excluded.has(ckey)) continue;
+    const t = (
+      child.kind === 'group' ? child.group?.interpretation : child.interpretation
+    )?.trim();
+    if (t && !seenInterp.has(t)) {
+      seenInterp.add(t);
+      panelInterps.push(t);
+    }
+  }
+
   return (
     <>
       <tr className={`[break-inside:avoid] ${panelOff ? 'opacity-40' : ''}`}>
@@ -536,6 +553,9 @@ function PanelBlock({
           onToggle: () => onToggle(ckey),
         }),
       )}
+      {panelInterps.map((t, i) => (
+        <InterpretationRow key={`pi-${i}`} text={t} dim={panelOff} />
+      ))}
     </>
   );
 }
@@ -557,6 +577,8 @@ function renderChild(
         disabled={ctl.disabled}
         onToggle={ctl.onToggle}
         indent
+        // Interpretation is printed once below the whole profile by PanelBlock.
+        hideInterpretation
       />
     );
   }
@@ -571,6 +593,7 @@ function renderChild(
         disabled={ctl.disabled}
         onToggle={ctl.onToggle}
         indent
+        hideInterpretation
       />
     );
   }
@@ -585,6 +608,7 @@ function GroupBlock({
   onToggle,
   disabled,
   indent,
+  hideInterpretation,
 }: {
   group: SampleReportGroup;
   interactive: boolean;
@@ -592,6 +616,9 @@ function GroupBlock({
   onToggle: () => void;
   disabled?: boolean;
   indent?: boolean;
+  /** When inside a profile, the interpretation is printed once below the whole
+   *  profile (by PanelBlock) instead of after this group's rows. */
+  hideInterpretation?: boolean;
 }) {
   const dim = excluded ? 'opacity-40' : '';
   return (
@@ -619,7 +646,9 @@ function GroupBlock({
       {group.rows.map((r, i) => (
         <ResultRow key={i} row={r} dim={excluded} indentClass={indent ? 'pl-4' : ''} />
       ))}
-      {group.interpretation && <InterpretationRow text={group.interpretation} dim={excluded} />}
+      {!hideInterpretation && group.interpretation && (
+        <InterpretationRow text={group.interpretation} dim={excluded} />
+      )}
     </>
   );
 }
@@ -633,6 +662,7 @@ function SingleBlock({
   onToggle,
   disabled,
   indent,
+  hideInterpretation,
 }: {
   row: SampleReportRow;
   interpretation: string | null;
@@ -641,6 +671,9 @@ function SingleBlock({
   onToggle: () => void;
   disabled?: boolean;
   indent?: boolean;
+  /** When inside a profile, the interpretation is printed once below the whole
+   *  profile (by PanelBlock) instead of right after this row. */
+  hideInterpretation?: boolean;
 }) {
   const lead = interactive ? (
     <IncludeToggle
@@ -653,7 +686,9 @@ function SingleBlock({
   return (
     <>
       <ResultRow row={row} dim={excluded} lead={lead} indentClass={indent ? 'pl-4' : ''} />
-      {interpretation && <InterpretationRow text={interpretation} dim={excluded} />}
+      {!hideInterpretation && interpretation && (
+        <InterpretationRow text={interpretation} dim={excluded} />
+      )}
     </>
   );
 }
