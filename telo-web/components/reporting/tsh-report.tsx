@@ -25,6 +25,7 @@ import type {
   SampleReportBlock,
   SampleReportDepartment,
   SampleReportGroup,
+  SampleReportItem,
   SampleReportPanel,
   SampleReportRow,
 } from '@/db/read/sampleReport';
@@ -225,6 +226,83 @@ export function LabReport({ data }: { data: LabReportData }) {
     );
   }, [interactive, excluded, data.sid, totalLeaves, remainingLeaves]);
 
+  // Build page sections: each profile (panel) is its own section/page; runs of
+  // consecutive standalone tests/groups form one section. In split mode every
+  // section starts on a new page and shows the department band; in continuous
+  // mode the band shows once per department and nothing breaks.
+  type SecEntry = { item: SampleReportItem; di: number; ii: number; key: string };
+  type Section = { deptName: string; deptStart: boolean; entries: SecEntry[] };
+  const sections: Section[] = [];
+  data.departments.forEach((dept, di) => {
+    const entries: SecEntry[] = dept.items
+      .map((item, ii) => ({ item, di, ii, key: topKey(di, ii) }))
+      .filter(({ item, ii, key }) => {
+        if (interactive) return true;
+        if (excluded.has(key)) return false;
+        if (item.kind === 'panel' && item.panel) {
+          return item.panel.children.some((_, ci) => !excluded.has(childKey(di, ii, ci)));
+        }
+        return true;
+      });
+    if (entries.length === 0) return;
+    let firstInDept = true;
+    let run: Section | null = null;
+    for (const entry of entries) {
+      if (entry.item.kind === 'panel') {
+        sections.push({ deptName: dept.name, deptStart: firstInDept, entries: [entry] });
+        run = null;
+      } else {
+        if (!run) {
+          run = { deptName: dept.name, deptStart: firstInDept, entries: [] };
+          sections.push(run);
+        }
+        run.entries.push(entry);
+      }
+      firstInDept = false;
+    }
+  });
+
+  const renderTopItem = ({ item, di, ii, key }: SecEntry): ReactNode => {
+    if (item.kind === 'panel' && item.panel) {
+      return (
+        <PanelBlock
+          key={key}
+          panel={item.panel}
+          panelKey={key}
+          childKeyFor={(ci) => childKey(di, ii, ci)}
+          interactive={interactive}
+          excluded={excluded}
+          onToggle={toggle}
+          pdf={!!data.pdf}
+        />
+      );
+    }
+    if (item.kind === 'group' && item.group) {
+      return (
+        <GroupBlock
+          key={key}
+          group={item.group}
+          interactive={interactive}
+          excluded={excluded.has(key)}
+          onToggle={() => toggle(key)}
+        />
+      );
+    }
+    if (item.row) {
+      return (
+        <SingleBlock
+          key={key}
+          row={item.row}
+          interpretation={item.interpretation ?? null}
+          interactive={interactive}
+          excluded={excluded.has(key)}
+          onToggle={() => toggle(key)}
+        />
+      );
+    }
+    return null;
+  };
+
   return (
     <div
       className={`mx-auto w-full max-w-[820px] text-black font-sans text-[11px] leading-snug ${
@@ -361,82 +439,33 @@ export function LabReport({ data }: { data: LabReportData }) {
           </tr>
         </tfoot>
 
-        {/* ── Departments → test rows + static notes + end marker (the content) ─ */}
+        {/* ── Sections (one profile per page in split mode) + end marker ─── */}
         <tbody>
-          {data.departments.length === 0 ? (
+          {sections.length === 0 ? (
             <tr>
               <td colSpan={5} className="py-4 text-center text-gray-500">
                 No results available for this sample.
               </td>
             </tr>
           ) : (
-            data.departments.map((dept, di) => {
-              // Pair each item with its stable key. In the PDF render, items left
-              // empty by the selection (and any department thereby emptied) drop.
-              const entries = dept.items.map((item, ii) => ({ item, ii, key: topKey(di, ii) }));
-              const visible = interactive
-                ? entries
-                : entries.filter(({ item, ii, key }) => {
-                    if (excluded.has(key)) return false;
-                    if (item.kind === 'panel' && item.panel) {
-                      return item.panel.children.some(
-                        (_, ci) => !excluded.has(childKey(di, ii, ci)),
-                      );
-                    }
-                    return true;
-                  });
-              if (visible.length === 0) return null;
-
+            sections.map((sec, si) => {
+              // In split mode every section starts a new page and shows the dept
+              // band; in continuous mode the band shows once per department.
+              const showBand = !!data.splitByDepartment || sec.deptStart;
+              const breakBefore = !!data.splitByDepartment && si > 0;
               return (
-                <Fragment key={di}>
-                  <tr className={data.splitByDepartment && di > 0 ? '[break-before:page]' : ''}>
-                    <td
-                      colSpan={5}
-                      className="bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]"
-                    >
-                      {dept.name}
-                    </td>
-                  </tr>
-                  {visible.map(({ item, ii, key }) => {
-                    if (item.kind === 'panel' && item.panel) {
-                      return (
-                        <PanelBlock
-                          key={key}
-                          panel={item.panel}
-                          panelKey={key}
-                          childKeyFor={(ci) => childKey(di, ii, ci)}
-                          interactive={interactive}
-                          excluded={excluded}
-                          onToggle={toggle}
-                          pdf={!!data.pdf}
-                        />
-                      );
-                    }
-                    if (item.kind === 'group' && item.group) {
-                      return (
-                        <GroupBlock
-                          key={key}
-                          group={item.group}
-                          interactive={interactive}
-                          excluded={excluded.has(key)}
-                          onToggle={() => toggle(key)}
-                        />
-                      );
-                    }
-                    if (item.row) {
-                      return (
-                        <SingleBlock
-                          key={key}
-                          row={item.row}
-                          interpretation={item.interpretation ?? null}
-                          interactive={interactive}
-                          excluded={excluded.has(key)}
-                          onToggle={() => toggle(key)}
-                        />
-                      );
-                    }
-                    return null;
-                  })}
+                <Fragment key={si}>
+                  {showBand && (
+                    <tr className={breakBefore ? '[break-before:page]' : ''}>
+                      <td
+                        colSpan={5}
+                        className="bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]"
+                      >
+                        {sec.deptName}
+                      </td>
+                    </tr>
+                  )}
+                  {sec.entries.map((entry) => renderTopItem(entry))}
                 </Fragment>
               );
             })
