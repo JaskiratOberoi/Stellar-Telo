@@ -240,26 +240,15 @@ export function LabReport({ data }: { data: LabReportData }) {
                 {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
               </div>
 
-              {processedAtLine && (
-                <p className="mt-1 text-[11px] text-gray-600">
-                  <span className="font-semibold">Processed at:</span> {processedAtLine}
-                  {data.processedAt?.phone ? ` — Ph: ${data.processedAt.phone}` : ''}
-                </p>
-              )}
-
               {data.clinicalHistory && (
                 <p className="mt-1 text-[11px] text-gray-600">
                   <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
                 </p>
               )}
 
-              <h2 className="mt-3 text-center text-[13px] font-bold uppercase tracking-wide">
-                Test Report
-              </h2>
-
               {/* Tick-box hint (preview only). */}
               {interactive && totalLeaves > 0 && (
-                <p className="mt-1 text-center text-[10px] italic text-gray-500 print:hidden">
+                <p className="mt-2 text-center text-[10px] italic text-gray-500 print:hidden">
                   Tick the tests to include. Unticking a profile drops all its tests;
                   unticked tests are left out of the download and the saved PDF.
                 </p>
@@ -298,7 +287,13 @@ export function LabReport({ data }: { data: LabReportData }) {
                 </div>
               )}
               <div className="mt-2 border-t border-gray-300 pt-1.5 text-[9px] text-gray-500">
-                <p>
+                {processedAtLine && (
+                  <p>
+                    <span className="font-semibold">Processed at:</span> {processedAtLine}
+                    {data.processedAt?.phone ? ` — Ph: ${data.processedAt.phone}` : ''}
+                  </p>
+                )}
+                <p className="mt-0.5">
                   This is an electronically authenticated report. Report printed date:{' '}
                   {fmtIST(data.printedAt)}
                 </p>
