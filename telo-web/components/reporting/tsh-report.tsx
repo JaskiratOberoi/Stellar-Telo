@@ -817,8 +817,9 @@ function ResultRow({
       </tr>
       {row.comments && (
         <tr className={dimClass}>
-          <td colSpan={5} className="pb-1 text-[10px] text-gray-700">
-            <span className="font-semibold">Comments:</span> {row.comments}
+          <td colSpan={5} className="pb-1 text-[10px] text-gray-800">
+            <span className="font-bold">Doctor&apos;s Note:</span>{' '}
+            <span className="font-bold">{row.comments}</span>
           </td>
         </tr>
       )}
@@ -831,9 +832,9 @@ function InterpretationRow({ text, dim }: { text: string; dim?: boolean }) {
   return (
     <tr className={dim ? 'opacity-40' : ''}>
       <td colSpan={5} className="py-1">
-        <div className="border border-gray-300 p-1.5 [break-inside:avoid]">
-          <p className="mb-0.5 font-semibold">{heading}</p>
-          <p className="whitespace-pre-line text-[9px] leading-tight text-gray-700">{body}</p>
+        <div className="border border-gray-300 p-2 [break-inside:avoid]">
+          <p className="mb-0.5 text-[11px] font-semibold">{heading}</p>
+          <p className="whitespace-pre-line text-[10.5px] leading-snug text-gray-700">{body}</p>
         </div>
       </td>
     </tr>
