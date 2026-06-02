@@ -442,48 +442,52 @@ function PatientMetaBlock({
   const ccAddress = cc ? [cc.address, cc.city].filter(Boolean).join(', ') : '';
   return (
     <>
-      <div className="grid grid-cols-2 gap-x-10 gap-y-0.5 border-b border-gray-300 pb-2">
-        <Meta label="Name" value={data.patientName ?? '—'} strong />
-        <Meta label="Patient Id" value={String(data.pid)} mono />
-        <Meta label="Lab No. / SID" value={data.sid} mono strong />
-        <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
-        <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
-        <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
-        {data.specimens && data.specimens.length > 0 && (
-          <Meta label="Specimen" value={data.specimens.join(', ')} />
-        )}
-        <Meta label="Report Status" value={data.statusLabel ?? '—'} />
-        <Meta label="Collected" value={fmtIST(data.collectedAt)} />
-        <Meta label="Registered" value={fmtIST(data.registeredAt)} />
-        <Meta label="Reported" value={fmtIST(data.reportedAt)} />
-        <Meta label="Printed" value={fmtIST(data.printedAt)} />
-        {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
-      </div>
-
-      {cc && (
-        <div className="mt-1.5 flex items-baseline gap-2 text-[10px] leading-snug text-gray-700">
-          <span className="w-28 shrink-0 text-gray-500">Collected at</span>
-          <span className="text-gray-400">:</span>
-          <span>
-            <span className="font-semibold">{cc.name ?? cc.code}</span>
-            {ccAddress && <>, {ccAddress}</>}
-            {(cc.email || cc.phone) && (
-              <span className="text-gray-600">
-                {' — '}
-                {cc.email ? `Email: ${cc.email}` : ''}
-                {cc.email && cc.phone ? ' · ' : ''}
-                {cc.phone ? `Ph: ${cc.phone}` : ''}
-              </span>
-            )}
-          </span>
+      {/* Demographics + "Collected at" + clinical history form one header block,
+          closed by a single rule that marks the end of the pseudo-header. */}
+      <div className="border-b border-gray-300 pb-2">
+        <div className="grid grid-cols-2 gap-x-10 gap-y-0.5">
+          <Meta label="Name" value={data.patientName ?? '—'} strong />
+          <Meta label="Patient Id" value={String(data.pid)} mono />
+          <Meta label="Lab No. / SID" value={data.sid} mono strong />
+          <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
+          <Meta label="Ref. Customer" value={data.clientCode ?? '—'} />
+          <Meta label="Ref. Doctor" value={data.refDoctor ?? 'Self'} />
+          {data.specimens && data.specimens.length > 0 && (
+            <Meta label="Specimen" value={data.specimens.join(', ')} />
+          )}
+          <Meta label="Report Status" value={data.statusLabel ?? '—'} />
+          <Meta label="Collected" value={fmtIST(data.collectedAt)} />
+          <Meta label="Registered" value={fmtIST(data.registeredAt)} />
+          <Meta label="Reported" value={fmtIST(data.reportedAt)} />
+          <Meta label="Printed" value={fmtIST(data.printedAt)} />
+          {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
         </div>
-      )}
 
-      {data.clinicalHistory && (
-        <p className="mt-1 text-[11px] text-gray-600">
-          <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
-        </p>
-      )}
+        {cc && (
+          <div className="mt-1.5 flex items-baseline gap-2 text-[10px] leading-snug text-gray-700">
+            <span className="w-28 shrink-0 text-gray-500">Collected at</span>
+            <span className="text-gray-400">:</span>
+            <span>
+              <span className="font-semibold">{cc.name ?? cc.code}</span>
+              {ccAddress && <>, {ccAddress}</>}
+              {(cc.email || cc.phone) && (
+                <span className="text-gray-600">
+                  {' — '}
+                  {cc.email ? `Email: ${cc.email}` : ''}
+                  {cc.email && cc.phone ? ' · ' : ''}
+                  {cc.phone ? `Ph: ${cc.phone}` : ''}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
+        {data.clinicalHistory && (
+          <p className="mt-1 text-[11px] text-gray-600">
+            <span className="font-semibold">Clinical history:</span> {data.clinicalHistory}
+          </p>
+        )}
+      </div>
 
       {/* Tick-box hint (preview only). */}
       {interactive && totalLeaves > 0 && (
