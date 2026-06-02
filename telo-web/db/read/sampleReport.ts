@@ -114,6 +114,23 @@ const clean = (s: string | null | undefined): string | null => {
   return t || null;
 };
 
+/**
+ * Like clean(), but PRESERVES line breaks — used for interpretation / clinical
+ * significance text, which the LIS stores with intentional paragraph and bullet
+ * formatting. Normalises line endings, collapses runs of spaces/tabs within a
+ * line, trims spaces around newlines, and caps blank-line runs at one. The
+ * report renders this with `whitespace-pre-line` so the LIS layout carries over.
+ */
+const cleanMultiline = (s: string | null | undefined): string | null => {
+  const t = (s ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return t || null;
+};
+
 export async function getSampleReport(
   vailid: string,
   age: number | null,
@@ -248,7 +265,7 @@ export async function getSampleReport(
       const group: SampleReportGroup = {
         title: clean(x.testname),
         method: clean(x.method),
-        interpretation: clean(x.interpretation),
+        interpretation: cleanMultiline(x.interpretation),
         rows: [],
       };
       if (inPanel) {
@@ -263,7 +280,7 @@ export async function getSampleReport(
 
     if (type === 'Param' && head) {
       head.group.rows.push(toRow(x));
-      addInterp(head.group, clean(x.interpretation));
+      addInterp(head.group, cleanMultiline(x.interpretation));
       continue;
     }
 
@@ -274,7 +291,7 @@ export async function getSampleReport(
       const block: SampleReportBlock = {
         kind: 'single',
         row: toRow(x),
-        interpretation: clean(x.interpretation),
+        interpretation: cleanMultiline(x.interpretation),
       };
       if (inPanel) {
         panel!.item.panel!.children.push(block);
@@ -291,7 +308,7 @@ export async function getSampleReport(
     pushItem(dept, {
       kind: 'single',
       row: toRow(x),
-      interpretation: clean(x.interpretation),
+      interpretation: cleanMultiline(x.interpretation),
     });
   }
 

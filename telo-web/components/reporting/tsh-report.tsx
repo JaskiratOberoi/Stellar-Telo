@@ -52,7 +52,7 @@ function notesForCodes(codes: (string | null | undefined)[]): string[] {
  *  (e.g. "CLINICAL SIGNIFICANCE :", "Note:", "Interpretation:-") becomes the
  *  block heading instead of being repeated inline. */
 function splitInterp(s: string): { heading: string; body: string } {
-  const m = /^\s*(clinical significance|interpretation|note)\s*:?-?\s*/i.exec(s);
+  const m = /^\s*(clinical significance|clinical use|interpretation|note)\s*:?-?\s*/i.exec(s);
   const heading = m
     ? m[1].replace(/\b\w/g, (c) => c.toUpperCase())
     : 'Interpretation';
