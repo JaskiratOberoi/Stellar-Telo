@@ -273,11 +273,16 @@ export function LabReport({ data }: { data: LabReportData }) {
   type Section = { deptName: string; deptStart: boolean; entries: SecEntry[] };
   const entryHasOwnContent = (item: SampleReportItem): boolean => {
     if (item.kind === 'single') {
-      return !!item.interpretation || notesForCodes([item.row?.code]).length > 0;
+      return (
+        !!item.interpretation ||
+        !!item.interpretationImageDataUrl ||
+        notesForCodes([item.row?.code]).length > 0
+      );
     }
     if (item.kind === 'group' && item.group) {
       return (
         !!item.group.interpretation ||
+        !!item.group.interpretationImageDataUrl ||
         notesForCodes(item.group.rows.map((r) => r.code)).length > 0
       );
     }
@@ -352,6 +357,7 @@ export function LabReport({ data }: { data: LabReportData }) {
           key={key}
           row={item.row}
           interpretation={item.interpretation ?? null}
+          interpretationImageDataUrl={item.interpretationImageDataUrl ?? null}
           interactive={interactive}
           excluded={excluded.has(key)}
           onToggle={() => toggle(key)}
@@ -765,6 +771,7 @@ function renderChild(
         key={key}
         row={child.row}
         interpretation={child.interpretation ?? null}
+        interpretationImageDataUrl={child.interpretationImageDataUrl ?? null}
         interactive={ctl.interactive}
         excluded={ctl.excluded}
         disabled={ctl.disabled}
@@ -821,6 +828,9 @@ function GroupBlock({
       {!hideInterpretation && group.interpretation && (
         <InterpretationRow text={group.interpretation} dim={excluded} />
       )}
+      {!hideInterpretation && group.interpretationImageDataUrl && (
+        <InterpretationImageRow src={group.interpretationImageDataUrl} dim={excluded} />
+      )}
       {!hideInterpretation && (
         <NoteRow notes={notesForCodes(group.rows.map((r) => r.code))} dim={excluded} />
       )}
@@ -832,6 +842,7 @@ function GroupBlock({
 function SingleBlock({
   row,
   interpretation,
+  interpretationImageDataUrl,
   interactive,
   excluded,
   onToggle,
@@ -841,6 +852,8 @@ function SingleBlock({
 }: {
   row: SampleReportRow;
   interpretation: string | null;
+  /** Interpretation stored as an image (data-URI), printed below the text. */
+  interpretationImageDataUrl?: string | null;
   interactive: boolean;
   excluded: boolean;
   onToggle: () => void;
@@ -863,6 +876,9 @@ function SingleBlock({
       <ResultRow row={row} dim={excluded} lead={lead} indentClass={indent ? 'pl-4' : ''} />
       {!hideInterpretation && interpretation && (
         <InterpretationRow text={interpretation} dim={excluded} />
+      )}
+      {!hideInterpretation && interpretationImageDataUrl && (
+        <InterpretationImageRow src={interpretationImageDataUrl} dim={excluded} />
       )}
       {!hideInterpretation && <NoteRow notes={notesForCodes([row.code])} dim={excluded} />}
     </>
@@ -919,6 +935,22 @@ function InterpretationRow({ text, dim }: { text: string; dim?: boolean }) {
         <div className="border border-gray-300 p-2 [break-inside:avoid]">
           <p className="mb-0.5 text-[11px] font-semibold">{heading}</p>
           <p className="whitespace-pre-line text-[10.5px] leading-snug text-gray-700">{body}</p>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/** An interpretation stored as an image (e.g. the HBV / HCV graph), inlined as a
+ *  data-URI. Some tests carry ONLY this image and no interpretation text; it
+ *  prints below any text interpretation, kept whole on the page. */
+function InterpretationImageRow({ src, dim }: { src: string; dim?: boolean }) {
+  return (
+    <tr className={dim ? 'opacity-40' : ''}>
+      <td colSpan={5} className="py-1">
+        <div className="[break-inside:avoid]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="Interpretation" className="mx-auto h-auto max-w-full" />
         </div>
       </td>
     </tr>

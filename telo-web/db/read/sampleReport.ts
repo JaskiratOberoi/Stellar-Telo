@@ -41,8 +41,14 @@ export interface SampleReportRow {
 export interface SampleReportGroup {
   /** Multi-parameter test title (e.g. "BILIRUBIN (TOTAL, DIRECT & INDIRECT)"). */
   title: string | null;
+  /** tbl_med_test_master.id — used to look up an interpretation image attachment. */
+  testId: number | null;
   method: string | null;
   interpretation: string | null;
+  /** Inlined interpretation image (data-URI), when the test has one stored in
+   *  tbl_med_test_master_attachment (e.g. the HBV / HCV graph). Printed below the
+   *  interpretation text (some tests carry ONLY an image and no text). */
+  interpretationImageDataUrl?: string | null;
   rows: SampleReportRow[];
 }
 
@@ -53,7 +59,10 @@ export interface SampleReportBlock {
   group?: SampleReportGroup;
   /** For a standalone test: the row plus its own interpretation. */
   row?: SampleReportRow;
+  /** tbl_med_test_master.id of a standalone test — for its interpretation image. */
+  testId?: number | null;
   interpretation?: string | null;
+  interpretationImageDataUrl?: string | null;
 }
 
 /** A profile panel (e.g. "LIVER FUNCTION TEST") grouping several child blocks
@@ -74,7 +83,10 @@ export interface SampleReportItem {
   group?: SampleReportGroup;
   /** kind='single': a standalone test row plus its own interpretation. */
   row?: SampleReportRow;
+  /** tbl_med_test_master.id of a standalone test — for its interpretation image. */
+  testId?: number | null;
   interpretation?: string | null;
+  interpretationImageDataUrl?: string | null;
 }
 
 export interface SampleReportDepartment {
@@ -97,6 +109,7 @@ interface RawRow {
   testid: number | null;
   testcode: string | null;
   testname: string | null;
+  reportTestName: string | null;
   value: string | null;
   unit: string | null;
   normalRange: string | null;
@@ -150,6 +163,7 @@ export async function getSampleReport(
                res.testid                         AS testid,
                res.testcode                       AS testcode,
                res.testname                       AS testname,
+               m.ReportTestname                   AS reportTestName,
                res.value                          AS value,
                res.testunit                       AS unit,
                res.testnormal_range               AS normalRange,
@@ -224,6 +238,11 @@ export async function getSampleReport(
   let panel: { dept: string; pid: number; item: SampleReportItem } | null = null;
   let head: { tid: number | null; group: SampleReportGroup } | null = null;
 
+  // Groups/single tests that may carry an interpretation IMAGE (stored per-test
+  // in tbl_med_test_master_attachment). Collected during the walk so we can fetch
+  // the (few) blobs in one query afterwards and inline them as data-URIs.
+  const imageHosts: Array<{ testId: number; set: (dataUrl: string) => void }> = [];
+
   /** Merge a (possibly new) interpretation into a group, de-duplicated. */
   const addInterp = (group: SampleReportGroup, interp: string | null) => {
     if (!interp) return;
@@ -264,12 +283,27 @@ export async function getSampleReport(
     // profile_id matches, else a standalone top-level group. Its 'Param' rows
     // (same testid) follow.
     if (type === 'Head') {
+      // A Has_Parameters test emits a report-name header row (empty testcode,
+      // = ReportTestname) immediately followed by the real Head row (same
+      // testid, with code) that the Param rows hang off — e.g. TB Gene Xpert.
+      // Collapse the duplicate into the already-open group so the title and
+      // interpretation aren't printed twice. The first row (the report name)
+      // wins the title; we keep it.
+      if (head && head.tid === x.testid && x.testid != null && head.group.rows.length === 0) {
+        continue;
+      }
       const group: SampleReportGroup = {
-        title: clean(x.testname),
+        // Show the report test name (what the LIS prints) in preference to the
+        // raw test name.
+        title: clean(x.reportTestName) ?? clean(x.testname),
+        testId: x.testid,
         method: clean(x.method),
         interpretation: cleanMultiline(x.interpretation),
         rows: [],
       };
+      if (x.testid != null) {
+        imageHosts.push({ testId: x.testid, set: (u) => (group.interpretationImageDataUrl = u) });
+      }
       if (inPanel) {
         panel!.item.panel!.children.push({ kind: 'group', group });
       } else {
@@ -293,13 +327,29 @@ export async function getSampleReport(
       const block: SampleReportBlock = {
         kind: 'single',
         row: toRow(x),
+        testId: x.testid,
         interpretation: cleanMultiline(x.interpretation),
       };
       if (inPanel) {
+        if (x.testid != null) {
+          imageHosts.push({
+            testId: x.testid,
+            set: (u) => (block.interpretationImageDataUrl = u),
+          });
+        }
         panel!.item.panel!.children.push(block);
       } else {
         panel = null;
-        pushItem(dept, { kind: 'single', row: block.row, interpretation: block.interpretation });
+        const item: SampleReportItem = {
+          kind: 'single',
+          row: block.row,
+          testId: x.testid,
+          interpretation: block.interpretation,
+        };
+        if (x.testid != null) {
+          imageHosts.push({ testId: x.testid, set: (u) => (item.interpretationImageDataUrl = u) });
+        }
+        pushItem(dept, item);
       }
       continue;
     }
@@ -310,8 +360,45 @@ export async function getSampleReport(
     pushItem(dept, {
       kind: 'single',
       row: toRow(x),
+      testId: x.testid,
       interpretation: cleanMultiline(x.interpretation),
     });
+  }
+
+  // Fetch interpretation image attachments for the (few) tests in this report
+  // that have one, and inline them as data-URIs on their group / single block.
+  const imageTestIds = [...new Set(imageHosts.map((h) => h.testId))];
+  if (imageTestIds.length) {
+    try {
+      const imgMap = await withRetry(async () => {
+        const pool = await getPool();
+        const req = pool.request();
+        const params = imageTestIds.map((id, i) => {
+          req.input(`t${i}`, sql.Int, id);
+          return `@t${i}`;
+        });
+        const r = await req.query<{ testid: number; attachment: Buffer | null }>(`
+          SELECT testid, attachment
+          FROM dbo.tbl_med_test_master_attachment
+          WHERE testid IN (${params.join(',')})
+        `);
+        const m = new Map<number, string>();
+        for (const row of r.recordset) {
+          if (!row.attachment || row.attachment.length === 0) continue;
+          // Sniff the magic bytes; the LIS stores these as PNG (or JPEG).
+          const sig = row.attachment.subarray(0, 3).toString('hex');
+          const mime = sig === 'ffd8ff' ? 'image/jpeg' : 'image/png';
+          m.set(row.testid, `data:${mime};base64,${row.attachment.toString('base64')}`);
+        }
+        return m;
+      });
+      for (const h of imageHosts) {
+        const url = imgMap.get(h.testId);
+        if (url) h.set(url);
+      }
+    } catch {
+      // Image attachments are best-effort; a failure must not break the report.
+    }
   }
 
   const departments: SampleReportDepartment[] = deptOrder.map((name) => ({
