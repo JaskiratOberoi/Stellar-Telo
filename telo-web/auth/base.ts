@@ -31,7 +31,16 @@ export const authConfig: NextAuthConfig = {
       // /api/* routes do their own auth (NextAuth) and must be reachable
       // without a session cookie.
       const isPublic =
-        path === '/' || path === '/login' || path.startsWith('/api/');
+        path === '/' ||
+        path === '/login' ||
+        path.startsWith('/api/') ||
+        // Public, token-gated patient softcopy link (the printed QR target).
+        path.startsWith('/r/') ||
+        // The print fragment when carrying a report token — the page itself
+        // validates the HMAC token (an invalid one 404s), so middleware only
+        // needs to let the tokenised request through without a session.
+        (path.startsWith('/print/reporting/') &&
+          request.nextUrl.searchParams.has('token'));
       if (isPublic) return true;
       return !!auth?.telo;
     },

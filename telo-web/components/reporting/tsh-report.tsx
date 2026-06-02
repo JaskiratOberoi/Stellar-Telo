@@ -83,6 +83,9 @@ export interface LabReportSigner {
   id: number;
   doctorName: string | null;
   designation: string | null;
+  /** Inlined signature image (data-URI) so it renders without a separate
+   *  authed request — needed for the public token softcopy. */
+  signatureDataUrl?: string | null;
 }
 
 export interface LabReportData {
@@ -133,6 +136,9 @@ export interface LabReportData {
   } | null;
   signers: LabReportSigner[];
   printedAt: string;
+  /** Data-URI PNG of the QR that points to the public softcopy URL; shown
+   *  centred in the signature footer on every page. */
+  qrDataUrl?: string | null;
 }
 
 function genderLabel(sex: string | null): string {
@@ -500,24 +506,43 @@ function ReportFooterBlock({ data }: { data: LabReportData }) {
   ]
     .filter(Boolean)
     .join(', ');
-  const justify = data.signers.length === 1 ? 'justify-end' : 'justify-between';
-  const blockCls = data.signers.length >= 3 ? 'flex-1 text-center' : 'text-center';
+
+  // Signature placement around a centred QR (like the LIS): split the signers
+  // into a left and right group so the QR sits in the middle — sig · QR · sig.
+  const signers = data.signers;
+  const leftCount = Math.floor(signers.length / 2);
+  const left = signers.slice(0, leftCount);
+  const right = signers.slice(leftCount);
+  const Sig = (s: LabReportSigner) => (
+    <div key={s.id} className="text-center text-[10px] [break-inside:avoid]">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={s.signatureDataUrl ?? `/api/reporting/signature/${s.id}`}
+        alt={s.doctorName ?? 'Signature'}
+        className="mb-0.5 mx-auto h-9 w-auto object-contain"
+      />
+      <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
+      {s.designation && <p className="leading-tight text-gray-600">{s.designation}</p>}
+    </div>
+  );
+
   return (
     <>
-      {data.signers.length > 0 && (
-        <div className={`flex items-end gap-6 pt-3 [break-inside:avoid] ${justify}`}>
-          {data.signers.map((s) => (
-            <div key={s.id} className={`text-[10px] [break-inside:avoid] ${blockCls}`}>
+      {(signers.length > 0 || data.qrDataUrl) && (
+        <div className="flex items-end gap-4 pt-3 [break-inside:avoid]">
+          <div className="flex flex-1 items-end justify-start gap-6">{left.map(Sig)}</div>
+          {data.qrDataUrl && (
+            <div className="shrink-0 text-center text-[8px] text-gray-500 [break-inside:avoid]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`/api/reporting/signature/${s.id}`}
-                alt={s.doctorName ?? 'Signature'}
-                className="mb-0.5 mx-auto h-9 w-auto object-contain"
+                src={data.qrDataUrl}
+                alt="Scan to download / verify this report"
+                className="mx-auto h-16 w-16"
               />
-              <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
-              {s.designation && <p className="leading-tight text-gray-600">{s.designation}</p>}
+              <p className="mt-0.5 leading-tight">Scan to verify</p>
             </div>
-          ))}
+          )}
+          <div className="flex flex-1 items-end justify-end gap-6">{right.map(Sig)}</div>
         </div>
       )}
       <div className="mt-2 border-t border-gray-300 pt-1.5 text-[9px] text-gray-500">
