@@ -317,6 +317,7 @@ export async function registerOrder(
   formData: FormData,
 ): Promise<RegisterState> {
   let createdBillId: number | null = null;
+  let isB2b = false;
   try {
     const parsed = registerSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) {
@@ -355,6 +356,7 @@ export async function registerOrder(
     await requireCapabilityForMcc('order:create', f.mcc);
 
     const b2b = f.b2b === '1';
+    isB2b = b2b;
     // MRP-only accounts (e.g. MDCARE) must never reach the B2B path, even via a
     // hand-crafted POST.
     if (b2b && (await fetchMrpOnly(user.uid))) {
@@ -469,6 +471,8 @@ export async function registerOrder(
     return { error: 'Something went wrong placing the order.' };
   }
 
-  // Back to the New Order worklist — the lab tech accessions any missing SIDs.
-  redirect(createdBillId != null ? `/orders/new?created=${createdBillId}` : '/orders/new');
+  // Back to the originating worklist (New vs B2B) — the lab tech accessions any
+  // missing SIDs there, and the receptionist can print the bill immediately.
+  const worklist = isB2b ? '/orders/b2b' : '/orders/new';
+  redirect(createdBillId != null ? `${worklist}?created=${createdBillId}` : worklist);
 }

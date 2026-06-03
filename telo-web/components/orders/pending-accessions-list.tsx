@@ -21,25 +21,33 @@ export function PendingAccessionsList({
   initial,
   canCreate,
   highlightBillId,
+  variant = 'new',
 }: {
   initial: PendingAccessionsFeed;
   canCreate: boolean;
   /** A just-registered bill id to highlight (from ?created=). */
   highlightBillId?: number;
+  /** Which worklist this is — drives the order type, the FAB target, and the
+   *  accession back-link. 'new' = New order tab, 'b2b' = B2B Orders tab. */
+  variant?: 'new' | 'b2b';
 }) {
   const [feed, setFeed] = useState<PendingAccessionsFeed>(initial);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
   const canViewBill = feed.canViewBill;
+  const createHref = variant === 'b2b' ? '/orders/b2b/create' : '/orders/new/create';
+  // Accession detail is shared; `from` controls its "← Worklist" back-link.
+  const detailHref = (billId: number) =>
+    variant === 'b2b' ? `/orders/new/${billId}?from=b2b` : `/orders/new/${billId}`;
 
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
-      setFeed(await getPendingAccessions());
+      setFeed(await getPendingAccessions(variant));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [variant]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -103,7 +111,7 @@ export function PendingAccessionsList({
             rows.map((o) => {
               const complete = o.haveGroups >= o.requiredGroups;
               const remaining = Math.max(0, o.requiredGroups - o.haveGroups);
-              const href = `/orders/new/${o.billId}`;
+              const href = detailHref(o.billId);
               return (
                 <TableRow
                   key={o.billId}
@@ -179,8 +187,8 @@ export function PendingAccessionsList({
       {/* FAB — register a new order. Hidden for Technicians (no order:create). */}
       {canCreate && (
         <Link
-          href="/orders/new/create"
-          aria-label="Register new order"
+          href={createHref}
+          aria-label={variant === 'b2b' ? 'Register new B2B order' : 'Register new order'}
           className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl font-light leading-none text-primary-foreground shadow-xl shadow-primary/30 transition-all duration-200 hover:scale-105 active:scale-95"
         >
           +

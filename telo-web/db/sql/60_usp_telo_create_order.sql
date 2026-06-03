@@ -549,6 +549,12 @@ BEGIN
            above are Telo-internal records and are invisible to the LIS
            sales/ledger reports. */
 
+        /* Tag B2B orders (billed at MRP) so the B2B worklist can list its own
+           order type separately from New orders. Telo sidecar; regular orders
+           stay untagged and are treated as 'new'. */
+        IF @billAtMrp = 1
+            INSERT INTO dbo.telo_order_kind (bill_id, kind) VALUES (@billId, N'b2b');
+
         COMMIT;
 
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),

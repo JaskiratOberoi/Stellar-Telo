@@ -478,6 +478,9 @@ export async function fetchPatientTestItems(
  */
 export async function listPendingAccessions(
   scope: number[],
+  /** Which order type to list: 'new' excludes B2B orders, 'b2b' shows only
+   *  them, 'all' shows both. B2B orders are tagged in telo_order_kind. */
+  kind: 'new' | 'b2b' | 'all' = 'all',
 ): Promise<PendingAccession[]> {
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
@@ -488,6 +491,13 @@ export async function listPendingAccessions(
     const scopeClause = unrestricted
       ? ''
       : `AND b.mcc_code IN (${scopeParams(req, ids)})`;
+    // New-order worklist excludes B2B-tagged bills; B2B worklist shows only them.
+    const kindClause =
+      kind === 'b2b'
+        ? `AND b.id IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+        : kind === 'new'
+          ? `AND b.id NOT IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+          : '';
     const r = await req.query<{
       billId: number;
       billNumber: number | null;
@@ -509,6 +519,7 @@ export async function listPendingAccessions(
         WHERE b.addedby LIKE 'telo:%'
           AND TRY_CONVERT(INT, b.medid) IS NOT NULL
           ${scopeClause}
+          ${kindClause}
       )
       SELECT t.billId, t.billNumber, t.billDate, t.patientId,
              t.patientName, t.mccCode, t.total, t.balance,

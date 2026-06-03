@@ -1,46 +1,49 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getMccScope, ownCentreIds } from '@/auth/scope';
-import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
-import { getCart } from '@/db/cartStore';
-import { RegisterForm } from '@/components/register/register-form';
+import { getPendingAccessions } from '@/actions/orders.actions';
+import { PendingAccessionsList } from '@/components/orders/pending-accessions-list';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * B2B Orders — same registration flow as New Order, but the cart shows the
- * client's cost (rate-list price) and their margin, and the bill is charged at
- * MRP (the patient price). Hidden from MRP-only accounts (e.g. MDCARE); the
+ * B2B Orders worklist — mirrors the New Order worklist but lists ONLY B2B
+ * orders (tagged in telo_order_kind; billed at MRP). Use the + button to
+ * register a new B2B order. Hidden from MRP-only accounts (e.g. MDCARE); the
  * guard below also closes the door to URL-typing.
  */
-export default async function B2bOrderPage() {
+export default async function B2bOrderWorklistPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ created?: string }>;
+}) {
   const user = await requireSession();
-  if (!hasCapability(user.caps, 'order:create')) redirect('/dashboard');
+  if (!hasCapability(user.caps, 'order:view')) redirect('/dashboard');
   if (await fetchMrpOnly(user.uid)) redirect('/dashboard');
 
-  const scope = await getMccScope(user.uid);
-  const [units, cart] = await Promise.all([
-    fetchScopedMccUnits(scope, ownCentreIds(user)),
-    getCart(user.uid),
-  ]);
+  const feed = await getPendingAccessions('b2b');
+  const canCreate = hasCapability(user.caps, 'order:create');
+  const sp = await searchParams;
+  const createdId = sp.created ? Number(sp.created) : NaN;
+  const highlightBillId = Number.isInteger(createdId) ? createdId : undefined;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-xl font-bold tracking-tight">B2B order</h1>
-          <p className="text-sm text-muted-foreground">
-            Patient bill is at MRP; client rate &amp; margin shown for reference
-          </p>
-        </div>
-        <Link href="/orders/new" className="text-sm underline">
-          ← Worklist
-        </Link>
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">B2B Orders</h1>
+        <p className="text-sm text-muted-foreground">
+          {canCreate
+            ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the + button to register a new B2B order. The patient bill is at MRP; the client rate & margin are shown while registering.'
+            : 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes.'}
+        </p>
       </div>
-      <RegisterForm units={units} initialItems={cart.items} mode="b2b" />
+      <PendingAccessionsList
+        initial={feed}
+        canCreate={canCreate}
+        highlightBillId={highlightBillId}
+        variant="b2b"
+      />
     </div>
   );
 }
