@@ -61,7 +61,8 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     @discountAmount   INT            = 0,
     @paymentType      VARCHAR(50)    = NULL,
     @payMode          INT            = NULL,
-    @receiptAmount    INT            = 0
+    @receiptAmount    INT            = 0,
+    @billAtMrp        BIT            = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -203,11 +204,11 @@ BEGIN
         --   tier 2: catalogue MRP
         --   tier 3: 0 (never NULL — billing line needs a number)
         COALESCE(
-          (SELECT sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
+          CASE WHEN @billAtMrp = 1 THEN NULL ELSE (SELECT sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
              WHERE sr.mcccode = @mcc
                AND sr.testtype = CASE i.itemKind WHEN 0 THEN 'T' WHEN 1 THEN 'P' ELSE 'M' END
-               AND sr.testid = i.testMasterId),
-          CASE i.itemKind
+               AND sr.testid = i.testMasterId) END,
+          CASE WHEN @billAtMrp = 1 THEN NULL ELSE CASE i.itemKind
             WHEN 0 THEN (SELECT r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
                            WHERE r.TestCode = i.testMasterId
                              AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
@@ -217,7 +218,7 @@ BEGIN
             ELSE (SELECT r.Price FROM dbo.tbl_med_master_profile_rates_with_pcc_types r
                     WHERE r.master_profile_code = i.testMasterId
                       AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
-          END,
+          END END,
           CASE i.itemKind
             WHEN 0 THEN (SELECT t.MRP FROM dbo.tbl_med_test_master t WHERE t.id = i.testMasterId)
             WHEN 1 THEN (SELECT pm.MRP FROM dbo.tbl_med_test_profile_master pm WHERE pm.id = i.testMasterId)
@@ -547,6 +548,12 @@ BEGIN
            here too would double-debit. The bill header / line items / receipt
            above are Telo-internal records and are invisible to the LIS
            sales/ledger reports. */
+
+        /* Tag B2B orders (billed at MRP) so the B2B worklist can list its own
+           order type separately from New orders. Telo sidecar; regular orders
+           stay untagged and are treated as 'new'. */
+        IF @billAtMrp = 1
+            INSERT INTO dbo.telo_order_kind (bill_id, kind) VALUES (@billId, N'b2b');
 
         COMMIT;
 

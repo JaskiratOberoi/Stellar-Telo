@@ -7,6 +7,7 @@ import { currentUser } from '@/auth/session';
 import { requireCapability, requireCapabilityForMcc } from '@/auth/guards';
 import { hasCapability } from '@/auth/rbac';
 import { loadCatalog, filterCatalog } from '@/db/read/catalog';
+import { fetchMrpOnly } from '@/db/read/teloUsers';
 import {
   fetchDoctorsForMcc,
   fetchCustomersForMcc,
@@ -131,12 +132,34 @@ export interface PreviewLine {
   kind: ItemKind;
   code: string;
   name: string;
+  /** The price this line bills at: the client rate-list price in New Order
+   *  mode, or the MRP in B2B mode. The Total and the payment floor use this. */
   rate: number | null;
   source: string;
+  /** Catalogue MRP (patient price). Always populated for the B2B view. */
+  mrp: number | null;
+  /** The client's rate-list price (what we charge the client). B2B display:
+   *  Profit % = (mrp − clientRate) / mrp. Null when no rate list applies. */
+  clientRate: number | null;
 }
 export interface PreviewResult {
   lines: PreviewLine[];
   total: number;
+}
+
+/** Build a `${kind}:${id}` → MRP map from the cached catalogue. */
+async function mrpMapFor(
+  items: { id: number; kind: ItemKind }[],
+): Promise<Map<string, number | null>> {
+  const cat = await loadCatalog();
+  const byKey = new Map<string, number | null>();
+  for (const c of cat) byKey.set(`${c.kind}:${c.id}`, c.mrp ?? null);
+  const out = new Map<string, number | null>();
+  for (const it of items) {
+    const k = `${it.kind}:${it.id}`;
+    out.set(k, byKey.get(k) ?? null);
+  }
+  return out;
 }
 
 /**
@@ -166,18 +189,31 @@ export async function previewSampleGroupsAction(
 export async function previewOrder(
   mcc: number | null,
   items: { id: number; kind: ItemKind; code: string; name: string }[],
+  b2b = false,
 ): Promise<PreviewResult> {
   const user = await currentUser();
   if (!user) return { lines: [], total: 0 };
   if (items.length === 0) return { lines: [], total: 0 };
 
-  const rates = await resolveRatesBatch(
-    mcc != null && Number.isInteger(mcc) ? mcc : null,
-    items.map(toResolveItem),
-  );
+  const [rates, mrpByKey] = await Promise.all([
+    resolveRatesBatch(
+      mcc != null && Number.isInteger(mcc) ? mcc : null,
+      items.map(toResolveItem),
+    ),
+    mrpMapFor(items),
+  ]);
   const lines: PreviewLine[] = items.map((it, idx) => {
     const rr = rates[idx];
-    return { ...it, rate: rr.rate, source: rr.source };
+    const mrp = mrpByKey.get(`${it.kind}:${it.id}`) ?? null;
+    // In B2B mode the bill is charged at MRP (patient price); the rate-list
+    // value (the client's cost) is surfaced separately for the margin display.
+    return {
+      ...it,
+      rate: b2b ? mrp : rr.rate,
+      source: b2b ? 'mrp' : rr.source,
+      mrp,
+      clientRate: rr.rate,
+    };
   });
   const total = lines.reduce((s, l) => s + (l.rate ?? 0), 0);
   return { lines, total };
@@ -243,6 +279,8 @@ const registerSchema = z.object({
   paymentType: z.string().trim().max(50).optional(),
   receiptAmount: zeroInt,
   itemsJson: z.string(),
+  // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
+  b2b: z.string().optional(),
 });
 
 function parseRefValue(raw: string | undefined): z.infer<typeof refValueSchema> {
@@ -286,6 +324,8 @@ export async function registerOrder(
   _prev: RegisterState,
   formData: FormData,
 ): Promise<RegisterState> {
+  let createdBillId: number | null = null;
+  let isB2b = false;
   try {
     const parsed = registerSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) {
@@ -323,10 +363,26 @@ export async function registerOrder(
     if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
     await requireCapabilityForMcc('order:create', f.mcc);
 
+    const b2b = f.b2b === '1';
+    isB2b = b2b;
+    // MRP-only accounts (e.g. MDCARE) must never reach the B2B path, even via a
+    // hand-crafted POST.
+    if (b2b && (await fetchMrpOnly(user.uid))) {
+      return { error: 'The B2B Orders feature is not available for this account.' };
+    }
+
     // Server-authoritative 50% floor. Mirrors the client gate so a tampered
-    // form can't post a receipt below half the resolved total.
-    const floorRates = await resolveRatesBatch(f.mcc, items.map(toResolveItem));
-    const resolvedTotal = floorRates.reduce((s, r) => s + (r.rate ?? 0), 0);
+    // form can't post a receipt below half the resolved total. B2B bills at
+    // MRP, so the floor is computed against the MRP total in that mode.
+    const resolvedTotal = b2b
+      ? Array.from((await mrpMapFor(items)).values()).reduce(
+          (s: number, m) => s + (m ?? 0),
+          0,
+        )
+      : (await resolveRatesBatch(f.mcc, items.map(toResolveItem))).reduce(
+          (s, r) => s + (r.rate ?? 0),
+          0,
+        );
     const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
     if (Number(f.receiptAmount ?? 0) < minPaid) {
       return {
@@ -384,6 +440,7 @@ export async function registerOrder(
       paymentType: f.paymentType || null,
       payMode: 1, // LIS standard paymode; method captured in paymentType text
       receiptAmount: f.receiptAmount,
+      billAtMrp: b2b,
     });
 
     if (!result.ok || result.billId == null) {
@@ -408,12 +465,17 @@ export async function registerOrder(
     }
     // Clear the catalog cart — items were consumed by this order.
     await clearCart(user.uid);
+    // Carry the new bill id back to the worklist so the receptionist can print
+    // its bill/lab receipt immediately.
+    createdBillId = result.billId;
   } catch (e) {
     if (isRedirectError(e)) throw e;
     if (e instanceof AppError) return { error: e.message };
     return { error: 'Something went wrong placing the order.' };
   }
 
-  // Back to the New Order worklist — the lab tech accessions any missing SIDs.
-  redirect('/orders/new');
+  // Back to the originating worklist (New vs B2B) — the lab tech accessions any
+  // missing SIDs there, and the receptionist can print the bill immediately.
+  const worklist = isB2b ? '/orders/b2b' : '/orders/new';
+  redirect(createdBillId != null ? `${worklist}?created=${createdBillId}` : worklist);
 }

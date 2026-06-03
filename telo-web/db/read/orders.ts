@@ -57,6 +57,19 @@ export interface OrderDetail extends OrderSummary {
   samples: OrderSample[];
   receipts: OrderReceipt[];
   patientId: number | null;
+  /** First + last name of the LIS user who registered the bill (from the
+   *  `addedby='telo:<id>'` marker). Used as the bill's "Prepared by" for
+   *  non-MDCARE clients. Null for non-Telo bills or blank names. */
+  preparedByUser: string | null;
+  /** Login/account name of the Telo user who registered the bill (the
+   *  `tbl_med_user_master.Username` resolved from the `addedby='telo:<id>'`
+   *  marker). Multiple accounts can share a client code, so this identifies
+   *  exactly which one created the order. Null for non-Telo bills. */
+  registeredByUsername: string | null;
+  /** Per-account "Prepared By" override (`telo_account.prepared_by`) of the
+   *  registering user. When set it wins over `preparedByUser` and the per-MCC
+   *  invoice config as the printed "Prepared By". Null = no override. */
+  preparedByOverride: string | null;
 }
 
 export interface RegistrationSummary {
@@ -206,6 +219,9 @@ export async function getOrder(
       discount: number;
       amountPaid: number;
       patientId: number | null;
+      preparedByUser: string | null;
+      registeredByUsername: string | null;
+      preparedByOverride: string | null;
     }>(`
       SELECT b.id AS billId, b.bill_number AS billNumber,
              b.bill_date AS billDate, b.patientname AS patientName,
@@ -217,12 +233,22 @@ export async function getOrder(
              p.Clinical_History AS clinicalHistory,
              b.discount_amount AS discount, b.amount_paid AS amountPaid,
              -- Telo writes patient_id into medid so we can join bill→patient.
-             TRY_CONVERT(INT, b.medid) AS patientId
+             TRY_CONVERT(INT, b.medid) AS patientId,
+             -- Registering Telo user (addedby='telo:<id>') → "Prepared by".
+             NULLIF(LTRIM(RTRIM(CONCAT(uu.firstname, ' ', uu.lastname))), '') AS preparedByUser,
+             -- The exact Telo login that registered the bill (badge on receipt).
+             uu.Username AS registeredByUsername,
+             -- That user's per-account "Prepared By" override (telo_account).
+             ta_u.prepared_by AS preparedByOverride
       FROM dbo.tbl_billing_patient_detail b
       LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
       LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
       LEFT JOIN dbo.tbl_med_mcc_patient_master p
             ON p.id = TRY_CONVERT(INT, b.medid)
+      LEFT JOIN dbo.tbl_med_user_master uu
+            ON b.addedby LIKE 'telo:%'
+           AND uu.id = TRY_CONVERT(INT, STUFF(b.addedby, 1, 5, ''))
+      LEFT JOIN dbo.telo_account ta_u ON ta_u.user_id = uu.id
       WHERE b.id = @bid ${scopeClause}
     `);
     const h = head.recordset[0];
@@ -351,6 +377,9 @@ export async function getOrder(
       discount: Number(h.discount ?? 0),
       amountPaid: Number(h.amountPaid ?? 0),
       patientId: h.patientId,
+      preparedByUser: h.preparedByUser?.trim() || null,
+      registeredByUsername: h.registeredByUsername?.trim() || null,
+      preparedByOverride: h.preparedByOverride?.trim() || null,
       lines: lr.recordset.map((x) => ({
         testCode: x.testCode,
         testName: x.testName,
@@ -469,6 +498,9 @@ export async function fetchPatientTestItems(
  */
 export async function listPendingAccessions(
   scope: number[],
+  /** Which order type to list: 'new' excludes B2B orders, 'b2b' shows only
+   *  them, 'all' shows both. B2B orders are tagged in telo_order_kind. */
+  kind: 'new' | 'b2b' | 'all' = 'all',
 ): Promise<PendingAccession[]> {
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
@@ -479,6 +511,13 @@ export async function listPendingAccessions(
     const scopeClause = unrestricted
       ? ''
       : `AND b.mcc_code IN (${scopeParams(req, ids)})`;
+    // New-order worklist excludes B2B-tagged bills; B2B worklist shows only them.
+    const kindClause =
+      kind === 'b2b'
+        ? `AND b.id IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+        : kind === 'new'
+          ? `AND b.id NOT IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+          : '';
     const r = await req.query<{
       billId: number;
       billNumber: number | null;
@@ -500,6 +539,7 @@ export async function listPendingAccessions(
         WHERE b.addedby LIKE 'telo:%'
           AND TRY_CONVERT(INT, b.medid) IS NOT NULL
           ${scopeClause}
+          ${kindClause}
       )
       SELECT t.billId, t.billNumber, t.billDate, t.patientId,
              t.patientName, t.mccCode, t.total, t.balance,

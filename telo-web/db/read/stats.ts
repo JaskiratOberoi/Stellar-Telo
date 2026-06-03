@@ -1,6 +1,7 @@
 import 'server-only';
 import { getPool, sql, withRetry, traceDb } from '@/db/pool';
 import { getReceiptsInPeriod } from '@/db/read/receipts';
+import { todayIST, addDaysIST } from '@/lib/datetime';
 
 export interface DayStats {
   date: string; // YYYY-MM-DD the stats are for
@@ -30,11 +31,11 @@ const EMPTY = (date: string): DayStats => ({
   fetchedAt: new Date().toISOString(),
 });
 
-/** Normalize to YYYY-MM-DD; default = today (server local). */
+/** Normalize to YYYY-MM-DD; default = today (IST calendar day). A valid input
+ *  is returned verbatim (no Date round-trip that could shift the day). */
 function normDate(d?: string): string {
-  const dt = d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(d + 'T00:00:00') : new Date();
-  if (isNaN(dt.getTime())) return new Date().toISOString().slice(0, 10);
-  return dt.toISOString().slice(0, 10);
+  if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return todayIST();
 }
 
 /**
@@ -120,11 +121,8 @@ export async function getStats(
       revByDate.set(key, Number(t.rev));
     }
     const trend: { date: string; revenue: number }[] = [];
-    const end = new Date(date + 'T00:00:00');
     for (let i = 6; i >= 0; i--) {
-      const dd = new Date(end);
-      dd.setDate(end.getDate() - i);
-      const key = dd.toISOString().slice(0, 10);
+      const key = addDaysIST(date, -i);
       trend.push({ date: key, revenue: revByDate.get(key) ?? 0 });
     }
 

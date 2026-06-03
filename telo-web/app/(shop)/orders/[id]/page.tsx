@@ -118,9 +118,28 @@ async function ReceiptBody({
       <div className="space-y-4 print:hidden">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">
-            Receipt #{order.billNumber ?? order.billId}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight">
+              Receipt #{order.billNumber ?? order.billId}
+            </h1>
+            {order.registeredByUsername && (
+              <span
+                title={
+                  order.preparedByUser
+                    ? `Registered by ${order.preparedByUser} (${order.registeredByUsername})`
+                    : `Registered by ${order.registeredByUsername}`
+                }
+                className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+              >
+                <span className="text-[9px] uppercase tracking-wide text-muted-foreground/70">
+                  Registered by
+                </span>
+                <span className="font-mono text-foreground">
+                  {order.registeredByUsername}
+                </span>
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             {order.patientName ?? 'Patient'} · {dateLabel} ·{' '}
             {mccName ?? (

@@ -5,10 +5,13 @@ import { getWorksheetReports } from '@/lib/listec';
 import {
   resolveBusinessUnit,
   getSignersForBusinessUnit,
+  getSignatureBytes,
 } from '@/db/read/signatures';
 import { getReferringDoctor } from '@/db/read/refDoctor';
+import { getMccCentreByCode } from '@/db/read/mccUnits';
+import { getProfileInterpretations } from '@/db/read/profileInterpretations';
+import { reportQrDataUrl, verifyReportToken } from '@/lib/report/reportLink';
 import { getSampleReport } from '@/db/read/sampleReport';
-import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +34,13 @@ export default async function ReportingPrintFragment({
   searchParams,
 }: {
   params: Promise<{ sid: string }>;
-  searchParams: Promise<{ pdf?: string; date?: string; split?: string; exclude?: string }>;
+  searchParams: Promise<{
+    pdf?: string;
+    date?: string;
+    split?: string;
+    exclude?: string;
+    token?: string;
+  }>;
 }) {
   const { sid } = await params;
   const sp = await searchParams;
@@ -46,11 +55,17 @@ export default async function ReportingPrintFragment({
     .map((s) => s.trim())
     .filter((s) => /^\d+:\d+(?::\d+)?$/.test(s));
 
-  const user = await requireSession();
-  if (!hasCapability(user.caps, 'report:view')) notFound();
-
   const decodedSid = decodeURIComponent(sid).trim();
   if (!decodedSid) notFound();
+
+  // Two ways in: a logged-in user with report:view, OR a valid per-report token
+  // (the public QR/softcopy path — no session). An invalid token falls through
+  // to the session check, which 404s for the unauthenticated.
+  const tokenOk = sp.token ? verifyReportToken(decodedSid, sp.token) : false;
+  if (!tokenOk) {
+    const user = await requireSession();
+    if (!hasCapability(user.caps, 'report:view')) notFound();
+  }
 
   // Tight worksheet window around the sample's date when known (the SP crawls
   // wide ranges); fall back to a broad window only if no hint.
@@ -79,20 +94,44 @@ export default async function ReportingPrintFragment({
   const row = rows.find((r) => r.sid === decodedSid) ?? rows[0];
   if (!row) notFound();
 
-  const [report, bu, refDoctor] = await Promise.all([
-    getSampleReport(decodedSid, row.age, row.age_unit),
-    resolveBusinessUnit(row.business_unit),
-    getReferringDoctor(row.pid),
-  ]);
+  // Date hint for the public QR link (tightens the worksheet window on scan).
+  const qrDate =
+    sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)
+      ? sp.date
+      : row.sample_drawn && !Number.isNaN(new Date(row.sample_drawn).getTime())
+        ? ymd(new Date(row.sample_drawn))
+        : null;
 
-  // Single signatory: the primary pathologist (DOC_TYPE = 1).
+  const [report, bu, refDoctor, collectionCentre, profileInterpretations, qrDataUrl] =
+    await Promise.all([
+      getSampleReport(decodedSid, row.age, row.age_unit),
+      resolveBusinessUnit(row.business_unit),
+      getReferringDoctor(row.pid),
+      getMccCentreByCode(row.client_code),
+      getProfileInterpretations(),
+      reportQrDataUrl(decodedSid, qrDate),
+    ]);
+
+  // All configured signatories, ordered primary → secondary (DOC_TYPE asc),
+  // capped at three so the footer never overflows the page width. Signature
+  // images are inlined as data-URIs so they render without a separate authed
+  // request (the public token softcopy has no session).
   const rawSigners = bu ? await getSignersForBusinessUnit(bu.id) : [];
-  const pathologist = rawSigners.find((s) => s.docType === 1) ?? rawSigners[0] ?? null;
-  const signers = pathologist ? [pathologist] : [];
-
-  // Aggregate static notes for the test codes present on this report.
-  const staticNotes = Array.from(
-    new Set(report.codes.flatMap((c) => STATIC_NOTES_BY_CODE[c] ?? [])),
+  const orderedSigners = [...rawSigners]
+    .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
+    .slice(0, 3);
+  const signers = await Promise.all(
+    orderedSigners.map(async (s) => {
+      const sig = await getSignatureBytes(s.id);
+      return {
+        id: s.id,
+        doctorName: s.doctorName,
+        designation: s.designation,
+        signatureDataUrl: sig
+          ? `data:${sig.mime};base64,${sig.bytes.toString('base64')}`
+          : null,
+      };
+    }),
   );
 
   const data: LabReportData = {
@@ -113,16 +152,15 @@ export default async function ReportingPrintFragment({
     statusLabel: row.status,
     billNumber: row.bill_number,
     clinicalHistory: row.clinical_history,
+    specimens: report.specimens,
+    collectionCentre,
+    profileInterpretations,
+    qrDataUrl,
     departments: report.departments,
-    staticNotes,
     processedAt: bu
       ? { name: bu.name, address: bu.address, city: bu.city, phone: bu.phone }
       : null,
-    signers: signers.map((s) => ({
-      id: s.id,
-      doctorName: s.doctorName,
-      designation: s.designation,
-    })),
+    signers,
     printedAt: new Date().toISOString(),
   };
 

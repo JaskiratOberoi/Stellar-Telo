@@ -19,12 +19,17 @@ export const dynamic = 'force-dynamic';
 
 export default async function AccessionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
   const billId = Number(id);
   if (!Number.isInteger(billId)) notFound();
+  // Return to whichever worklist opened this order (New vs B2B Orders tab).
+  const { from } = await searchParams;
+  const worklistHref = from === 'b2b' ? '/orders/b2b' : '/orders/new';
 
   const user = await requireSession();
   // Accessioning (adding SIDs to an existing order) — a Technician can do
@@ -56,7 +61,7 @@ export default async function AccessionPage({
           </h1>
           <PaymentStatusPill status={paymentStatus} />
         </div>
-        <Link href="/orders/new" className="text-sm underline">
+        <Link href={worklistHref} className="text-sm underline">
           ← Worklist
         </Link>
       </div>

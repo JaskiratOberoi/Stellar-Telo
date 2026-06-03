@@ -1,16 +1,25 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type {
-  AccountsSummary,
-  PaymentModeFilter,
+import {
+  searchAccountsBills,
+  type AccountsSummary,
+  type AccountsSearchResult,
+  type PaymentModeFilter,
 } from '@/actions/ledger.actions';
 import type { ScopedMcc } from '@/db/read/mccUnits';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { fmtIST } from '@/lib/datetime';
+import {
+  fmtIST,
+  todayIST,
+  addDaysIST,
+  firstOfMonthIST,
+  firstOfLastMonthIST,
+  lastDayOfLastMonthIST,
+} from '@/lib/datetime';
 import {
   Table,
   TableBody,
@@ -21,26 +30,13 @@ import {
 } from '@/components/ui/table';
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const today = () => new Date().toISOString().slice(0, 10);
-const firstOfThisMonth = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
-const firstOfLastMonth = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth() - 1, 1)
-    .toISOString()
-    .slice(0, 10);
-};
-const lastDayOfLastMonth = () => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 0).toISOString().slice(0, 10);
-};
-const yesterday = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-};
+// IST calendar-day boundaries (see lib/datetime). UTC-based dates made the
+// quick filters resolve to the previous day between 00:00–05:30 IST.
+const today = () => todayIST();
+const firstOfThisMonth = () => firstOfMonthIST();
+const firstOfLastMonth = () => firstOfLastMonthIST();
+const lastDayOfLastMonth = () => lastDayOfLastMonthIST();
+const yesterday = () => addDaysIST(todayIST(), -1);
 
 interface Preset {
   id: 'today' | 'yesterday' | 'this-month' | 'last-month';
@@ -88,6 +84,28 @@ export function AccountsSummaryView({
   const [to, setTo] = useState(initial.range.to);
   const [mccId, setMccId] = useState<number | null>(initial.filters.mccId);
   const [pay, setPay] = useState<PaymentModeFilter>(initial.filters.paymentMode);
+
+  // Free-text search across the active range/scope/filters. Empty → show the
+  // per-MCC rollup; non-empty → show matching bills.
+  const [q, setQ] = useState('');
+  const [searching, startSearch] = useTransition();
+  const [results, setResults] = useState<AccountsSearchResult['bills'] | null>(null);
+  const searchSeq = useRef(0);
+  useEffect(() => {
+    const needle = q.trim();
+    if (!needle) {
+      setResults(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      const seq = ++searchSeq.current;
+      startSearch(async () => {
+        const res = await searchAccountsBills({ from, to, q: needle, mccId, paymentMode: pay });
+        if (seq === searchSeq.current) setResults(res.bills);
+      });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, from, to, mccId, pay]);
 
   function navigate(next: {
     from: string;
@@ -202,6 +220,16 @@ export function AccountsSummaryView({
               <option value="credit">Credit</option>
             </select>
           </div>
+          <div className="space-y-0.5">
+            <label className="text-xs text-muted-foreground">Search</label>
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Patient, bill #, doctor…"
+              className="h-8 w-56"
+              suppressHydrationWarning
+            />
+          </div>
         </div>
         <div className="text-xs text-muted-foreground">
           Telo bills only · {totals.bills.toLocaleString('en-IN')} bill
@@ -213,6 +241,57 @@ export function AccountsSummaryView({
         </div>
       </div>
 
+      {q.trim() ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {searching
+              ? 'Searching…'
+              : `${(results ?? []).length} matching bill${(results ?? []).length === 1 ? '' : 's'}${(results ?? []).length === 200 ? '+ (showing first 200)' : ''} for “${q.trim()}”`}
+          </p>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Patient</TableHead>
+                <TableHead className="w-28">Bill #</TableHead>
+                <TableHead className="w-36">Date</TableHead>
+                <TableHead>Doctor / Customer</TableHead>
+                <TableHead className="w-28">Payment</TableHead>
+                <TableHead className="w-24 text-right">Amount</TableHead>
+                <TableHead className="w-24 text-right">Balance</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(results ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-muted-foreground">
+                    {searching ? 'Searching…' : 'No matching bills.'}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (results ?? []).map((b) => (
+                  <TableRow key={b.billId}>
+                    <TableCell className="font-medium">
+                      {b.patientName ?? '—'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {b.billNumber ?? b.billId}
+                    </TableCell>
+                    <TableCell className="text-xs">{fmtIST(b.billDate)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {[b.doctorName, b.customerName].filter(Boolean).join(' · ') || '—'}
+                    </TableCell>
+                    <TableCell className="text-xs">{b.paymentType ?? '—'}</TableCell>
+                    <TableCell className="text-right">{inr(b.amount)}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {inr(b.balance)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
       <Table>
         <TableHeader>
           <TableRow>
@@ -293,6 +372,7 @@ export function AccountsSummaryView({
           </tfoot>
         )}
       </Table>
+      )}
 
       <p className="text-[11px] italic text-muted-foreground">
         Net = Charges − Discount. Received is net of refunds (amount_paid is

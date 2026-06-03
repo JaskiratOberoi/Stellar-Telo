@@ -9,14 +9,12 @@ import {
   type PaymentModeFilter,
 } from '@/actions/ledger.actions';
 import { AccountsSummaryView } from '@/components/balances/balances-summary';
+import { todayIST, firstOfMonthIST } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
-const today = (): string => new Date().toISOString().slice(0, 10);
-const firstOfMonth = (): string => {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-};
+const today = (): string => todayIST();
+const firstOfMonth = (): string => firstOfMonthIST();
 
 const PAY_MODES: ReadonlySet<PaymentModeFilter> = new Set([
   'all',

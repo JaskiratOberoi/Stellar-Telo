@@ -43,10 +43,29 @@ export async function saveInvoiceConfigAction(
 
   const labName    = ((formData.get('labName')    as string) ?? '').trim() || null;
   const address    = ((formData.get('address')    as string) ?? '').trim() || null;
+  const city       = ((formData.get('city')       as string) ?? '').trim() || null;
+  const stateNm    = ((formData.get('state')      as string) ?? '').trim() || null;
+  const pincode    = ((formData.get('pincode')    as string) ?? '').trim() || null;
   const phone      = ((formData.get('phone')      as string) ?? '').trim() || null;
   const email      = ((formData.get('email')      as string) ?? '').trim() || null;
   const preparedBy = ((formData.get('preparedBy') as string) ?? '').trim() || null;
   const removeLogo = formData.get('removeLogo') === '1';
+
+  // Bill toggles. Like the layout block, only written when the form posted them
+  // (flagsSubmitted=1). 'auto' / unknown → NULL (resolved MDCARE-aware at print).
+  const flagsSubmitted = formData.get('flagsSubmitted') === '1';
+  const obmRaw = ((formData.get('onBehalfMode') as string) ?? '').toLowerCase();
+  const onBehalfMode: string | null = flagsSubmitted
+    ? (obmRaw === 'client' ? 'client' : obmRaw === 'qugen' ? 'qugen' : null)
+    : null;
+  const triState = (v: string): number | null =>
+    v === 'on' ? 1 : v === 'off' ? 0 : null;
+  const showDisclaimer = flagsSubmitted
+    ? triState(((formData.get('showDisclaimer') as string) ?? '').toLowerCase())
+    : null;
+  const showSignatory = flagsSubmitted
+    ? triState(((formData.get('showSignatory') as string) ?? '').toLowerCase())
+    : null;
 
   // Layout controls. Checkbox inputs only appear in the form when checked, so a
   // missing value means "false" — that's why visibility is read with a hidden
@@ -93,6 +112,9 @@ export async function saveInvoiceConfigAction(
       const setClauses: string[] = [
         'lab_name    = @labName',
         'address     = @address',
+        'city        = @city',
+        'state       = @state',
+        'pincode     = @pincode',
         'phone       = @phone',
         'email       = @email',
         'prepared_by = @preparedBy',
@@ -107,12 +129,20 @@ export async function saveInvoiceConfigAction(
         setClauses.push('noble_logo_visible  = @nobleLogoVisible');
         setClauses.push('custom_logo_visible = @customLogoVisible');
       }
+      if (flagsSubmitted) {
+        setClauses.push('on_behalf_mode  = @onBehalfMode');
+        setClauses.push('show_disclaimer = @showDisclaimer');
+        setClauses.push('show_signatory  = @showSignatory');
+      }
 
       const req = pool
         .request()
         .input('mid', sql.Int, mccId)
         .input('labName', sql.NVarChar(200), labName)
         .input('address', sql.NVarChar(500), address)
+        .input('city', sql.NVarChar(120), city)
+        .input('state', sql.NVarChar(120), stateNm)
+        .input('pincode', sql.NVarChar(20), pincode)
         .input('phone', sql.NVarChar(50), phone)
         .input('email', sql.NVarChar(200), email)
         .input('preparedBy', sql.NVarChar(120), preparedBy);
@@ -125,6 +155,11 @@ export async function saveInvoiceConfigAction(
         req.input('nobleLogoPosition', sql.NVarChar(8), nobleLogoPosition);
         req.input('nobleLogoVisible', sql.Bit, nobleLogoVisible);
         req.input('customLogoVisible', sql.Bit, customLogoVisible);
+      }
+      if (flagsSubmitted) {
+        req.input('onBehalfMode', sql.VarChar(12), onBehalfMode);
+        req.input('showDisclaimer', sql.Bit, showDisclaimer);
+        req.input('showSignatory', sql.Bit, showSignatory);
       }
 
       if (rowExists) {
@@ -144,17 +179,22 @@ export async function saveInvoiceConfigAction(
           req.input('nobleLogoVisible', sql.Bit, null);
           req.input('customLogoVisible', sql.Bit, null);
         }
+        if (!flagsSubmitted) {
+          req.input('onBehalfMode', sql.VarChar(12), null);
+          req.input('showDisclaimer', sql.Bit, null);
+          req.input('showSignatory', sql.Bit, null);
+        }
         await req.query(`
           INSERT INTO dbo.telo_mcc_invoice_config
-            (mcc_id, lab_name, address, phone, email,
+            (mcc_id, lab_name, address, city, state, pincode, phone, email,
              top_right_logo_bytes, top_right_logo_mime,
              noble_logo_position, noble_logo_visible, custom_logo_visible,
-             prepared_by)
+             prepared_by, on_behalf_mode, show_disclaimer, show_signatory)
           VALUES
-            (@mid, @labName, @address, @phone, @email,
+            (@mid, @labName, @address, @city, @state, @pincode, @phone, @email,
              @logoBytes, @logoMime,
              @nobleLogoPosition, @nobleLogoVisible, @customLogoVisible,
-             @preparedBy)
+             @preparedBy, @onBehalfMode, @showDisclaimer, @showSignatory)
         `);
       }
     });
@@ -179,7 +219,7 @@ export async function saveInvoiceConfigAction(
     if (msg.includes('Invalid column name')) {
       return {
         error:
-          'Logo / layout / prepared_by columns missing. Run db/sql/07_alter_telo_mcc_invoice_config_add_logo.sql, 08_alter_telo_mcc_invoice_config_add_logo_layout.sql, and 09_alter_telo_mcc_invoice_config_add_prepared_by.sql.',
+          'Invoice columns missing. Run the db/sql migrations (07, 08, 09, and 17_alter_telo_mcc_invoice_config_add_b2b_fields.sql).',
         ok: false,
       };
     }

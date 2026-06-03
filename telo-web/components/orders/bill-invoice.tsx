@@ -11,6 +11,11 @@ import {
   medicareLogoPath,
   MEDICARE_MCC_CODES,
 } from '@/lib/invoice-logo';
+import {
+  resolveInvoiceDefaults,
+  isMdcareMcc,
+  DISCLAIMER_TEXT,
+} from '@/lib/invoice-defaults';
 
 interface BillInvoiceProps {
   order: OrderDetail;
@@ -22,6 +27,8 @@ interface BillInvoiceProps {
    */
   mccCode: string | null;
   config: MccInvoiceConfig | null;
+  /** LIS centre fallback for the header address block (when config is blank). */
+  centreFallback?: { address: string | null; city: string | null } | null;
   /**
    * URL to the per-MCC custom logo bytes (typically `/api/mcc-invoice-logo/[mccId]`).
    * Pass null when no logo is uploaded for this MCC. The endpoint serves the
@@ -71,12 +78,37 @@ export function BillInvoice({
   mccName,
   mccCode,
   config,
+  centreFallback,
   customLogoSrc,
 }: BillInvoiceProps) {
   const labName = config?.labName?.trim() || mccName?.trim() || 'Diagnostic Centre';
-  const address = config?.address?.trim() || null;
+  const address = config?.address?.trim() || centreFallback?.address?.trim() || null;
+  const city    = config?.city?.trim()    || centreFallback?.city?.trim()    || null;
+  const stateNm = config?.state?.trim()   || null;
+  const pincode = config?.pincode?.trim() || null;
   const phone   = config?.phone?.trim()   || null;
   const email   = config?.email?.trim()   || null;
+  // Header line 2: address, city, state, pincode (whichever are present).
+  const addressLine = [address, city, stateNm, pincode].filter(Boolean).join(', ');
+
+  // MDCARE-aware bill toggles (null config values resolve to MDCARE defaults).
+  const isMdcare = isMdcareMcc(mccCode);
+  const { onBehalf, showDisclaimer, showSignatory } = resolveInvoiceDefaults(
+    config,
+    mccCode,
+  );
+  const onBehalfName = onBehalf === 'qugen' ? 'Qugen Pathlabs Pvt. Ltd.' : labName;
+  // Prepared-by precedence:
+  //   1. registering account's per-user override (telo_account.prepared_by)
+  //   2. existing default — non-MDCARE → registering user's name; then
+  //      per-MCC invoice config free text (MDCARE skips the user's name).
+  // The override lets multiple accounts sharing one client code (e.g. MDCARE)
+  // each print their own name.
+  const preparedBy =
+    order.preparedByOverride?.trim() ||
+    (isMdcare
+      ? config?.preparedBy?.trim() || null
+      : order.preparedByUser ?? config?.preparedBy?.trim() ?? null);
 
   const customLogo = resolveTopRightLogo(mccCode, config, customLogoSrc);
   const noblePos = config?.nobleLogoPosition ?? 'left';
@@ -96,7 +128,7 @@ export function BillInvoice({
       alt="Noble Diagnostics"
       width={224}
       height={56}
-      className="h-14 w-auto print:h-[16mm] print:block"
+      className="h-12 w-auto max-w-full object-contain print:h-[14mm] print:block"
     />
   ) : null;
 
@@ -107,7 +139,7 @@ export function BillInvoice({
       alt={customLogo.alt}
       width={customLogo.width}
       height={customLogo.height}
-      className="h-16 w-auto print:h-[18mm] print:block"
+      className="h-14 w-auto max-w-full object-contain print:h-[16mm] print:block"
     />
   ) : null;
 
@@ -128,12 +160,16 @@ export function BillInvoice({
              noble_logo_visible   = 0/1                (default 1)
              custom_logo_visible  = 0/1                (default 1)
            Custom logo always renders opposite Noble. */}
-      <div className="border-b border-gray-400 px-5 py-4 grid grid-cols-[auto_1fr_auto] items-center gap-4">
-        <div className="flex items-center justify-start min-w-[88px]">{leftPane}</div>
+      {/* Equal fixed side columns keep the centre text block mathematically
+          page-centered whether 0/1/2 logos are present. Logos are capped
+          (max-w-full + object-contain) so an oversized image shrinks to its
+          column instead of overlapping the centred text. */}
+      <div className="border-b border-gray-400 px-5 py-4 grid grid-cols-[96px_1fr_96px] items-center gap-3">
+        <div className="flex items-center justify-start overflow-hidden">{leftPane}</div>
         <div className="text-center min-w-0">
-          <p className="text-lg font-bold tracking-tight truncate">{labName}</p>
-          {address && (
-            <p className="mt-0.5 text-gray-600">{address}</p>
+          <p className="text-lg font-bold tracking-tight">{labName}</p>
+          {addressLine && (
+            <p className="mt-0.5 text-gray-600">{addressLine}</p>
           )}
           {(phone || email) && (
             <p className="mt-0.5 text-gray-600">
@@ -143,7 +179,7 @@ export function BillInvoice({
             </p>
           )}
         </div>
-        <div className="flex items-center justify-end min-w-[88px]">{rightPane}</div>
+        <div className="flex items-center justify-end overflow-hidden">{rightPane}</div>
       </div>
 
       {/* ── Bill meta ──────────────────────────────────────────────── */}
@@ -306,19 +342,19 @@ export function BillInvoice({
             <SummaryRow label="Balance Due" value={inr(order.balance)} bold />
           </div>
           <p className="mt-1.5 text-right text-[10px] italic text-gray-500">
-            On behalf of Qugen Pathlabs Pvt. Ltd.
+            On behalf of {onBehalfName}
           </p>
         </div>
       </div>
 
       {/* ── Prepared by ────────────────────────────────────────────── */}
-      {config?.preparedBy?.trim() && (
+      {preparedBy && (
         <div className="border-b border-gray-400 px-5 py-2">
           <p className="text-[10px] text-gray-700">
             <span className="font-semibold uppercase tracking-wide text-gray-600">
               Prepared By:
             </span>{' '}
-            {config.preparedBy.trim()}
+            {preparedBy}
           </p>
         </div>
       )}
@@ -335,16 +371,25 @@ export function BillInvoice({
         </ol>
       </div>
 
+      {/* ── Disclaimer (toggle: default on, MDCARE off) ────────────── */}
+      {showDisclaimer && (
+        <div className="border-b border-gray-400 px-5 py-2">
+          <p className="text-[9px] italic text-gray-600">{DISCLAIMER_TEXT}</p>
+        </div>
+      )}
+
       {/* ── Footer ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 items-end px-5 py-4">
         <p className="text-gray-400 text-[9px]">
           This is a computer-generated bill.
         </p>
-        <div className="text-right">
-          <div className="mb-6 border-b border-gray-400 inline-block w-36" />
-          <p className="font-semibold">Authorised Signatory</p>
-          <p className="text-gray-500">{labName}</p>
-        </div>
+        {showSignatory && (
+          <div className="text-right">
+            <div className="mb-6 border-b border-gray-400 inline-block w-36" />
+            <p className="font-semibold">Authorised Signatory</p>
+            <p className="text-gray-500">{labName}</p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -27,6 +27,8 @@ import { getAgeSpecificRange } from '@/db/read/ageRange';
  */
 
 export interface SampleReportRow {
+  /** Uppercased test code (for matching static notes by code). */
+  code: string | null;
   name: string | null;
   method: string | null;
   value: string | null;
@@ -39,8 +41,14 @@ export interface SampleReportRow {
 export interface SampleReportGroup {
   /** Multi-parameter test title (e.g. "BILIRUBIN (TOTAL, DIRECT & INDIRECT)"). */
   title: string | null;
+  /** tbl_med_test_master.id — used to look up an interpretation image attachment. */
+  testId: number | null;
   method: string | null;
   interpretation: string | null;
+  /** Inlined interpretation image (data-URI), when the test has one stored in
+   *  tbl_med_test_master_attachment (e.g. the HBV / HCV graph). Printed below the
+   *  interpretation text (some tests carry ONLY an image and no text). */
+  interpretationImageDataUrl?: string | null;
   rows: SampleReportRow[];
 }
 
@@ -51,12 +59,18 @@ export interface SampleReportBlock {
   group?: SampleReportGroup;
   /** For a standalone test: the row plus its own interpretation. */
   row?: SampleReportRow;
+  /** tbl_med_test_master.id of a standalone test — for its interpretation image. */
+  testId?: number | null;
   interpretation?: string | null;
+  interpretationImageDataUrl?: string | null;
 }
 
 /** A profile panel (e.g. "LIVER FUNCTION TEST") grouping several child blocks
  *  that share its profile_id. */
 export interface SampleReportPanel {
+  /** tbl_med_test_profile_master.id — used to look up the profile's Telo
+   *  clinical-significance interpretation. */
+  profileId: number | null;
   title: string | null;
   children: SampleReportBlock[];
 }
@@ -69,7 +83,10 @@ export interface SampleReportItem {
   group?: SampleReportGroup;
   /** kind='single': a standalone test row plus its own interpretation. */
   row?: SampleReportRow;
+  /** tbl_med_test_master.id of a standalone test — for its interpretation image. */
+  testId?: number | null;
   interpretation?: string | null;
+  interpretationImageDataUrl?: string | null;
 }
 
 export interface SampleReportDepartment {
@@ -81,6 +98,9 @@ export interface SampleReport {
   departments: SampleReportDepartment[];
   /** Distinct test codes present (for static-notes lookup). */
   codes: string[];
+  /** Distinct specimen / sample types present (e.g. "Whole Blood EDTA",
+   *  "Serum"), in first-seen order — shown in the report header. */
+  specimens: string[];
 }
 
 interface RawRow {
@@ -89,6 +109,7 @@ interface RawRow {
   testid: number | null;
   testcode: string | null;
   testname: string | null;
+  reportTestName: string | null;
   value: string | null;
   unit: string | null;
   normalRange: string | null;
@@ -98,10 +119,28 @@ interface RawRow {
   method: string | null;
   interpretation: string | null;
   deptName: string | null;
+  specimen: string | null;
 }
 
 const clean = (s: string | null | undefined): string | null => {
   const t = (s ?? '').replace(/\s+/g, ' ').trim();
+  return t || null;
+};
+
+/**
+ * Like clean(), but PRESERVES line breaks — used for interpretation / clinical
+ * significance text, which the LIS stores with intentional paragraph and bullet
+ * formatting. Normalises line endings, collapses runs of spaces/tabs within a
+ * line, trims spaces around newlines, and caps blank-line runs at one. The
+ * report renders this with `whitespace-pre-line` so the LIS layout carries over.
+ */
+const cleanMultiline = (s: string | null | undefined): string | null => {
+  const t = (s ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return t || null;
 };
 
@@ -111,7 +150,7 @@ export async function getSampleReport(
   ageUnit: string | null,
 ): Promise<SampleReport> {
   const sidTrim = vailid.trim();
-  if (!sidTrim) return { departments: [], codes: [] };
+  if (!sidTrim) return { departments: [], codes: [], specimens: [] };
 
   const raw = await withRetry(async () => {
     const pool = await getPool();
@@ -124,6 +163,7 @@ export async function getSampleReport(
                res.testid                         AS testid,
                res.testcode                       AS testcode,
                res.testname                       AS testname,
+               m.ReportTestname                   AS reportTestName,
                res.value                          AS value,
                res.testunit                       AS unit,
                res.testnormal_range               AS normalRange,
@@ -132,10 +172,12 @@ export async function getSampleReport(
                res.profile_id                     AS profileId,
                m.Method                           AS method,
                CAST(m.Interpretation AS NVARCHAR(MAX)) AS interpretation,
-               d.Name                             AS deptName
+               d.Name                             AS deptName,
+               sm.Sampletype                      AS specimen
         FROM dbo.tbl_med_mcc_patient_test_result res
         LEFT JOIN dbo.tbl_med_test_master m       ON m.id = res.testid
         LEFT JOIN dbo.tbl_med_department_master d ON d.id = m.DepartmentId
+        LEFT JOIN dbo.tbl_med_sample_master sm    ON sm.id = m.SampleId
         WHERE res.vailid = @sid
         ORDER BY res.id
       `);
@@ -158,12 +200,15 @@ export async function getSampleReport(
   // stored text.
   const AGE_BANDED = /\b(adult|paediatric|pediatric|newborn|year|month|week|trimester)\b/i;
   const toRow = (x: RawRow): SampleReportRow => {
-    const stored = clean(x.normalRange);
+    // Preserve the LIS's per-band line breaks in the reference range so the
+    // report can show each band on its own line (formatRange finishes the job).
+    const stored = cleanMultiline(x.normalRange);
     const ageRange =
       stored && AGE_BANDED.test(stored) && x.testid != null
         ? rangeByTestId.get(x.testid) ?? null
         : null;
     return {
+      code: x.testcode ? x.testcode.trim().toUpperCase() : null,
       name: clean(x.testname),
       method: clean(x.method),
       value: clean(x.value),
@@ -178,6 +223,7 @@ export async function getSampleReport(
   const deptOrder: string[] = [];
   const deptItems = new Map<string, SampleReportItem[]>();
   const codes = new Set<string>();
+  const specimens = new Set<string>();
 
   const pushItem = (dept: string, item: SampleReportItem) => {
     if (!deptItems.has(dept)) {
@@ -192,6 +238,11 @@ export async function getSampleReport(
   let panel: { dept: string; pid: number; item: SampleReportItem } | null = null;
   let head: { tid: number | null; group: SampleReportGroup } | null = null;
 
+  // Groups/single tests that may carry an interpretation IMAGE (stored per-test
+  // in tbl_med_test_master_attachment). Collected during the walk so we can fetch
+  // the (few) blobs in one query afterwards and inline them as data-URIs.
+  const imageHosts: Array<{ testId: number; set: (dataUrl: string) => void }> = [];
+
   /** Merge a (possibly new) interpretation into a group, de-duplicated. */
   const addInterp = (group: SampleReportGroup, interp: string | null) => {
     if (!interp) return;
@@ -205,6 +256,8 @@ export async function getSampleReport(
     const dept = clean(x.deptName) ?? 'OTHER';
     const type = (x.testtype ?? '').trim();
     if (x.testcode) codes.add(x.testcode.trim().toUpperCase());
+    const spec = clean(x.specimen);
+    if (spec) specimens.add(spec);
 
     // Does this row belong to the open panel? Membership is by shared
     // profile_id within the same department.
@@ -219,7 +272,7 @@ export async function getSampleReport(
       head = null;
       const item: SampleReportItem = {
         kind: 'panel',
-        panel: { title: clean(x.testname), children: [] },
+        panel: { profileId: x.profileId ?? null, title: clean(x.testname), children: [] },
       };
       panel = { dept, pid: x.profileId ?? -1, item };
       pushItem(dept, item);
@@ -230,12 +283,27 @@ export async function getSampleReport(
     // profile_id matches, else a standalone top-level group. Its 'Param' rows
     // (same testid) follow.
     if (type === 'Head') {
+      // A Has_Parameters test emits a report-name header row (empty testcode,
+      // = ReportTestname) immediately followed by the real Head row (same
+      // testid, with code) that the Param rows hang off — e.g. TB Gene Xpert.
+      // Collapse the duplicate into the already-open group so the title and
+      // interpretation aren't printed twice. The first row (the report name)
+      // wins the title; we keep it.
+      if (head && head.tid === x.testid && x.testid != null && head.group.rows.length === 0) {
+        continue;
+      }
       const group: SampleReportGroup = {
-        title: clean(x.testname),
+        // Show the report test name (what the LIS prints) in preference to the
+        // raw test name.
+        title: clean(x.reportTestName) ?? clean(x.testname),
+        testId: x.testid,
         method: clean(x.method),
-        interpretation: clean(x.interpretation),
+        interpretation: cleanMultiline(x.interpretation),
         rows: [],
       };
+      if (x.testid != null) {
+        imageHosts.push({ testId: x.testid, set: (u) => (group.interpretationImageDataUrl = u) });
+      }
       if (inPanel) {
         panel!.item.panel!.children.push({ kind: 'group', group });
       } else {
@@ -248,7 +316,7 @@ export async function getSampleReport(
 
     if (type === 'Param' && head) {
       head.group.rows.push(toRow(x));
-      addInterp(head.group, clean(x.interpretation));
+      addInterp(head.group, cleanMultiline(x.interpretation));
       continue;
     }
 
@@ -259,13 +327,29 @@ export async function getSampleReport(
       const block: SampleReportBlock = {
         kind: 'single',
         row: toRow(x),
-        interpretation: clean(x.interpretation),
+        testId: x.testid,
+        interpretation: cleanMultiline(x.interpretation),
       };
       if (inPanel) {
+        if (x.testid != null) {
+          imageHosts.push({
+            testId: x.testid,
+            set: (u) => (block.interpretationImageDataUrl = u),
+          });
+        }
         panel!.item.panel!.children.push(block);
       } else {
         panel = null;
-        pushItem(dept, { kind: 'single', row: block.row, interpretation: block.interpretation });
+        const item: SampleReportItem = {
+          kind: 'single',
+          row: block.row,
+          testId: x.testid,
+          interpretation: block.interpretation,
+        };
+        if (x.testid != null) {
+          imageHosts.push({ testId: x.testid, set: (u) => (item.interpretationImageDataUrl = u) });
+        }
+        pushItem(dept, item);
       }
       continue;
     }
@@ -276,8 +360,45 @@ export async function getSampleReport(
     pushItem(dept, {
       kind: 'single',
       row: toRow(x),
-      interpretation: clean(x.interpretation),
+      testId: x.testid,
+      interpretation: cleanMultiline(x.interpretation),
     });
+  }
+
+  // Fetch interpretation image attachments for the (few) tests in this report
+  // that have one, and inline them as data-URIs on their group / single block.
+  const imageTestIds = [...new Set(imageHosts.map((h) => h.testId))];
+  if (imageTestIds.length) {
+    try {
+      const imgMap = await withRetry(async () => {
+        const pool = await getPool();
+        const req = pool.request();
+        const params = imageTestIds.map((id, i) => {
+          req.input(`t${i}`, sql.Int, id);
+          return `@t${i}`;
+        });
+        const r = await req.query<{ testid: number; attachment: Buffer | null }>(`
+          SELECT testid, attachment
+          FROM dbo.tbl_med_test_master_attachment
+          WHERE testid IN (${params.join(',')})
+        `);
+        const m = new Map<number, string>();
+        for (const row of r.recordset) {
+          if (!row.attachment || row.attachment.length === 0) continue;
+          // Sniff the magic bytes; the LIS stores these as PNG (or JPEG).
+          const sig = row.attachment.subarray(0, 3).toString('hex');
+          const mime = sig === 'ffd8ff' ? 'image/jpeg' : 'image/png';
+          m.set(row.testid, `data:${mime};base64,${row.attachment.toString('base64')}`);
+        }
+        return m;
+      });
+      for (const h of imageHosts) {
+        const url = imgMap.get(h.testId);
+        if (url) h.set(url);
+      }
+    } catch {
+      // Image attachments are best-effort; a failure must not break the report.
+    }
   }
 
   const departments: SampleReportDepartment[] = deptOrder.map((name) => ({
@@ -285,5 +406,5 @@ export async function getSampleReport(
     items: deptItems.get(name)!,
   }));
 
-  return { departments, codes: [...codes] };
+  return { departments, codes: [...codes], specimens: [...specimens] };
 }

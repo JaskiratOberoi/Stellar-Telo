@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getPendingAccessions, type PendingAccessionsFeed } from '@/actions/orders.actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PrintBillButton, PrintLabButton } from '@/components/orders/print-bill-button';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import {
@@ -19,23 +20,34 @@ import {
 export function PendingAccessionsList({
   initial,
   canCreate,
+  highlightBillId,
+  variant = 'new',
 }: {
   initial: PendingAccessionsFeed;
   canCreate: boolean;
+  /** A just-registered bill id to highlight (from ?created=). */
+  highlightBillId?: number;
+  /** Which worklist this is — drives the order type, the FAB target, and the
+   *  accession back-link. 'new' = New order tab, 'b2b' = B2B Orders tab. */
+  variant?: 'new' | 'b2b';
 }) {
   const [feed, setFeed] = useState<PendingAccessionsFeed>(initial);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
   const canViewBill = feed.canViewBill;
+  const createHref = variant === 'b2b' ? '/orders/b2b/create' : '/orders/new/create';
+  // Accession detail is shared; `from` controls its "← Worklist" back-link.
+  const detailHref = (billId: number) =>
+    variant === 'b2b' ? `/orders/new/${billId}?from=b2b` : `/orders/new/${billId}`;
 
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
-      setFeed(await getPendingAccessions());
+      setFeed(await getPendingAccessions(variant));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [variant]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -80,7 +92,7 @@ export function PendingAccessionsList({
             {canViewBill && (
               <TableHead className="w-24 text-right">Amount</TableHead>
             )}
-            <TableHead className="w-32 text-right">Action</TableHead>
+            <TableHead className="w-64 text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -99,11 +111,15 @@ export function PendingAccessionsList({
             rows.map((o) => {
               const complete = o.haveGroups >= o.requiredGroups;
               const remaining = Math.max(0, o.requiredGroups - o.haveGroups);
-              const href = `/orders/new/${o.billId}`;
+              const href = detailHref(o.billId);
               return (
                 <TableRow
                   key={o.billId}
-                  className="group transition-transform hover:-translate-y-px"
+                  className={cn(
+                    'group transition-transform hover:-translate-y-px',
+                    highlightBillId === o.billId &&
+                      'bg-secondary/10 ring-1 ring-secondary/40',
+                  )}
                 >
                   <TableCell>
                     <Link
@@ -136,24 +152,30 @@ export function PendingAccessionsList({
                     </TableCell>
                   )}
                   <TableCell className="text-right">
-                    <Button
-                      asChild
-                      size="sm"
-                      variant={complete ? 'outline' : 'default'}
-                    >
-                      <Link
-                        href={href}
-                        aria-label={
-                          complete
-                            ? `View Sample IDs for bill ${o.billNumber ?? o.billId}`
-                            : `Add ${remaining} Sample ID${remaining === 1 ? '' : 's'} for bill ${o.billNumber ?? o.billId}`
-                        }
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <Button
+                        asChild
+                        size="sm"
+                        variant={complete ? 'outline' : 'default'}
                       >
-                        {complete
-                          ? 'View SIDs'
-                          : `Add SID${remaining === 1 ? '' : 's'}`}
-                      </Link>
-                    </Button>
+                        <Link
+                          href={href}
+                          aria-label={
+                            complete
+                              ? `View Sample IDs for bill ${o.billNumber ?? o.billId}`
+                              : `Add ${remaining} Sample ID${remaining === 1 ? '' : 's'} for bill ${o.billNumber ?? o.billId}`
+                          }
+                        >
+                          {complete
+                            ? 'View SIDs'
+                            : `Add SID${remaining === 1 ? '' : 's'}`}
+                        </Link>
+                      </Button>
+                      <PrintLabButton billId={o.billId} billNumber={o.billNumber} />
+                      {canViewBill && (
+                        <PrintBillButton billId={o.billId} billNumber={o.billNumber} />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -165,8 +187,8 @@ export function PendingAccessionsList({
       {/* FAB — register a new order. Hidden for Technicians (no order:create). */}
       {canCreate && (
         <Link
-          href="/orders/new/create"
-          aria-label="Register new order"
+          href={createHref}
+          aria-label={variant === 'b2b' ? 'Register new B2B order' : 'Register new order'}
           className="fixed bottom-8 right-8 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl font-light leading-none text-primary-foreground shadow-xl shadow-primary/30 transition-all duration-200 hover:scale-105 active:scale-95"
         >
           +

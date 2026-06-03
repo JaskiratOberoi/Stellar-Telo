@@ -22,6 +22,9 @@ interface MccRow {
   config: {
     labName: string | null;
     address: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
     phone: string | null;
     email: string | null;
     hasTopRightLogo: boolean;
@@ -29,6 +32,9 @@ interface MccRow {
     nobleLogoVisible: boolean;
     customLogoVisible: boolean;
     preparedBy: string | null;
+    onBehalfMode: 'client' | 'qugen' | null;
+    showDisclaimer: boolean | null;
+    showSignatory: boolean | null;
   } | null;
 }
 
@@ -80,6 +86,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
       {removeLogo && <input type="hidden" name="removeLogo" value="1" />}
       {/* Layout fields are always submitted so the server can persist toggles. */}
       <input type="hidden" name="layoutSubmitted" value="1" />
+      <input type="hidden" name="flagsSubmitted" value="1" />
       <input type="hidden" name="nobleLogoPosition" value={noblePosition} />
       {nobleVisible && <input type="hidden" name="nobleLogoVisible" value="1" />}
       {customVisible && <input type="hidden" name="customLogoVisible" value="1" />}
@@ -110,8 +117,39 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
           <Input
             id={`ad-${row.mccId}`}
             name="address"
-            placeholder="123 Main Street, City — 110001"
+            placeholder="123 Main Street"
             defaultValue={row.config?.address ?? ''}
+          />
+          <p className="text-xs text-muted-foreground">
+            Header line 2 = Address, City, State, Pincode (blank fields fall back
+            to the LIS centre).
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`ct-${row.mccId}`}>City</Label>
+          <Input
+            id={`ct-${row.mccId}`}
+            name="city"
+            placeholder="Srinagar"
+            defaultValue={row.config?.city ?? ''}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`st-${row.mccId}`}>State</Label>
+          <Input
+            id={`st-${row.mccId}`}
+            name="state"
+            placeholder="J&K"
+            defaultValue={row.config?.state ?? ''}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`pin-${row.mccId}`}>Pincode</Label>
+          <Input
+            id={`pin-${row.mccId}`}
+            name="pincode"
+            placeholder="190001"
+            defaultValue={row.config?.pincode ?? ''}
           />
         </div>
         <div className="space-y-1">
@@ -134,9 +172,76 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             maxLength={120}
           />
           <p className="text-xs text-muted-foreground">
-            Printed above the &ldquo;Note:&rdquo; block on the bill as
-            &ldquo;Prepared By: &lt;name&gt;&rdquo;. Leave blank to hide.
+            For non-MDCARE clients the bill auto-fills &ldquo;Prepared By&rdquo;
+            with the registering user&rsquo;s name; this box overrides it.
           </p>
+        </div>
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <Label className="block">Bill text &amp; footer</Label>
+          <p className="text-xs text-muted-foreground">
+            &ldquo;Auto&rdquo; uses the default for this client (MDCARE keeps its
+            legacy bill; all others show the client name, the disclaimer, and no
+            signatory).
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor={`obm-${row.mccId}`} className="text-xs">
+                &ldquo;On behalf of&rdquo;
+              </Label>
+              <select
+                id={`obm-${row.mccId}`}
+                name="onBehalfMode"
+                defaultValue={row.config?.onBehalfMode ?? ''}
+                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+              >
+                <option value="">Auto</option>
+                <option value="client">Client name</option>
+                <option value="qugen">Qugen Pathlabs</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`dis-${row.mccId}`} className="text-xs">
+                Disclaimer footer
+              </Label>
+              <select
+                id={`dis-${row.mccId}`}
+                name="showDisclaimer"
+                defaultValue={
+                  row.config?.showDisclaimer == null
+                    ? ''
+                    : row.config.showDisclaimer
+                      ? 'on'
+                      : 'off'
+                }
+                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+              >
+                <option value="">Auto</option>
+                <option value="on">Show</option>
+                <option value="off">Hide</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor={`sig-${row.mccId}`} className="text-xs">
+                Authorised Signatory
+              </Label>
+              <select
+                id={`sig-${row.mccId}`}
+                name="showSignatory"
+                defaultValue={
+                  row.config?.showSignatory == null
+                    ? ''
+                    : row.config.showSignatory
+                      ? 'on'
+                      : 'off'
+                }
+                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+              >
+                <option value="">Auto</option>
+                <option value="on">Show</option>
+                <option value="off">Hide</option>
+              </select>
+            </div>
+          </div>
         </div>
         <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
           <Label className="block">Header layout</Label>
@@ -403,7 +508,7 @@ export function InvoiceConfigManager({
                   // the database — sidestepping React 19's form-reset
                   // desync of controlled inputs after useActionState.
                   <ConfigForm
-                    key={`cfg-${row.mccId}-${row.config?.nobleLogoPosition ?? 'left'}-${row.config?.nobleLogoVisible ?? true ? 1 : 0}-${row.config?.customLogoVisible ?? true ? 1 : 0}-${row.config?.hasTopRightLogo ? 1 : 0}`}
+                    key={`cfg-${row.mccId}-${row.config?.nobleLogoPosition ?? 'left'}-${row.config?.nobleLogoVisible ?? true ? 1 : 0}-${row.config?.customLogoVisible ?? true ? 1 : 0}-${row.config?.hasTopRightLogo ? 1 : 0}-${row.config?.onBehalfMode ?? 'a'}-${row.config?.showDisclaimer == null ? 'a' : row.config.showDisclaimer ? 1 : 0}-${row.config?.showSignatory == null ? 'a' : row.config.showSignatory ? 1 : 0}`}
                     row={row}
                     onClose={() => setEditing(null)}
                   />

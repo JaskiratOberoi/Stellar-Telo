@@ -1,5 +1,6 @@
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
+import { fetchMrpOnly } from '@/db/read/teloUsers';
 import type { Capability } from '@/types/auth';
 import { ShopNav } from '@/components/layout/shop-nav';
 import { AmbientBackground } from '@/components/ui/ambient-background';
@@ -18,6 +19,9 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', cap: 'dashboard:view' },
   { href: '/orders/new', label: 'New order', cap: 'order:view' },
+  // B2B Orders — same flow, bills at MRP and shows the client margin. Hidden
+  // for MRP-only accounts (e.g. MDCARE) below.
+  { href: '/orders/b2b', label: 'B2B Orders', cap: 'order:create' },
   { href: '/catalog', label: 'Catalog', cap: 'patient:create' },
   // { href: '/patient', label: 'Patients', cap: 'patient:view' },
   // { href: '/orders', label: 'Orders', cap: 'order:view' },
@@ -36,8 +40,13 @@ export default async function ShopLayout({
 }) {
   const user = await requireSession();
 
+  // MRP-only accounts (e.g. MDCARE) don't get the B2B Orders feature.
+  const mrpOnly = await fetchMrpOnly(user.uid);
+
   const visible = NAV.filter(
-    (n) => n.cap == null || hasCapability(user.caps, n.cap),
+    (n) =>
+      (n.cap == null || hasCapability(user.caps, n.cap)) &&
+      !(n.href === '/orders/b2b' && mrpOnly),
   );
 
   const navLinks = visible.filter((n) => n.href !== '/dashboard');

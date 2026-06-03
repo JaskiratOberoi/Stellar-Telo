@@ -7,6 +7,7 @@ import {
   resetPasswordAction,
   setActiveAction,
   setLisAccessAction,
+  setMrpOnlyAction,
   updateUserAction,
   getEditableUserScope,
   searchMccUnitsAction,
@@ -367,6 +368,10 @@ function UserRow({
                 enabled={!user.lisAccess}
               />
             )}
+            {/* MRP-only toggle (hides B2B Orders) — Telo-managed accounts only. */}
+            {user.hasTeloAccount && (
+              <SetMrpOnlyButton userId={user.id} enabled={!user.mrpOnly} />
+            )}
             {/* Edit is Telo-only — see updateUserAction guard. */}
             {user.createdByTelo && (
               <button
@@ -510,6 +515,7 @@ function EditUserForm({
   const [firstName, setFirstName] = useState(user.firstName ?? '');
   const [lastName, setLastName] = useState(user.lastName ?? '');
   const [email, setEmail] = useState(user.email ?? '');
+  const [preparedBy, setPreparedBy] = useState(user.preparedBy ?? '');
   const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
   const [pickerValue, setPickerValue] = useState<number | ''>('');
   const [scopeLoading, setScopeLoading] = useState(true);
@@ -703,6 +709,23 @@ function EditUserForm({
         )}
       </div>
 
+      <div className="space-y-0.5">
+        <Label htmlFor={`pb-${user.id}`}>Prepared by (invoice override)</Label>
+        <Input
+          id={`pb-${user.id}`}
+          name="preparedBy"
+          placeholder="e.g. Priya Sharma"
+          value={preparedBy}
+          onChange={(e) => setPreparedBy(e.target.value)}
+          maxLength={120}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Printed as &ldquo;Prepared By&rdquo; on bills this account registers.
+          Overrides the auto-filled registering-user name and the client&apos;s
+          invoice setting. Leave blank to use the default.
+        </p>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={pending || scopeLoading}>
           {pending ? 'Saving…' : 'Save changes'}
@@ -831,6 +854,38 @@ function SetLisAccessButton({
         }
       >
         {enabled ? 'Enable LIS' : 'Lock LIS'}
+      </button>
+    </form>
+  );
+}
+
+function SetMrpOnlyButton({
+  userId,
+  enabled,
+}: {
+  userId: number;
+  enabled: boolean; // target state (toggle): true = set MRP-only (hide B2B)
+}) {
+  const [, action, pending] = useActionState(setMrpOnlyAction, initial);
+  return (
+    <form action={action} className="inline">
+      <input type="hidden" name="userId" value={userId} />
+      <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+      <button
+        type="submit"
+        disabled={pending}
+        title={
+          enabled
+            ? 'MRP only — hide the B2B Orders tab for this account'
+            : 'Allow the B2B Orders tab for this account'
+        }
+        className={
+          enabled
+            ? 'text-amber-500 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            : 'text-secondary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+        }
+      >
+        {enabled ? 'Set MRP-only' : 'Allow B2B'}
       </button>
     </form>
   );

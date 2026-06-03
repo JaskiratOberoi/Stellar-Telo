@@ -84,7 +84,10 @@ export interface PendingAccessionsFeed {
  * server-side for technicians (no `bill:view`) — the value never leaves the
  * server even if a custom client tries to read it from the JSON payload.
  */
-export async function getPendingAccessions(): Promise<PendingAccessionsFeed> {
+export async function getPendingAccessions(
+  /** 'new' (default) excludes B2B orders; 'b2b' lists only B2B orders. */
+  kind: 'new' | 'b2b' = 'new',
+): Promise<PendingAccessionsFeed> {
   const user = await currentUser();
   if (!user) {
     return {
@@ -96,7 +99,7 @@ export async function getPendingAccessions(): Promise<PendingAccessionsFeed> {
   }
   const scope = await getMccScope(user.uid);
   const canViewBill = hasCapability(user.caps, 'bill:view');
-  const rows = await listPendingAccessions(scope);
+  const rows = await listPendingAccessions(scope, kind);
   const orders = canViewBill
     ? rows
     : rows.map((o) => ({ ...o, total: 0, balance: 0 }));

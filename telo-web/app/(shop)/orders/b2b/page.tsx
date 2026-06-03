@@ -1,21 +1,28 @@
 import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
+import { fetchMrpOnly } from '@/db/read/teloUsers';
 import { getPendingAccessions } from '@/actions/orders.actions';
 import { PendingAccessionsList } from '@/components/orders/pending-accessions-list';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NewOrderWorklistPage({
+/**
+ * B2B Orders worklist — mirrors the New Order worklist but lists ONLY B2B
+ * orders (tagged in telo_order_kind; billed at MRP). Use the + button to
+ * register a new B2B order. Hidden from MRP-only accounts (e.g. MDCARE); the
+ * guard below also closes the door to URL-typing.
+ */
+export default async function B2bOrderWorklistPage({
   searchParams,
 }: {
   searchParams: Promise<{ created?: string }>;
 }) {
   const user = await requireSession();
-  // Worklist visible to anyone who can view orders (Technician included).
   if (!hasCapability(user.caps, 'order:view')) redirect('/dashboard');
+  if (await fetchMrpOnly(user.uid)) redirect('/dashboard');
 
-  const feed = await getPendingAccessions();
+  const feed = await getPendingAccessions('b2b');
   const canCreate = hasCapability(user.caps, 'order:create');
   const sp = await searchParams;
   const createdId = sp.created ? Number(sp.created) : NaN;
@@ -24,17 +31,18 @@ export default async function NewOrderWorklistPage({
   return (
     <div className="space-y-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">New order</h1>
+        <h1 className="text-xl font-bold tracking-tight">B2B Orders</h1>
         <p className="text-sm text-muted-foreground">
           {canCreate
-            ? 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes, or use the + button to register a new order.'
-            : 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes.'}
+            ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the + button to register a new B2B order. The patient bill is at MRP; the client rate & margin are shown while registering.'
+            : 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes.'}
         </p>
       </div>
       <PendingAccessionsList
         initial={feed}
         canCreate={canCreate}
         highlightBillId={highlightBillId}
+        variant="b2b"
       />
     </div>
   );

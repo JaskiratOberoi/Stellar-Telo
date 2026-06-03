@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
+    "@types/qrcode": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "ioredis": "^5.4.2",
@@ -26,6 +27,7 @@
     "pdf-lib": "^1.17.1",
     "pino": "^9.6.0",
     "puppeteer": "^25.1.0",
+    "qrcode": "^1.5.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "tailwind-merge": "^2.6.0",

@@ -75,10 +75,14 @@ const DEFAULTS: Fields = {
 export function RegisterForm({
   units,
   initialItems = [],
+  mode = 'new',
 }: {
   units: ScopedMcc[];
   initialItems?: { id: number; kind: 'test' | 'profile' | 'master'; code: string; name: string }[];
+  /** 'b2b' shows the Client-rate / Profit% columns and bills at MRP. */
+  mode?: 'new' | 'b2b';
 }) {
+  const isB2b = mode === 'b2b';
   // Render the form CLIENT-ONLY: browser extensions (e.g. Shark form-filler)
   // inject custom wrappers/attrs into the SSR HTML before React hydrates,
   // producing a new tree mismatch every time we patch an old one. The actual
@@ -265,14 +269,14 @@ export function RegisterForm({
       const seq = ++previewSeq.current;
       const mccArg = mcc === '' ? null : Number(mcc);
       startPreview(async () => {
-        const r = await previewOrder(mccArg, picked);
+        const r = await previewOrder(mccArg, picked, isB2b);
         if (seq === previewSeq.current) setPreview(r);
       });
     }, 200);
     return () => {
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
-  }, [picked, mcc]);
+  }, [picked, mcc, isB2b]);
 
   // Keep "Paid now" pinned to half the current total while the operator hasn't
   // overridden it. Re-runs whenever the priced total changes (tests added or
@@ -330,6 +334,7 @@ export function RegisterForm({
   return (
     <form action={action} className="grid gap-4 text-sm lg:grid-cols-2">
       <input type="hidden" name="mcc" value={mcc} />
+      <input type="hidden" name="b2b" value={isB2b ? '1' : ''} />
       <input type="hidden" name="itemsJson" value={JSON.stringify(picked)} />
       <input
         type="hidden"
@@ -730,10 +735,58 @@ export function RegisterForm({
             <div className="border-b border-white/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
               Selected ({picked.length})
             </div>
+            {isB2b && picked.length > 0 && (
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <span>Test</span>
+                <span className="text-right">MRP</span>
+                <span className="text-right">Client rate</span>
+                <span className="text-right">Profit&nbsp;%</span>
+                <span className="text-right">&nbsp;</span>
+              </div>
+            )}
             {picked.length === 0 ? (
               <p className="px-3 py-4 text-sm text-muted-foreground">
                 No tests added yet.
               </p>
+            ) : isB2b ? (
+              picked.map((it) => {
+                const pl = preview.lines.find(
+                  (l) => l.id === it.id && l.kind === it.kind,
+                );
+                const mrp = pl?.mrp ?? null;
+                const cr = pl?.clientRate ?? null;
+                const profitPct =
+                  mrp != null && mrp > 0 && cr != null
+                    ? Math.round(((mrp - cr) / mrp) * 100)
+                    : null;
+                return (
+                  <div
+                    key={`${it.kind}-${it.id}`}
+                    className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-3 border-b border-white/5 px-3 py-2 text-sm last:border-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="font-mono text-xs">{it.code}</span>{' '}
+                      {it.name}
+                    </span>
+                    <span className="text-right tabular-nums">
+                      {mrp != null ? `₹${mrp}` : '…'}
+                    </span>
+                    <span className="text-right tabular-nums text-muted-foreground">
+                      {cr != null ? `₹${cr}` : '…'}
+                    </span>
+                    <span className="text-right tabular-nums text-emerald-400">
+                      {profitPct != null ? `${profitPct}%` : '—'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => remove(it.id, it.kind)}
+                      className="text-right text-xs text-destructive hover:underline"
+                    >
+                      remove
+                    </button>
+                  </div>
+                );
+              })
             ) : (
               picked.map((it) => {
                 const pl = preview.lines.find(
@@ -763,8 +816,25 @@ export function RegisterForm({
               })
             )}
             <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-sm font-semibold">
-              <span>Total</span>
-              <span>₹{preview.total}</span>
+              <span>Total{isB2b && ' (patient pays MRP)'}</span>
+              <span className="flex items-center gap-3">
+                {isB2b &&
+                  (() => {
+                    const sumMrp = preview.lines.reduce((s, l) => s + (l.mrp ?? 0), 0);
+                    const sumCr = preview.lines.reduce(
+                      (s, l) => s + (l.clientRate ?? 0),
+                      0,
+                    );
+                    const agg =
+                      sumMrp > 0 ? Math.round(((sumMrp - sumCr) / sumMrp) * 100) : 0;
+                    return (
+                      <span className="text-xs font-normal text-emerald-400">
+                        {agg}% profit
+                      </span>
+                    );
+                  })()}
+                <span>₹{preview.total}</span>
+              </span>
             </div>
           </div>
 

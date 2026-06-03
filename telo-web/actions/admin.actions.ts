@@ -17,11 +17,18 @@ import {
   type ScopedMcc,
 } from '@/db/read/mccUnits';
 import {
+  listProfilesWithInterpretation,
+  upsertProfileInterpretation,
+  type ProfileInterpRow,
+} from '@/db/read/profileInterpretations';
+import {
   adminCreateUser,
   adminSetRole,
   adminResetPassword,
   adminSetActive,
   adminSetLisAccess,
+  adminSetMrpOnly,
+  adminSetPreparedBy,
 } from '@/db/sp/adminUsers';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { audit } from '@/lib/audit';
@@ -292,6 +299,7 @@ const updateUserSchema = z.object({
   lastName: z.string().trim().max(100).optional(),
   email: z.string().trim().max(100).optional(),
   mccIdsCsv: z.string().trim().max(2000).optional().default(''),
+  preparedBy: z.string().trim().max(120).optional().default(''),
 });
 
 /**
@@ -356,6 +364,22 @@ export async function updateUserAction(
     // chip in the UI actually drops the row.
     const mccIds = parseMccIds(f.mccIdsCsv);
     await assignMccScope(f.userId, mccIds, { replace: true });
+
+    // Per-account "Prepared By" override (Telo-managed accounts have a
+    // telo_account row — the guard above already restricts to createdByTelo).
+    // Empty value clears it. A non-fatal failure here shouldn't discard the
+    // profile/scope edits that already succeeded, so surface it as a soft error.
+    const pbRes = await adminSetPreparedBy({
+      userId: f.userId,
+      preparedBy: f.preparedBy ?? '',
+      actor: actor.uid,
+    });
+    if (!pbRes.ok) {
+      revalidatePath('/admin/users');
+      return err(
+        pbRes.message ?? 'Saved profile, but could not update the Prepared-by override.',
+      );
+    }
 
     audit({
       kind: 'admin.user.update',
@@ -532,6 +556,88 @@ export async function setLisAccessAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong updating LIS access.');
+  }
+}
+
+const mrpOnlySchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  enabled: z.preprocess((v) => v === 'true' || v === true, z.boolean()),
+});
+
+/**
+ * Toggle the per-account "MRP only" flag. When enabled, the user only sees the
+ * classic New-Order tab; the B2B Orders tab is hidden. This is a UI-visibility
+ * flag read live (fetchMrpOnly), so no session-version bump is needed.
+ */
+export async function setMrpOnlyAction(
+  _prev: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'mrp');
+    const parsed = mrpOnlySchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('Invalid request.');
+    const { userId, enabled } = parsed.data;
+
+    const res = await adminSetMrpOnly({ userId, enabled, actor: actor.uid });
+    if (!res.ok) return err(res.message || 'Could not update MRP-only setting.');
+
+    audit({
+      kind: 'admin.user.mrp_only',
+      actor: actor.uid,
+      target: userId,
+      enabled,
+    });
+    revalidatePath('/admin/users');
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating the MRP-only setting.');
+  }
+}
+
+// ── Profile-level clinical-significance (telo_profile_interpretation) ────────
+
+/** All active profiles + their current Telo interpretation (admin editor). */
+export async function getProfileInterpretationsOverview(): Promise<ProfileInterpRow[]> {
+  await requireCapability('user:manage');
+  return listProfilesWithInterpretation();
+}
+
+const profileInterpSchema = z.object({
+  profileId: z.coerce.number().int().positive(),
+  interpretation: z.string().max(8000),
+});
+
+/** Upsert one profile's clinical-significance text. */
+export async function saveProfileInterpretationAction(input: {
+  profileId: number;
+  interpretation: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  let actor;
+  try {
+    actor = await requireCapability('user:manage');
+  } catch {
+    return { ok: false, error: 'Not authorized.' };
+  }
+  const parsed = profileInterpSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Invalid input.' };
+  try {
+    await upsertProfileInterpretation(
+      parsed.data.profileId,
+      parsed.data.interpretation,
+      actor.uid,
+    );
+    audit({
+      kind: 'admin.profile_interpretation.save',
+      actor: actor.uid,
+      target: parsed.data.profileId,
+    });
+    revalidatePath('/admin/interpretations');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Save failed.' };
   }
 }
 
