@@ -149,11 +149,17 @@ export async function searchAccountsBills(args: {
   return { bills, range, fetchedAt: new Date().toISOString() };
 }
 
-/** Drill-down: Telo bills for one MCC within the same date window. */
+/**
+ * Drill-down: Telo bills for one MCC within the same date window. When
+ * `args.mine` is set, restricts to bills registered by the caller's own Telo
+ * user id (the "My Accounts Summary" filter) so operators sharing a client
+ * code see only their own registrations.
+ */
 export async function getLedgerForMcc(
   mccId: number,
-  args: { from: string; to: string },
+  args: { from: string; to: string; mine?: boolean },
 ): Promise<LedgerForMcc> {
+  const range = { from: args.from, to: args.to };
   const user = await currentUser();
   if (!user || !hasCapability(user.caps, 'balance:view')) {
     return {
@@ -161,12 +167,18 @@ export async function getLedgerForMcc(
       bills: [],
       receiptsByBill: {},
       totalBalance: 0,
-      range: args,
+      range,
       fetchedAt: new Date().toISOString(),
     };
   }
   const scope = await getMccScope(user.uid);
-  const bills = await listTeloBillsForMcc(mccId, scope, args.from, args.to);
+  const bills = await listTeloBillsForMcc(
+    mccId,
+    scope,
+    args.from,
+    args.to,
+    args.mine ? user.uid : null,
+  );
   const receiptRows = await listTeloReceiptsForBills(bills.map((b) => b.billId));
   const receiptsByBill: Record<number, BillReceiptRow[]> = {};
   for (const row of receiptRows) {
@@ -177,7 +189,7 @@ export async function getLedgerForMcc(
     bills,
     receiptsByBill,
     totalBalance: bills.reduce((a, b) => a + b.balance, 0),
-    range: args,
+    range,
     fetchedAt: new Date().toISOString(),
   };
 }

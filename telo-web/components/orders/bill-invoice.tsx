@@ -98,10 +98,17 @@ export function BillInvoice({
     mccCode,
   );
   const onBehalfName = onBehalf === 'qugen' ? 'Qugen Pathlabs Pvt. Ltd.' : labName;
-  // Prepared-by: non-MDCARE → registering user; MDCARE → config free text.
-  const preparedBy = isMdcare
-    ? config?.preparedBy?.trim() || null
-    : order.preparedByUser ?? config?.preparedBy?.trim() ?? null;
+  // Prepared-by precedence:
+  //   1. registering account's per-user override (telo_account.prepared_by)
+  //   2. existing default — non-MDCARE → registering user's name; then
+  //      per-MCC invoice config free text (MDCARE skips the user's name).
+  // The override lets multiple accounts sharing one client code (e.g. MDCARE)
+  // each print their own name.
+  const preparedBy =
+    order.preparedByOverride?.trim() ||
+    (isMdcare
+      ? config?.preparedBy?.trim() || null
+      : order.preparedByUser ?? config?.preparedBy?.trim() ?? null);
 
   const customLogo = resolveTopRightLogo(mccCode, config, customLogoSrc);
   const noblePos = config?.nobleLogoPosition ?? 'left';

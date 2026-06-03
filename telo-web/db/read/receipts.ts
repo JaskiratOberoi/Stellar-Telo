@@ -63,6 +63,13 @@ interface ReceiptsOpts {
   byMcc?: boolean;
   /** Restrict to one MCC (must be in scope). Null = all in-scope MCCs. */
   mccId?: number | null;
+  /**
+   * Restrict to receipts on bills registered by one Telo user — matched on the
+   * bill's `addedby='telo:<id>'` origin marker. Powers the Accounts "My
+   * Accounts Summary" filter so collections line up with the same operator's
+   * bills. Null = all Telo bills in scope.
+   */
+  registeredByUserId?: number | null;
 }
 
 export interface ReceiptTotalsWithBreakdown extends ReceiptTotals {
@@ -109,6 +116,15 @@ export async function getReceiptsInPeriod(
       req.input('mccOne', sql.Int, opts.mccId);
       scopeClause = 'AND b.mcc_code = @mccOne';
     }
+    // Tighten the existing `b.addedby LIKE 'telo:%'` to one exact registrar.
+    let mineClause = '';
+    if (
+      opts.registeredByUserId != null &&
+      Number.isInteger(opts.registeredByUserId)
+    ) {
+      req.input('addedBy', sql.NVarChar(64), `telo:${opts.registeredByUserId}`);
+      mineClause = 'AND b.addedby = @addedBy';
+    }
 
     // Cash vs Others split — Telo's pay_mode column carries the same string
     // the operator picked in the UI ('Cash' / 'UPI' / 'Card' / 'Cheque' /
@@ -143,6 +159,7 @@ export async function getReceiptsInPeriod(
         AND r.recd_date >= @from
         AND r.recd_date <  DATEADD(day, 1, @to)
         ${scopeClause}
+        ${mineClause}
       ${groupBy}
     `);
 

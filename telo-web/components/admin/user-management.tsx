@@ -515,6 +515,7 @@ function EditUserForm({
   const [firstName, setFirstName] = useState(user.firstName ?? '');
   const [lastName, setLastName] = useState(user.lastName ?? '');
   const [email, setEmail] = useState(user.email ?? '');
+  const [preparedBy, setPreparedBy] = useState(user.preparedBy ?? '');
   const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
   const [pickerValue, setPickerValue] = useState<number | ''>('');
   const [scopeLoading, setScopeLoading] = useState(true);
@@ -706,6 +707,23 @@ function EditUserForm({
             </p>
           </>
         )}
+      </div>
+
+      <div className="space-y-0.5">
+        <Label htmlFor={`pb-${user.id}`}>Prepared by (invoice override)</Label>
+        <Input
+          id={`pb-${user.id}`}
+          name="preparedBy"
+          placeholder="e.g. Priya Sharma"
+          value={preparedBy}
+          onChange={(e) => setPreparedBy(e.target.value)}
+          maxLength={120}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Printed as &ldquo;Prepared By&rdquo; on bills this account registers.
+          Overrides the auto-filled registering-user name and the client&apos;s
+          invoice setting. Leave blank to use the default.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-1">

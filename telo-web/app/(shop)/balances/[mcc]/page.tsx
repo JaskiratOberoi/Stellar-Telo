@@ -51,7 +51,7 @@ export default async function BalanceMccPage({
   searchParams,
 }: {
   params: Promise<{ mcc: string }>;
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; mine?: string }>;
 }) {
   const { mcc } = await params;
   const mccId = Number(mcc);
@@ -63,17 +63,27 @@ export default async function BalanceMccPage({
   const sp = await searchParams;
   const from = sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? sp.from : firstOfMonth();
   const to = sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today();
+  // "My Accounts Summary" filter: only bills this Telo user registered.
+  const mine = sp.mine === '1';
+  // Build a same-page href preserving the active date range + mine filter.
+  const hrefFor = (f: string, t: string, m: boolean): string =>
+    `/balances/${mccId}?from=${f}&to=${t}${m ? '&mine=1' : ''}`;
 
   // Receipts query is scoped to this MCC only — needs the user's mcc scope
   // to defend against URL-typing, so we fetch scope first then receipts in
   // parallel with the other reads.
   const scope = await getMccScope(user.uid);
   const [data, mccs, invoiceConfig, receipts] = await Promise.all([
-    getLedgerForMcc(mccId, { from, to }),
+    getLedgerForMcc(mccId, { from, to, mine }),
     // Self-include this MCC so its name resolves even if the LIS flags it inactive.
     fetchScopedMccUnits([mccId], [mccId]),
     getMccInvoiceConfig(mccId),
-    getReceiptsInPeriod(scope, from, to, { mccId }),
+    // Keep the "Collected in period" card consistent with the filtered bills:
+    // when "mine" is on, scope receipts to bills this user registered too.
+    getReceiptsInPeriod(scope, from, to, {
+      mccId,
+      registeredByUserId: mine ? user.uid : null,
+    }),
   ]);
   if (scope.length > 0 && scope.length <= 1000 && !scope.includes(mccId)) {
     redirect('/balances');
@@ -136,7 +146,8 @@ export default async function BalanceMccPage({
           </h1>
           <p className="text-sm text-muted-foreground">
             {data.bills.length} Telo bill
-            {data.bills.length === 1 ? '' : 's'} · {inr(data.totalBalance)}{' '}
+            {data.bills.length === 1 ? '' : 's'}
+            {mine ? ' (yours)' : ''} · {inr(data.totalBalance)}{' '}
             balance · {fmtIST(from, 'date')} → {fmtIST(to, 'date')}
           </p>
         </div>
@@ -160,7 +171,7 @@ export default async function BalanceMccPage({
           return (
             <Link
               key={p.label}
-              href={`/balances/${mccId}?from=${p.from}&to=${p.to}`}
+              href={hrefFor(p.from, p.to, mine)}
               className={cn(
                 'rounded-full px-3 py-1 text-xs transition-all duration-150',
                 active
@@ -175,6 +186,44 @@ export default async function BalanceMccPage({
         {!activePeriod && (
           <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-muted-foreground">
             Custom range
+          </span>
+        )}
+      </div>
+
+      {/* ── "My Accounts Summary" filter ─────────────────────────────── */}
+      {/* Toggles the addedby='telo:<uid>' registrar filter. Multiple users can
+          share a client code (e.g. MDCARE); this narrows to the signed-in
+          user's own registrations. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          View
+        </span>
+        <Link
+          href={hrefFor(from, to, false)}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs transition-all duration-150',
+            !mine
+              ? 'bg-primary/20 text-foreground font-medium'
+              : 'border border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
+          )}
+        >
+          All registrations
+        </Link>
+        <Link
+          href={hrefFor(from, to, true)}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs transition-all duration-150',
+            mine
+              ? 'bg-primary/20 text-foreground font-medium'
+              : 'border border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
+          )}
+        >
+          My Accounts Summary
+        </Link>
+        {mine && (
+          <span className="text-[11px] text-muted-foreground">
+            Showing only bills registered by{' '}
+            <span className="text-foreground">{user.name || user.username}</span>
           </span>
         )}
       </div>
@@ -232,7 +281,9 @@ export default async function BalanceMccPage({
           {data.bills.length === 0 ? (
             <TableRow>
               <TableCell colSpan={11} className="text-muted-foreground">
-                No Telo bills for this client in this date range.
+                {mine
+                  ? 'No bills registered by you for this client in this date range.'
+                  : 'No Telo bills for this client in this date range.'}
               </TableCell>
             </TableRow>
           ) : (

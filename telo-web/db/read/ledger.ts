@@ -207,24 +207,41 @@ export async function summarizeTeloAccounts(
  * /balances/[mcc] drill-down so its numbers agree with the rollup row.
  * `medid` carries the patient_id for Telo bills (so the row links to the
  * receipt).
+ *
+ * `registeredByUserId` (optional) restricts to bills registered by one Telo
+ * user — matched on the `addedby='telo:<id>'` origin marker the create-order
+ * SP stamps. Used by the Accounts "My Accounts Summary" filter so an operator
+ * sharing a client code with colleagues sees only their own registrations.
  */
 export async function listTeloBillsForMcc(
   mccId: number,
   scope: number[],
   fromIso: string,
   toIso: string,
+  registeredByUserId?: number | null,
 ): Promise<PendingBillRow[]> {
   const ids = scope.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const unrestricted = ids.length > 1000;
   if (!unrestricted && !ids.includes(mccId)) return [];
+  const mineId =
+    registeredByUserId != null && Number.isInteger(registeredByUserId)
+      ? registeredByUserId
+      : null;
   return withRetry(async () => {
     const pool = await getPool();
-    const r = await pool
+    const req = pool
       .request()
       .input('mcc', sql.Int, mccId)
       .input('from', sql.VarChar(10), fromIso)
-      .input('to', sql.VarChar(10), toIso)
+      .input('to', sql.VarChar(10), toIso);
+    // Exact marker match (the SP writes CONCAT('telo:', userId), no spaces).
+    let mineClause = '';
+    if (mineId != null) {
+      req.input('addedBy', sql.NVarChar(64), `telo:${mineId}`);
+      mineClause = 'AND b.addedby = @addedBy';
+    }
+    const r = await req
       .query<{
         billId: number;
         billNumber: number | null;
@@ -258,6 +275,7 @@ export async function listTeloBillsForMcc(
           AND b.mcc_code = @mcc
           AND b.bill_date >= CAST(@from AS DATE)
           AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
+          ${mineClause}
         ORDER BY b.bill_date DESC, b.id DESC
       `);
     return r.recordset.map((x) => ({

@@ -61,6 +61,15 @@ export interface OrderDetail extends OrderSummary {
    *  `addedby='telo:<id>'` marker). Used as the bill's "Prepared by" for
    *  non-MDCARE clients. Null for non-Telo bills or blank names. */
   preparedByUser: string | null;
+  /** Login/account name of the Telo user who registered the bill (the
+   *  `tbl_med_user_master.Username` resolved from the `addedby='telo:<id>'`
+   *  marker). Multiple accounts can share a client code, so this identifies
+   *  exactly which one created the order. Null for non-Telo bills. */
+  registeredByUsername: string | null;
+  /** Per-account "Prepared By" override (`telo_account.prepared_by`) of the
+   *  registering user. When set it wins over `preparedByUser` and the per-MCC
+   *  invoice config as the printed "Prepared By". Null = no override. */
+  preparedByOverride: string | null;
 }
 
 export interface RegistrationSummary {
@@ -211,6 +220,8 @@ export async function getOrder(
       amountPaid: number;
       patientId: number | null;
       preparedByUser: string | null;
+      registeredByUsername: string | null;
+      preparedByOverride: string | null;
     }>(`
       SELECT b.id AS billId, b.bill_number AS billNumber,
              b.bill_date AS billDate, b.patientname AS patientName,
@@ -224,7 +235,11 @@ export async function getOrder(
              -- Telo writes patient_id into medid so we can join bill→patient.
              TRY_CONVERT(INT, b.medid) AS patientId,
              -- Registering Telo user (addedby='telo:<id>') → "Prepared by".
-             NULLIF(LTRIM(RTRIM(CONCAT(uu.firstname, ' ', uu.lastname))), '') AS preparedByUser
+             NULLIF(LTRIM(RTRIM(CONCAT(uu.firstname, ' ', uu.lastname))), '') AS preparedByUser,
+             -- The exact Telo login that registered the bill (badge on receipt).
+             uu.Username AS registeredByUsername,
+             -- That user's per-account "Prepared By" override (telo_account).
+             ta_u.prepared_by AS preparedByOverride
       FROM dbo.tbl_billing_patient_detail b
       LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
       LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
@@ -233,6 +248,7 @@ export async function getOrder(
       LEFT JOIN dbo.tbl_med_user_master uu
             ON b.addedby LIKE 'telo:%'
            AND uu.id = TRY_CONVERT(INT, STUFF(b.addedby, 1, 5, ''))
+      LEFT JOIN dbo.telo_account ta_u ON ta_u.user_id = uu.id
       WHERE b.id = @bid ${scopeClause}
     `);
     const h = head.recordset[0];
@@ -362,6 +378,8 @@ export async function getOrder(
       amountPaid: Number(h.amountPaid ?? 0),
       patientId: h.patientId,
       preparedByUser: h.preparedByUser?.trim() || null,
+      registeredByUsername: h.registeredByUsername?.trim() || null,
+      preparedByOverride: h.preparedByOverride?.trim() || null,
       lines: lr.recordset.map((x) => ({
         testCode: x.testCode,
         testName: x.testName,

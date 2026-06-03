@@ -75,6 +75,9 @@ export interface TeloUserRow {
   /** `telo_account.mrp_only` — when true the B2B Orders tab is hidden for this
    *  user (false for native LIS users / no row). */
   mrpOnly: boolean;
+  /** `telo_account.prepared_by` — per-account "Prepared By" override printed on
+   *  bills this user registers. Null for no override / native LIS users. */
+  preparedBy: string | null;
   lisUsertypeId: number | null;
   lisUsertypeName: string | null;
   teloRole: TeloRole | null;
@@ -100,6 +103,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lisAccess: boolean;
       hasTeloAccount: number; // 0/1 from CASE
       mrpOnly: boolean;
+      preparedBy: string | null;
       lisUsertypeId: number | null;
       lisUsertypeName: string | null;
       teloRole: string | null;
@@ -115,6 +119,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
              CAST(ISNULL(ta.lis_access, u.IsActive) AS BIT)  AS lisAccess,
              CASE WHEN ta.user_id IS NOT NULL THEN 1 ELSE 0 END AS hasTeloAccount,
              CAST(ISNULL(ta.mrp_only, 0) AS BIT) AS mrpOnly,
+             ta.prepared_by AS preparedBy,
              u.usertypeid AS lisUsertypeId,
              ut.Name AS lisUsertypeName,
              r.role AS teloRole,
@@ -143,6 +148,7 @@ export async function listTeloUsers(): Promise<TeloUserRow[]> {
       lisAccess: !!x.lisAccess,
       hasTeloAccount: Number(x.hasTeloAccount) === 1,
       mrpOnly: !!x.mrpOnly,
+      preparedBy: x.preparedBy?.trim() || null,
       lisUsertypeId: x.lisUsertypeId,
       lisUsertypeName: x.lisUsertypeName?.trim() ?? null,
       teloRole: toRole(x.teloRole),

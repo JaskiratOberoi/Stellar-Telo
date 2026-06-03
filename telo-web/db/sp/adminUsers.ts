@@ -179,3 +179,31 @@ export async function adminSetMrpOnly(args: {
     };
   });
 }
+
+/**
+ * Sets the per-account "Prepared by" override (dbo.telo_account.prepared_by).
+ * Empty/whitespace clears it (the SP stores NULL). Telo-managed accounts only.
+ */
+export async function adminSetPreparedBy(args: {
+  userId: number;
+  preparedBy: string;
+  actor: number;
+}): Promise<AdminSpResult> {
+  return withRetry(async () => {
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input('userId', sql.Int, args.userId)
+      .input('preparedBy', sql.NVarChar(120), args.preparedBy ?? '')
+      .input('actor', sql.Int, args.actor)
+      .execute<{ ok: boolean; error_code: string | null; message: string | null }>(
+        'dbo.usp_telo_admin_set_prepared_by',
+      );
+    const row = r.recordset[0];
+    return {
+      ok: row?.ok === true,
+      errorCode: row?.error_code ?? null,
+      message: row?.message ?? null,
+    };
+  });
+}

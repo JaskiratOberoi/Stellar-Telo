@@ -28,6 +28,7 @@ import {
   adminSetActive,
   adminSetLisAccess,
   adminSetMrpOnly,
+  adminSetPreparedBy,
 } from '@/db/sp/adminUsers';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { audit } from '@/lib/audit';
@@ -298,6 +299,7 @@ const updateUserSchema = z.object({
   lastName: z.string().trim().max(100).optional(),
   email: z.string().trim().max(100).optional(),
   mccIdsCsv: z.string().trim().max(2000).optional().default(''),
+  preparedBy: z.string().trim().max(120).optional().default(''),
 });
 
 /**
@@ -362,6 +364,22 @@ export async function updateUserAction(
     // chip in the UI actually drops the row.
     const mccIds = parseMccIds(f.mccIdsCsv);
     await assignMccScope(f.userId, mccIds, { replace: true });
+
+    // Per-account "Prepared By" override (Telo-managed accounts have a
+    // telo_account row — the guard above already restricts to createdByTelo).
+    // Empty value clears it. A non-fatal failure here shouldn't discard the
+    // profile/scope edits that already succeeded, so surface it as a soft error.
+    const pbRes = await adminSetPreparedBy({
+      userId: f.userId,
+      preparedBy: f.preparedBy ?? '',
+      actor: actor.uid,
+    });
+    if (!pbRes.ok) {
+      revalidatePath('/admin/users');
+      return err(
+        pbRes.message ?? 'Saved profile, but could not update the Prepared-by override.',
+      );
+    }
 
     audit({
       kind: 'admin.user.update',
