@@ -1,6 +1,7 @@
-/** Unified catalog item — a single test or a profile/package. Pure types. */
+/** Unified catalog item — a single test, a profile/package, or a master
+ *  profile (a bundle of profiles + tests, e.g. JK HEALTH SCREEN). Pure types. */
 
-export type CatalogKind = 'test' | 'profile';
+export type CatalogKind = 'test' | 'profile' | 'master';
 
 /**
  * Server-side catalog item — includes internal `costCt` (CT/cost pricing).
@@ -38,8 +39,10 @@ export function toPublicCatalogItem(i: CatalogItem): CatalogItemPublic {
   };
 }
 
-/** Where a priced catalog row's `rate` came from. */
-export type CatalogRateSource = 'ratelist' | 'mrp' | 'none';
+/** Where a priced catalog row's `rate` came from. `special` is a per-MCC
+ *  special rate (tbl_med_mcc_test_special_rates), which outranks the rate list
+ *  exactly as the LIS billing path does. */
+export type CatalogRateSource = 'special' | 'ratelist' | 'mrp' | 'none';
 
 /**
  * Catalog row priced for a specific client (MCC). `rate` is the price the

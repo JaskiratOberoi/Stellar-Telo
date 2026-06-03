@@ -28,9 +28,11 @@ export async function priceCart(
 
   const rates = await resolve(
     cart.items.map((item) =>
-      item.kind === 'profile'
-        ? { profileCode: item.id }
-        : { testMasterId: item.id },
+      item.kind === 'master'
+        ? { masterCode: item.id }
+        : item.kind === 'profile'
+          ? { profileCode: item.id }
+          : { testMasterId: item.id },
     ),
   );
 

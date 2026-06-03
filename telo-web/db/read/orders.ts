@@ -413,7 +413,7 @@ export async function listRegistrations(
 
 export interface PatientTestItem {
   id: number;
-  kind: 'test' | 'profile';
+  kind: 'test' | 'profile' | 'master';
   code: string;
   name: string;
 }
@@ -445,12 +445,14 @@ export async function fetchPatientTestItems(
       `);
     return r.recordset.map((x) => ({
       id: x.id,
-      // test_type is 'Profile'/'Test' (LIS enum) on new orders, 'p'/'t' on
-      // orders registered before the sales-visibility change.
+      // test_type is the LIS enum on new orders ('Profile'/'Test'/'Master'),
+      // 'p'/'t' on orders registered before the sales-visibility change.
       kind:
-        x.testType === 'p' || x.testType === 'Profile'
-          ? ('profile' as const)
-          : ('test' as const),
+        x.testType === 'Master'
+          ? ('master' as const)
+          : x.testType === 'p' || x.testType === 'Profile'
+            ? ('profile' as const)
+            : ('test' as const),
       code: (x.code ?? '').trim() || String(x.id),
       name: (x.name ?? x.code ?? '').trim() || String(x.id),
     }));
@@ -507,15 +509,17 @@ export async function listPendingAccessions(
       CROSS APPLY (
         SELECT COUNT(DISTINCT x.sampleTypeId) AS requiredGroups
         FROM (
-          -- test_type: 'Profile'/'Test' (LIS enum) on new orders,
+          -- test_type: 'Profile'/'Test'/'Master' (LIS enum) on new orders,
           -- 'p'/'t' on orders from before the sales-visibility change.
+          -- Direct tests
           SELECT ISNULL(tm.SampleId, -1) AS sampleTypeId
           FROM dbo.tbl_med_mcc_patient_tests pt
           JOIN dbo.tbl_med_test_master tm
             ON tm.id = pt.test_id AND tm.IsActive = 1
           WHERE pt.patient_id = t.patientId
-            AND pt.test_type NOT IN ('p', 'Profile')
+            AND pt.test_type NOT IN ('p', 'Profile', 'Master')
           UNION ALL
+          -- Direct profiles → constituent tests
           SELECT ISNULL(tm.SampleId, -1)
           FROM dbo.tbl_med_mcc_patient_tests pt
           JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = pt.test_id
@@ -523,6 +527,25 @@ export async function listPendingAccessions(
             ON tm.id = pp.testid AND tm.IsActive = 1
           WHERE pt.patient_id = t.patientId
             AND pt.test_type IN ('p', 'Profile')
+          UNION ALL
+          -- Master → child tests
+          SELECT ISNULL(tm.SampleId, -1)
+          FROM dbo.tbl_med_mcc_patient_tests pt
+          JOIN dbo.tbl_med_test_master_test_param mtp ON mtp.master_profileid = pt.test_id
+          JOIN dbo.tbl_med_test_master tm
+            ON tm.id = mtp.testid AND tm.IsActive = 1
+          WHERE pt.patient_id = t.patientId
+            AND pt.test_type = 'Master'
+          UNION ALL
+          -- Master → child profiles → constituent tests
+          SELECT ISNULL(tm.SampleId, -1)
+          FROM dbo.tbl_med_mcc_patient_tests pt
+          JOIN dbo.tbl_med_test_master_profile_param mpp ON mpp.master_profileid = pt.test_id
+          JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = mpp.profileid
+          JOIN dbo.tbl_med_test_master tm
+            ON tm.id = pp.testid AND tm.IsActive = 1
+          WHERE pt.patient_id = t.patientId
+            AND pt.test_type = 'Master'
         ) x
       ) req
       OUTER APPLY (

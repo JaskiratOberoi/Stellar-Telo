@@ -81,6 +81,7 @@ export function CatalogBrowser({
           <option value="all">All types</option>
           <option value="test">Tests</option>
           <option value="profile">Profiles</option>
+          <option value="master">Packages</option>
         </select>
         {units.length > 1 && (
           <select
@@ -137,9 +138,15 @@ export function CatalogBrowser({
                 <TableCell>{i.name}</TableCell>
                 <TableCell>
                   <Badge
-                    variant={i.kind === 'profile' ? 'secondary' : 'outline'}
+                    variant={
+                      i.kind === 'master'
+                        ? 'default'
+                        : i.kind === 'profile'
+                          ? 'secondary'
+                          : 'outline'
+                    }
                   >
-                    {i.kind}
+                    {i.kind === 'master' ? 'package' : i.kind}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-medium">

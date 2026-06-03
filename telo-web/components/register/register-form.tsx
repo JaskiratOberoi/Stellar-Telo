@@ -41,7 +41,7 @@ const initial: RegisterState = { error: null };
 const sel =
   'h-9 w-full rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
 
-type Picked = { id: number; kind: 'test' | 'profile'; code: string; name: string };
+type Picked = { id: number; kind: 'test' | 'profile' | 'master'; code: string; name: string };
 
 // All scalar fields kept in controlled state so a server-action error
 // (React 19 resets <form action>) does NOT wipe the operator's input.
@@ -77,7 +77,7 @@ export function RegisterForm({
   initialItems = [],
 }: {
   units: ScopedMcc[];
-  initialItems?: { id: number; kind: 'test' | 'profile'; code: string; name: string }[];
+  initialItems?: { id: number; kind: 'test' | 'profile' | 'master'; code: string; name: string }[];
 }) {
   // Render the form CLIENT-ONLY: browser extensions (e.g. Shark form-filler)
   // inject custom wrappers/attrs into the SSR HTML before React hydrates,
@@ -289,8 +289,8 @@ export function RegisterForm({
   const belowMinPaid =
     preview.total > 0 && Number(f.receiptAmount || 0) < minPaid;
 
-  // Hard cap for "Discount": never more than 50% of the total bill.
-  const maxDiscount = preview.total > 0 ? Math.round(preview.total / 2) : 0;
+  // Hard cap for "Discount": never more than 20% of the total bill.
+  const maxDiscount = preview.total > 0 ? Math.round(preview.total * 0.2) : 0;
   const aboveMaxDiscount =
     preview.total > 0 && Number(f.discountAmount || 0) > maxDiscount;
 
@@ -321,7 +321,7 @@ export function RegisterForm({
       (i) => i.id === id && i.kind === kind,
     );
     if (wasFromCart) {
-      removeFromCart(id, kind as 'test' | 'profile').then(() =>
+      removeFromCart(id, kind as Picked['kind']).then(() =>
         router.refresh(),
       );
     }
@@ -634,7 +634,7 @@ export function RegisterForm({
                 value={f.discountAmount}
                 onChange={upd('discountAmount')}
                 onBlur={() => {
-                  // Snap a too-large discount back down to the 50% cap.
+                  // Snap a too-large discount back down to the 20% cap.
                   if (preview.total <= 0) return;
                   const v = Number(f.discountAmount);
                   if (Number.isFinite(v) && v > maxDiscount) {
@@ -650,8 +650,8 @@ export function RegisterForm({
                   }`}
                 >
                   {aboveMaxDiscount
-                    ? `Max discount ₹${maxDiscount} (50%).`
-                    : `Up to ₹${maxDiscount} (50%).`}
+                    ? `Max discount ₹${maxDiscount} (20%).`
+                    : `Up to ₹${maxDiscount} (20%).`}
                 </p>
               )}
             </div>
@@ -678,7 +678,7 @@ export function RegisterForm({
                   // refresh the nav badge.
                   Promise.all(
                     initialItems.map((i) =>
-                      removeFromCart(i.id, i.kind as 'test' | 'profile'),
+                      removeFromCart(i.id, i.kind as Picked['kind']),
                     ),
                   ).then(() => router.refresh());
                 }}
@@ -693,7 +693,7 @@ export function RegisterForm({
             </p>
           )}
           <Input
-            placeholder="Search tests or profiles…"
+            placeholder="Search tests, profiles or packages…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -711,9 +711,15 @@ export function RegisterForm({
                     {r.name}
                   </span>
                   <Badge
-                    variant={r.kind === 'profile' ? 'secondary' : 'outline'}
+                    variant={
+                      r.kind === 'master'
+                        ? 'default'
+                        : r.kind === 'profile'
+                          ? 'secondary'
+                          : 'outline'
+                    }
                   >
-                    {r.kind}
+                    {r.kind === 'master' ? 'package' : r.kind}
                   </Badge>
                 </button>
               ))}
@@ -889,7 +895,7 @@ export function RegisterForm({
                             : belowMinPaid
                               ? `Collect at least ₹${minPaid} (50%)`
                               : aboveMaxDiscount
-                                ? `Discount can't exceed ₹${maxDiscount} (50%)`
+                                ? `Discount can't exceed ₹${maxDiscount} (20%)`
                                 : `Review & register · ₹${preview.total}`;
 
             // Two-step submit. The first button only flips into review mode

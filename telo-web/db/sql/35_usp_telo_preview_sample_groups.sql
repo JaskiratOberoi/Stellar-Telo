@@ -6,17 +6,20 @@
  * requires. The New Order form uses this to render N SID inputs labeled by
  * sample type — exactly matching the LIS "New Work Order" SID table.
  *
- * Sample type derivation:
- *   - Test  → tbl_med_test_master.SampleId → tbl_med_sample_master.Sampletype
- *   - Profile → walk tbl_med_test_profile_param to constituent tests, take
- *     each one's SampleId. A profile that fits ONE sample type keeps its
- *     profile code in that bucket; a profile that spans multiple sample
- *     types is "split" into constituent test codes across the affected
- *     buckets (requiresSplit = 1).
+ * Item kinds (TeloTestList.itemKind):
+ *   0 test    → its own SampleId.
+ *   1 profile → walk tbl_med_test_profile_param to constituent tests; a profile
+ *               fitting ONE sample type keeps its code in that bucket, one that
+ *               spans many is split into constituent test codes (requiresSplit).
+ *   2 master  → decomposed (mirrors LIS Workor.aspx.cs) into its child profiles
+ *               (tbl_med_test_master_profile_param) and child tests
+ *               (tbl_med_test_master_test_param); each child then follows the
+ *               same profile/test rules above. Sample-row codeType carries the
+ *               LIS 'mp'/'mt' tags but those don't change which sample types are
+ *               required, so the preview shape is unchanged.
  *
  * Inactive constituent tests are filtered (IsActive = 1). Items with no
- * SampleId resolve to sampleTypeId = -1 ("Unspecified") so the operator
- * still sees them and supplies a SID (matches LIS leniency).
+ * SampleId resolve to sampleTypeId = -1 ("Unspecified").
  *
  * Returns:
  *   (sampleTypeId INT, sampleTypeName NVARCHAR, csvCodes NVARCHAR,
@@ -29,52 +32,64 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    /* ----- Resolve every selected item to (testMasterId, code, name, sampleTypeId) -----
-       Two paths combined:
-         (a) tests as-is (the item's own row in test_master)
-         (b) profile expansion through tbl_med_test_profile_param to constituents */
-    ;WITH item_resolution AS (
+    /* ----- Flatten masters into their child profiles/tests -----------------
+       `selection` reduces every TVP row to one or more (effId, isProfile)
+       entries: tests/profiles pass through; a master expands to its child
+       profiles (isProfile=1) and child tests (isProfile=0). fromMaster marks
+       the rows that originated from a master so the sample codeType can be
+       tagged 'mp'/'mt' downstream. */
+    ;WITH selection AS (
+        SELECT i.testMasterId AS effId, CAST(0 AS BIT) AS isProfile,
+               i.code AS effCode, i.name AS effName, CAST(0 AS BIT) AS fromMaster
+        FROM @items i WHERE i.itemKind = 0
+        UNION ALL
+        SELECT i.testMasterId, CAST(1 AS BIT), i.code, i.name, CAST(0 AS BIT)
+        FROM @items i WHERE i.itemKind = 1
+        UNION ALL
+        SELECT mpp.profileid, CAST(1 AS BIT),
+               pmf.Profile_Code, pmf.Profile_Name, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_profile_param mpp ON mpp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_profile_master pmf ON pmf.id = mpp.profileid AND pmf.IsActive = 1
+        WHERE i.itemKind = 2
+        UNION ALL
+        SELECT mtp.testid, CAST(0 AS BIT),
+               CONVERT(NVARCHAR(50), tmf.TestCode), tmf.Testname, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_test_param mtp ON mtp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_master tmf ON tmf.id = mtp.testid AND tmf.IsActive = 1
+        WHERE i.itemKind = 2
+    ),
+    item_resolution AS (
         -- Tests: contribute themselves
         SELECT
-            i.testMasterId AS originId,
-            i.isProfile,
-            i.code        AS originCode,
-            i.name        AS originName,
-            t.id          AS testMasterId,
-            t.TestCode    AS testCode,
-            t.Testname    AS testName,
-            t.SampleId    AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_master t ON t.id = i.testMasterId AND t.IsActive = 1
-        WHERE i.isProfile = 0
+            s.effId AS originId, s.isProfile, s.fromMaster,
+            s.effCode AS originCode, s.effName AS originName,
+            t.id AS testMasterId, t.TestCode AS testCode,
+            t.Testname AS testName, t.SampleId AS sampleTypeId
+        FROM selection s
+        JOIN dbo.tbl_med_test_master t ON t.id = s.effId AND t.IsActive = 1
+        WHERE s.isProfile = 0
 
         UNION ALL
 
         -- Profiles: expand to constituent active tests
         SELECT
-            i.testMasterId AS originId,
-            i.isProfile,
-            i.code        AS originCode,
-            i.name        AS originName,
-            t.id          AS testMasterId,
-            t.TestCode    AS testCode,
-            t.Testname    AS testName,
-            t.SampleId    AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = i.testMasterId
+            s.effId AS originId, s.isProfile, s.fromMaster,
+            s.effCode AS originCode, s.effName AS originName,
+            t.id AS testMasterId, t.TestCode AS testCode,
+            t.Testname AS testName, t.SampleId AS sampleTypeId
+        FROM selection s
+        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = s.effId
         JOIN dbo.tbl_med_test_master t ON t.id = pp.testid AND t.IsActive = 1
-        WHERE i.isProfile = 1
+        WHERE s.isProfile = 1
     ),
-    /* Per-profile: count distinct sample types its constituents need.
-       If 1 → keep the profile code in that one bucket (LIS visual).
-       If >1 → split (use constituent test codes in each affected bucket). */
     profile_span AS (
         SELECT originId, COUNT(DISTINCT ISNULL(sampleTypeId, -1)) AS span
         FROM item_resolution
         WHERE isProfile = 1
         GROUP BY originId
     ),
-    /* Bucket assignment: what code/name lives in each sample-type bucket. */
     bucketed AS (
         -- Tests: own code/name per the test's own sample type
         SELECT
@@ -112,8 +127,6 @@ BEGIN
     SELECT
         b.sampleTypeId,
         ISNULL(sm.Sampletype, N'Unspecified') AS sampleTypeName,
-        -- SQL Server requires all STRING_AGGs in the same scope to share an
-        -- ORDER BY; we sort everything by code for consistent display.
         STRING_AGG(CONVERT(NVARCHAR(MAX), b.code), N',')
             WITHIN GROUP (ORDER BY b.code) AS csvCodes,
         STRING_AGG(CONVERT(NVARCHAR(MAX), b.name), N', ')

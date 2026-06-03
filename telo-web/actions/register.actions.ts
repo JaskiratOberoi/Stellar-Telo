@@ -62,7 +62,7 @@ export async function fetchRefDataAction(mcc: number): Promise<RefDataForMcc> {
  */
 export async function searchCatalogAction(
   q: string,
-  kind: 'all' | 'test' | 'profile' = 'all',
+  kind: 'all' | 'test' | 'profile' | 'master' = 'all',
 ): Promise<CatalogItemPublic[]> {
   try {
     await requireCapability('order:create');
@@ -115,9 +115,20 @@ export async function checkSid(
   }
 }
 
+export type ItemKind = 'test' | 'profile' | 'master';
+
+/** Maps a catalog item kind to the rate-resolver's discriminated id field. */
+function toResolveItem(it: { id: number; kind: ItemKind }) {
+  return {
+    testMasterId: it.kind === 'test' ? it.id : null,
+    profileCode: it.kind === 'profile' ? it.id : null,
+    masterCode: it.kind === 'master' ? it.id : null,
+  };
+}
+
 export interface PreviewLine {
   id: number;
-  kind: 'test' | 'profile';
+  kind: ItemKind;
   code: string;
   name: string;
   rate: number | null;
@@ -134,7 +145,7 @@ export interface PreviewResult {
  * group, labeled by sample-type name and showing the codes in each bucket.
  */
 export async function previewSampleGroupsAction(
-  items: { id: number; kind: 'test' | 'profile'; code: string; name: string }[],
+  items: { id: number; kind: ItemKind; code: string; name: string }[],
 ): Promise<SampleGroup[]> {
   const user = await currentUser();
   if (!user) return [];
@@ -154,7 +165,7 @@ export async function previewSampleGroupsAction(
  */
 export async function previewOrder(
   mcc: number | null,
-  items: { id: number; kind: 'test' | 'profile'; code: string; name: string }[],
+  items: { id: number; kind: ItemKind; code: string; name: string }[],
 ): Promise<PreviewResult> {
   const user = await currentUser();
   if (!user) return { lines: [], total: 0 };
@@ -162,10 +173,7 @@ export async function previewOrder(
 
   const rates = await resolveRatesBatch(
     mcc != null && Number.isInteger(mcc) ? mcc : null,
-    items.map((it) => ({
-      testMasterId: it.kind === 'test' ? it.id : null,
-      profileCode: it.kind === 'profile' ? it.id : null,
-    })),
+    items.map(toResolveItem),
   );
   const lines: PreviewLine[] = items.map((it, idx) => {
     const rr = rates[idx];
@@ -177,7 +185,7 @@ export async function previewOrder(
 
 const itemSchema = z.object({
   id: z.coerce.number().int().positive(),
-  kind: z.enum(['test', 'profile']),
+  kind: z.enum(['test', 'profile', 'master']),
   code: z.string(),
   name: z.string(),
 });
@@ -317,13 +325,7 @@ export async function registerOrder(
 
     // Server-authoritative 50% floor. Mirrors the client gate so a tampered
     // form can't post a receipt below half the resolved total.
-    const floorRates = await resolveRatesBatch(
-      f.mcc,
-      items.map((it) => ({
-        testMasterId: it.kind === 'test' ? it.id : null,
-        profileCode: it.kind === 'profile' ? it.id : null,
-      })),
-    );
+    const floorRates = await resolveRatesBatch(f.mcc, items.map(toResolveItem));
     const resolvedTotal = floorRates.reduce((s, r) => s + (r.rate ?? 0), 0);
     const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
     if (Number(f.receiptAmount ?? 0) < minPaid) {
@@ -331,10 +333,10 @@ export async function registerOrder(
         error: `At least ₹${minPaid} (50% of ₹${resolvedTotal}) must be collected now.`,
       };
     }
-    const maxDiscount = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
+    const maxDiscount = resolvedTotal > 0 ? Math.round(resolvedTotal * 0.2) : 0;
     if (Number(f.discountAmount ?? 0) > maxDiscount) {
       return {
-        error: `Discount cannot exceed ₹${maxDiscount} (50% of ₹${resolvedTotal}).`,
+        error: `Discount cannot exceed ₹${maxDiscount} (20% of ₹${resolvedTotal}).`,
       };
     }
 

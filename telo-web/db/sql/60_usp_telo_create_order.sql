@@ -162,51 +162,66 @@ BEGIN
     FROM dbo.tbl_med_mcc_unit_master WHERE id = @mcc;
 
     /* =================== rate-resolved @lines (per user-selected item) ==== */
+    /* One row per user-selected item. A master profile bills as a SINGLE line
+       (test_type 'Master') — its children are NOT billed individually; they
+       only drive sample grouping below. itemKind: 0=test 1=profile 2=master. */
     DECLARE @lines TABLE (
         rn           INT IDENTITY(1,1),
         testMasterId INT,
-        isProfile    BIT,
+        itemKind     TINYINT,
         code         NVARCHAR(50),
         name         NVARCHAR(200),
         testtype     CHAR(1),
         rate         INT
     );
 
-    INSERT INTO @lines (testMasterId, isProfile, code, name, testtype, rate)
+    INSERT INTO @lines (testMasterId, itemKind, code, name, testtype, rate)
     SELECT
-        i.testMasterId, i.isProfile,
-        CASE WHEN i.isProfile = 0
-          THEN (SELECT t.TestCode FROM dbo.tbl_med_test_master t
-                  WHERE t.id = i.testMasterId AND t.IsActive = 1)
-          ELSE (SELECT pm.Profile_Code FROM dbo.tbl_med_test_profile_master pm
-                  WHERE pm.id = i.testMasterId AND pm.IsActive = 1)
+        i.testMasterId, i.itemKind,
+        CASE i.itemKind
+          WHEN 0 THEN (SELECT t.TestCode FROM dbo.tbl_med_test_master t
+                         WHERE t.id = i.testMasterId AND t.IsActive = 1)
+          WHEN 1 THEN (SELECT pm.Profile_Code FROM dbo.tbl_med_test_profile_master pm
+                         WHERE pm.id = i.testMasterId AND pm.IsActive = 1)
+          ELSE (SELECT mp.Master_Profile_Code FROM dbo.tbl_med_test_master_profile_master mp
+                  WHERE mp.id = i.testMasterId AND mp.IsActive = 1)
         END,
-        CASE WHEN i.isProfile = 0
-          THEN (SELECT t.Testname FROM dbo.tbl_med_test_master t
-                  WHERE t.id = i.testMasterId AND t.IsActive = 1)
-          ELSE (SELECT pm.Profile_Name FROM dbo.tbl_med_test_profile_master pm
-                  WHERE pm.id = i.testMasterId AND pm.IsActive = 1)
+        CASE i.itemKind
+          WHEN 0 THEN (SELECT t.Testname FROM dbo.tbl_med_test_master t
+                         WHERE t.id = i.testMasterId AND t.IsActive = 1)
+          WHEN 1 THEN (SELECT pm.Profile_Name FROM dbo.tbl_med_test_profile_master pm
+                         WHERE pm.id = i.testMasterId AND pm.IsActive = 1)
+          ELSE (SELECT mp.Master_Profile_Name FROM dbo.tbl_med_test_master_profile_master mp
+                  WHERE mp.id = i.testMasterId AND mp.IsActive = 1)
         END,
-        CASE WHEN i.isProfile = 1 THEN 'p' ELSE 't' END,
-        -- Rate is resolved per the Client's assigned rate list (@rateTypeId,
-        -- read above from tbl_med_mcc_unit_master.RateType), with catalogue
-        -- MRP as the fallback. This MUST mirror usp_telo_resolve_rate so the
-        -- billed price equals the price previewed in the order form.
+        CASE i.itemKind WHEN 1 THEN 'p' WHEN 2 THEN 'm' ELSE 't' END,
+        -- Rate MUST mirror usp_telo_resolve_rate so the billed price equals the
+        -- price previewed in the order form:
+        --   tier 0: per-MCC special rate (tbl_med_mcc_test_special_rates) — the
+        --           LIS always prefers this over the rate list (CheckTransCash).
         --   tier 1: rate-list Price for @rateTypeId
         --   tier 2: catalogue MRP
         --   tier 3: 0 (never NULL — billing line needs a number)
         COALESCE(
-          CASE WHEN i.isProfile = 0
-            THEN (SELECT r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
-                    WHERE r.TestCode = i.testMasterId
-                      AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
-            ELSE (SELECT r.Price FROM dbo.tbl_med_profile_rates_with_pcc_types r
-                    WHERE r.profilecode = i.testMasterId
+          (SELECT sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
+             WHERE sr.mcccode = @mcc
+               AND sr.testtype = CASE i.itemKind WHEN 0 THEN 'T' WHEN 1 THEN 'P' ELSE 'M' END
+               AND sr.testid = i.testMasterId),
+          CASE i.itemKind
+            WHEN 0 THEN (SELECT r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
+                           WHERE r.TestCode = i.testMasterId
+                             AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
+            WHEN 1 THEN (SELECT r.Price FROM dbo.tbl_med_profile_rates_with_pcc_types r
+                           WHERE r.profilecode = i.testMasterId
+                             AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
+            ELSE (SELECT r.Price FROM dbo.tbl_med_master_profile_rates_with_pcc_types r
+                    WHERE r.master_profile_code = i.testMasterId
                       AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
           END,
-          CASE WHEN i.isProfile = 0
-            THEN (SELECT t.MRP FROM dbo.tbl_med_test_master t WHERE t.id = i.testMasterId)
-            ELSE (SELECT pm.MRP FROM dbo.tbl_med_test_profile_master pm WHERE pm.id = i.testMasterId)
+          CASE i.itemKind
+            WHEN 0 THEN (SELECT t.MRP FROM dbo.tbl_med_test_master t WHERE t.id = i.testMasterId)
+            WHEN 1 THEN (SELECT pm.MRP FROM dbo.tbl_med_test_profile_master pm WHERE pm.id = i.testMasterId)
+            ELSE (SELECT mp.MRP FROM dbo.tbl_med_test_master_profile_master mp WHERE mp.id = i.testMasterId)
           END,
           0)
     FROM @items i;
@@ -214,11 +229,11 @@ BEGIN
     IF EXISTS (SELECT 1 FROM @lines WHERE code IS NULL OR name IS NULL)
     BEGIN
         DECLARE @bad NVARCHAR(400) =
-            (SELECT STRING_AGG(CONCAT(CASE WHEN isProfile=1 THEN 'profile#' ELSE 'test#' END,
+            (SELECT STRING_AGG(CONCAT(CASE itemKind WHEN 1 THEN 'profile#' WHEN 2 THEN 'master#' ELSE 'test#' END,
                                       testMasterId), ', ')
              FROM @lines WHERE code IS NULL OR name IS NULL);
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = CONCAT(N'Unknown or inactive test/profile id(s): ', @bad),
+               message = CONCAT(N'Unknown or inactive test/profile/master id(s): ', @bad),
                patient_id = NULL, bill_id = NULL, bill_number = NULL,
                total = 0, sample_count = 0;
         SELECT * FROM @emptySamples;
@@ -230,44 +245,74 @@ BEGIN
     /* =================== compute required sample groups =================== */
     /* Mirror the preview SP exactly so the SP is self-contained and the form
        can never desync the grouping. */
-    ;WITH item_resolution AS (
-        SELECT i.testMasterId AS originId, i.isProfile,
-               i.code AS originCode, i.name AS originName,
-               t.id AS testMasterId, t.TestCode AS testCode,
-               t.Testname AS testName, t.SampleId AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_master t ON t.id = i.testMasterId AND t.IsActive = 1
-        WHERE i.isProfile = 0
+    /* `selection` flattens every TVP row to one or more (effId, isProfile)
+       entries: tests/profiles pass through; a master (itemKind=2) expands to
+       its child profiles + child tests. fromMaster marks master-derived rows
+       so the sample codeType is tagged 'mp'/'mt' (the LIS Master tags) instead
+       of 'p'/'t'. The test/profile path is byte-for-byte the prior logic. */
+    ;WITH selection AS (
+        SELECT i.testMasterId AS effId, CAST(0 AS BIT) AS isProfile,
+               i.code AS effCode, i.name AS effName, CAST(0 AS BIT) AS fromMaster
+        FROM @items i WHERE i.itemKind = 0
         UNION ALL
-        SELECT i.testMasterId AS originId, i.isProfile,
-               i.code AS originCode, i.name AS originName,
+        SELECT i.testMasterId, CAST(1 AS BIT), i.code, i.name, CAST(0 AS BIT)
+        FROM @items i WHERE i.itemKind = 1
+        UNION ALL
+        SELECT mpp.profileid, CAST(1 AS BIT),
+               pmf.Profile_Code, pmf.Profile_Name, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_profile_param mpp ON mpp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_profile_master pmf ON pmf.id = mpp.profileid AND pmf.IsActive = 1
+        WHERE i.itemKind = 2
+        UNION ALL
+        SELECT mtp.testid, CAST(0 AS BIT),
+               CONVERT(NVARCHAR(50), tmf.TestCode), tmf.Testname, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_test_param mtp ON mtp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_master tmf ON tmf.id = mtp.testid AND tmf.IsActive = 1
+        WHERE i.itemKind = 2
+    ),
+    item_resolution AS (
+        SELECT s.effId AS originId, s.isProfile, s.fromMaster,
+               s.effCode AS originCode, s.effName AS originName,
                t.id AS testMasterId, t.TestCode AS testCode,
                t.Testname AS testName, t.SampleId AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = i.testMasterId
+        FROM selection s
+        JOIN dbo.tbl_med_test_master t ON t.id = s.effId AND t.IsActive = 1
+        WHERE s.isProfile = 0
+        UNION ALL
+        SELECT s.effId AS originId, s.isProfile, s.fromMaster,
+               s.effCode AS originCode, s.effName AS originName,
+               t.id AS testMasterId, t.TestCode AS testCode,
+               t.Testname AS testName, t.SampleId AS sampleTypeId
+        FROM selection s
+        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = s.effId
         JOIN dbo.tbl_med_test_master t ON t.id = pp.testid AND t.IsActive = 1
-        WHERE i.isProfile = 1
+        WHERE s.isProfile = 1
     ),
     profile_span AS (
         SELECT originId, COUNT(DISTINCT ISNULL(sampleTypeId, -1)) AS span
         FROM item_resolution WHERE isProfile = 1 GROUP BY originId
     ),
-    /* codeType is the LIS per-code sample-row type ('t'/'p') — the LIS
-       CheckTransCash routes each sample code to its Test/Profile bucket by
-       this. A one-sample-type profile keeps the profile code → 'p'; a profile
-       split across sample types contributes constituent test codes → 't'. */
+    /* codeType is the LIS per-code sample-row type — CheckTransCash routes each
+       sample code to its bucket by this: 't'/'p' for direct test/profile,
+       'mt'/'mp' for codes that came from a master profile. A one-sample-type
+       profile keeps the profile code; a split profile contributes test codes. */
     bucketed AS (
         SELECT ISNULL(ir.sampleTypeId, -1) AS sampleTypeId,
-               ir.testCode AS code, ir.testName AS name, 't' AS codeType
+               ir.testCode AS code, ir.testName AS name,
+               CASE WHEN ir.fromMaster = 1 THEN 'mt' ELSE 't' END AS codeType
         FROM item_resolution ir WHERE ir.isProfile = 0
         UNION ALL
         SELECT DISTINCT ISNULL(ir.sampleTypeId, -1), ir.originCode,
-               ir.originName, 'p'
+               ir.originName,
+               CASE WHEN ir.fromMaster = 1 THEN 'mp' ELSE 'p' END
         FROM item_resolution ir
         JOIN profile_span ps ON ps.originId = ir.originId
         WHERE ir.isProfile = 1 AND ps.span = 1
         UNION ALL
-        SELECT ISNULL(ir.sampleTypeId, -1), ir.testCode, ir.testName, 't'
+        SELECT ISNULL(ir.sampleTypeId, -1), ir.testCode, ir.testName,
+               CASE WHEN ir.fromMaster = 1 THEN 'mt' ELSE 't' END
         FROM item_resolution ir
         JOIN profile_span ps ON ps.originId = ir.originId
         WHERE ir.isProfile = 1 AND ps.span > 1
@@ -400,14 +445,17 @@ BEGIN
            is NOT a sale yet. The LIS bills it when an operator clicks
            "Register" on the Accession screen (CheckTransCash sets
            amount_checked + updateddate and debits the franchise wallet).
-           test_type uses the LIS enum ('Profile'/'Test') so CheckTransCash —
-           which matches those exact strings — recognises Telo's tests.
-           @lines.testtype stays 'p'/'t' for the billing line items. */
+           test_type uses the LIS enum ('Profile'/'Test'/'Master') so
+           CheckTransCash — which matches those exact strings — recognises
+           Telo's tests. A master profile is ONE row (test_type='Master',
+           test_code=Master_Profile_Code, test_id=master id) billed once; its
+           children are expanded only into sample rows below.
+           @lines.testtype stays 'p'/'t'/'m' for the billing line items. */
         INSERT INTO dbo.tbl_med_mcc_patient_tests
             (patient_id, test_id, test_code, test_name, test_rate,
              test_type, addedby, addeddate, mobile_number)
         SELECT @pid, l.testMasterId, l.code, l.name, l.rate,
-               CASE WHEN l.testtype = 'p' THEN 'Profile' ELSE 'Test' END,
+               CASE l.testtype WHEN 'p' THEN 'Profile' WHEN 'm' THEN 'Master' ELSE 'Test' END,
                CONCAT(N'telo:', @userId), GETDATE(), LEFT(@mobile, 12)
         FROM @lines l;
 

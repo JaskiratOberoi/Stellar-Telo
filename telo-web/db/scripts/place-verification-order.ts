@@ -26,7 +26,7 @@ async function main() {
   const tvp = new sql.Table('dbo.TeloTestList');
   tvp.create = false;
   tvp.columns.add('testMasterId', sql.Int, { nullable: false });
-  tvp.columns.add('isProfile', sql.Bit, { nullable: false });
+  tvp.columns.add('itemKind', sql.TinyInt, { nullable: false }); // 0=test 1=profile 2=master
   tvp.columns.add('code', sql.NVarChar(50), { nullable: false });
   tvp.columns.add('name', sql.NVarChar(200), { nullable: false });
   tvp.rows.add(testId, 0, 'IGNORED', 'IGNORED'); // SP resolves canonical name

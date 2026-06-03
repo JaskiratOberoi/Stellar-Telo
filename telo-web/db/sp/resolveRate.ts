@@ -10,20 +10,22 @@ export interface ResolvedRate {
 }
 
 /**
- * Calls dbo.usp_telo_resolve_rate for ONE catalog item. Telo bills at MRP
- * (catalogue list price), so the resolved rate is MCC-independent — the `mcc`
- * arg is retained for signature compatibility only. Pass either testMasterId
- * (test) or profileCode (profile). The price is the authoritative
- * server-resolved value — the client price is never trusted.
+ * Calls dbo.usp_telo_resolve_rate for ONE catalog item. MCC-aware and
+ * special-rate-aware, exactly mirroring the LIS billing path: a per-MCC
+ * special rate (tbl_med_mcc_test_special_rates) outranks the assigned rate
+ * list, which outranks catalogue MRP. Pass EXACTLY ONE of testMasterId
+ * (test), profileCode (profile), or masterCode (master profile). The price is
+ * the authoritative server-resolved value — the client price is never trusted.
  *
  * Prefer `resolveRatesBatch` for multi-item paths (cart, checkout, preview):
  * each call to this SP is one WAN round-trip to the India server, so N lines
- * = N RTTs. The batch variant does it in two parameterised IN-list lookups.
+ * = N RTTs. The batch variant does it in a handful of parameterised IN-lists.
  */
 export async function resolveRate(args: {
   mcc: number;
   testMasterId?: number | null;
   profileCode?: number | null;
+  masterCode?: number | null;
   forBilling?: boolean;
 }): Promise<ResolvedRate> {
   return withRetry(async () => {
@@ -33,6 +35,7 @@ export async function resolveRate(args: {
       .input('mcc', sql.Int, args.mcc)
       .input('testMasterId', sql.Int, args.testMasterId ?? null)
       .input('profileCode', sql.Int, args.profileCode ?? null)
+      .input('masterCode', sql.Int, args.masterCode ?? null)
       .input('forBilling', sql.Bit, args.forBilling ? 1 : 0)
       .execute<{
         resolved_rate: number | null;
@@ -51,29 +54,35 @@ export async function resolveRate(args: {
 export interface ResolveItem {
   testMasterId?: number | null;
   profileCode?: number | null;
+  masterCode?: number | null;
 }
 
 /**
  * Batched, MCC-aware rate resolution for many items at once. Mirrors
- * usp_telo_resolve_rate's two-tier logic so the previewed price always equals
+ * usp_telo_resolve_rate's tiered logic so the previewed price always equals
  * the billed price:
  *
+ *   tier 0 (special) : the item's per-MCC special rate
+ *                      (tbl_med_mcc_test_special_rates) — the LIS billing path
+ *                      always prefers this over the rate list, so Telo must too
+ *                      or the preview/floor-check/bill would disagree.
  *   tier 1 (ratelist): the item's Price in the rate list assigned to the MCC
  *                      (tbl_med_mcc_unit_master.RateType). Read LIVE from the
  *                      rate tables so an updated LIS rate list shows up in
  *                      Telo immediately — no cache, no re-sync step.
  *   tier 2 (mrp)     : catalogue MRP when the item isn't in the rate list, or
- *                      the MCC has no rate list assigned. MRP comes from the
- *                      Redis-cached catalogue (15 min) — fine for a fallback.
+ *                      the MCC has no rate list assigned. Read LIVE for exactly
+ *                      the ids being priced so an LIS MRP edit bills at once.
  *
- * Performance: at most ~3 round-trips total regardless of item count —
- *   1 to read the MCC's RateType, 1 IN-list for test rate-list prices,
- *   1 IN-list for profile rate-list prices (+ MRP-fallback IN-lists only for
- *   ids the cached catalogue didn't answer). No per-line fan-out.
+ * Handles all three kinds: test (testMasterId), profile (profileCode), and
+ * master profile (masterCode). Performance: a handful of round-trips total
+ * regardless of item count — 1 for the MCC RateType, 1 for special rates, one
+ * IN-list per kind for rate-list prices, and one IN-list per kind for the live
+ * MRP fallback. No per-line fan-out.
  *
- * `mccId` null (or an MCC with no RateType) => MRP-only (legacy behaviour).
- * Order of the returned array matches the input order; missing ids resolve
- * to { rate: null, source: 'none' }. Read-only — no writes, no DDL.
+ * `mccId` null (or an MCC with no RateType) => special/MRP only. Order of the
+ * returned array matches the input order; missing ids resolve to
+ * { rate: null, source: 'none' }. Read-only — no writes, no DDL.
  */
 export async function resolveRatesBatch(
   mccId: number | null,
@@ -87,6 +96,7 @@ export async function resolveRatesBatch(
   // catalogue, so this is cheaper than the previous full-catalogue prefill.
   const testMrp = new Map<number, number | null>();
   const profileMrp = new Map<number, number | null>();
+  const masterMrp = new Map<number, number | null>();
 
   const uniq = (xs: (number | null | undefined)[]) =>
     Array.from(
@@ -96,11 +106,29 @@ export async function resolveRatesBatch(
     );
   const testIds = uniq(items.map((i) => i.testMasterId));
   const profileIds = uniq(items.map((i) => i.profileCode));
+  const masterIds = uniq(items.map((i) => i.masterCode));
 
-  // ── Live rate-list prices for the MCC's assigned RateType ───────────
+  // ── Live rate-list + special prices ─────────────────────────────────
   const testRate = new Map<number, number>();
   const profileRate = new Map<number, number>();
+  const masterRate = new Map<number, number>();
+  const specialTest = new Map<number, number>();
+  const specialProfile = new Map<number, number>();
+  const specialMaster = new Map<number, number>();
   let rateTypeId: number | null = null;
+
+  // Helper: build a parameterised IN-list on a fresh request.
+  const inList = (
+    req: ReturnType<Awaited<ReturnType<typeof getPool>>['request']>,
+    prefix: string,
+    ids: number[],
+  ) =>
+    ids
+      .map((id, i) => {
+        req.input(`${prefix}${i}`, sql.Int, id);
+        return `@${prefix}${i}`;
+      })
+      .join(',');
 
   await withRetry(async () => {
     const pool = await getPool();
@@ -113,16 +141,33 @@ export async function resolveRatesBatch(
           `SELECT RateType FROM dbo.tbl_med_mcc_unit_master WHERE id = @mcc`,
         );
       rateTypeId = rt.recordset[0]?.RateType ?? null;
+
+      // tier 0: per-MCC special rates (one query for all kinds)
+      const anyIds = testIds.length + profileIds.length + masterIds.length;
+      if (anyIds > 0) {
+        const req = pool.request().input('mcc', sql.Int, mccId);
+        const clauses: string[] = [];
+        if (testIds.length)
+          clauses.push(`(testtype = 'T' AND testid IN (${inList(req, 'st', testIds)}))`);
+        if (profileIds.length)
+          clauses.push(`(testtype = 'P' AND testid IN (${inList(req, 'sp', profileIds)}))`);
+        if (masterIds.length)
+          clauses.push(`(testtype = 'M' AND testid IN (${inList(req, 'sm', masterIds)}))`);
+        const r = await req.query<{ testtype: string; testid: number; rate: number }>(
+          `SELECT testtype, testid, rate FROM dbo.tbl_med_mcc_test_special_rates
+           WHERE mcccode = @mcc AND (${clauses.join(' OR ')})`,
+        );
+        for (const row of r.recordset) {
+          if (row.testtype === 'T') specialTest.set(row.testid, row.rate);
+          else if (row.testtype === 'P') specialProfile.set(row.testid, row.rate);
+          else if (row.testtype === 'M') specialMaster.set(row.testid, row.rate);
+        }
+      }
     }
 
     if (rateTypeId != null && testIds.length > 0) {
       const req = pool.request().input('rt', sql.Int, rateTypeId);
-      const params = testIds
-        .map((id, i) => {
-          req.input(`t${i}`, sql.Int, id);
-          return `@t${i}`;
-        })
-        .join(',');
+      const params = inList(req, 't', testIds);
       const r = await req.query<{ TestCode: number; Price: number }>(
         `SELECT TestCode, Price FROM dbo.tbl_med_test_rates_with_pcc_type
          WHERE RateTypeId = @rt AND IsActive = 1 AND TestCode IN (${params})`,
@@ -132,12 +177,7 @@ export async function resolveRatesBatch(
 
     if (rateTypeId != null && profileIds.length > 0) {
       const req = pool.request().input('rt', sql.Int, rateTypeId);
-      const params = profileIds
-        .map((id, i) => {
-          req.input(`p${i}`, sql.Int, id);
-          return `@p${i}`;
-        })
-        .join(',');
+      const params = inList(req, 'p', profileIds);
       const r = await req.query<{ profilecode: number; Price: number }>(
         `SELECT profilecode, Price FROM dbo.tbl_med_profile_rates_with_pcc_types
          WHERE RateTypeId = @rt AND IsActive = 1 AND profilecode IN (${params})`,
@@ -145,15 +185,20 @@ export async function resolveRatesBatch(
       for (const row of r.recordset) profileRate.set(row.profilecode, row.Price);
     }
 
-    // ── Live MRP fallback for every item being priced (real-time) ─────
+    if (rateTypeId != null && masterIds.length > 0) {
+      const req = pool.request().input('rt', sql.Int, rateTypeId);
+      const params = inList(req, 'm', masterIds);
+      const r = await req.query<{ master_profile_code: number; Price: number }>(
+        `SELECT master_profile_code, Price FROM dbo.tbl_med_master_profile_rates_with_pcc_types
+         WHERE RateTypeId = @rt AND IsActive = 1 AND master_profile_code IN (${params})`,
+      );
+      for (const row of r.recordset) masterRate.set(row.master_profile_code, row.Price);
+    }
+
+    // ── Live MRP for every item being priced (real-time, all kinds) ───
     if (testIds.length > 0) {
       const req = pool.request();
-      const params = testIds
-        .map((id, i) => {
-          req.input(`mt${i}`, sql.Int, id);
-          return `@mt${i}`;
-        })
-        .join(',');
+      const params = inList(req, 'mt', testIds);
       const r = await req.query<{ id: number; mrp: number | null }>(
         `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_master WHERE id IN (${params})`,
       );
@@ -162,31 +207,47 @@ export async function resolveRatesBatch(
 
     if (profileIds.length > 0) {
       const req = pool.request();
-      const params = profileIds
-        .map((id, i) => {
-          req.input(`mp${i}`, sql.Int, id);
-          return `@mp${i}`;
-        })
-        .join(',');
+      const params = inList(req, 'mp', profileIds);
       const r = await req.query<{ id: number; mrp: number | null }>(
         `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_profile_master WHERE id IN (${params})`,
       );
       for (const row of r.recordset) profileMrp.set(row.id, row.mrp);
     }
+
+    if (masterIds.length > 0) {
+      const req = pool.request();
+      const params = inList(req, 'mm', masterIds);
+      const r = await req.query<{ id: number; mrp: number | null }>(
+        `SELECT id, MRP AS mrp FROM dbo.tbl_med_test_master_profile_master WHERE id IN (${params})`,
+      );
+      for (const row of r.recordset) masterMrp.set(row.id, row.mrp);
+    }
   });
 
-  // ── Assemble: rate-list price first, else MRP fallback ──────────────
+  // ── Assemble: special → rate-list → MRP fallback ────────────────────
   return items.map((it) => {
     if (it.testMasterId != null) {
+      const sp = specialTest.get(it.testMasterId);
+      if (sp != null) return { rate: sp, source: 'special', rateTypeId: null };
       const rl = testRate.get(it.testMasterId);
       if (rl != null) return { rate: rl, source: 'ratelist', rateTypeId };
       const mrp = testMrp.get(it.testMasterId) ?? null;
       return { rate: mrp, source: mrp != null ? 'mrp' : 'none', rateTypeId: null };
     }
     if (it.profileCode != null) {
+      const sp = specialProfile.get(it.profileCode);
+      if (sp != null) return { rate: sp, source: 'special', rateTypeId: null };
       const rl = profileRate.get(it.profileCode);
       if (rl != null) return { rate: rl, source: 'ratelist', rateTypeId };
       const mrp = profileMrp.get(it.profileCode) ?? null;
+      return { rate: mrp, source: mrp != null ? 'mrp' : 'none', rateTypeId: null };
+    }
+    if (it.masterCode != null) {
+      const sp = specialMaster.get(it.masterCode);
+      if (sp != null) return { rate: sp, source: 'special', rateTypeId: null };
+      const rl = masterRate.get(it.masterCode);
+      if (rl != null) return { rate: rl, source: 'ratelist', rateTypeId };
+      const mrp = masterMrp.get(it.masterCode) ?? null;
       return { rate: mrp, source: mrp != null ? 'mrp' : 'none', rateTypeId: null };
     }
     return { rate: null, source: 'none', rateTypeId: null };

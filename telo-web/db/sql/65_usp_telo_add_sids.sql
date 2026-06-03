@@ -106,11 +106,15 @@ BEGIN
 
     /* =================== rebuild @items from the patient's tests ========== */
     DECLARE @items dbo.TeloTestList;
-    INSERT INTO @items (testMasterId, isProfile, code, name)
+    INSERT INTO @items (testMasterId, itemKind, code, name)
     SELECT pt.test_id,
-           -- test_type is 'Profile'/'Test' (LIS enum) on new orders, 'p'/'t'
-           -- on orders registered before the sales-visibility change.
-           CASE WHEN pt.test_type IN ('p', 'Profile') THEN 1 ELSE 0 END,
+           -- test_type is the LIS enum on new orders ('Profile'/'Test'/'Master'),
+           -- or the legacy 'p'/'t' on orders registered before the
+           -- sales-visibility change. Map to itemKind 0=test 1=profile 2=master
+           -- so a master row re-expands into its child sample groups below.
+           CASE WHEN pt.test_type = 'Master' THEN 2
+                WHEN pt.test_type IN ('p', 'Profile') THEN 1
+                ELSE 0 END,
            LEFT(ISNULL(pt.test_code, CONVERT(NVARCHAR(50), pt.test_id)), 50),
            LEFT(ISNULL(pt.test_name, pt.test_code), 200)
     FROM dbo.tbl_med_mcc_patient_tests pt
@@ -127,42 +131,70 @@ BEGIN
 
     /* =================== compute required sample groups =================== */
     /* Identical CTE to usp_telo_create_order so grouping never diverges. */
-    ;WITH item_resolution AS (
-        SELECT i.testMasterId AS originId, i.isProfile,
-               i.code AS originCode, i.name AS originName,
-               t.id AS testMasterId, t.TestCode AS testCode,
-               t.Testname AS testName, t.SampleId AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_master t ON t.id = i.testMasterId AND t.IsActive = 1
-        WHERE i.isProfile = 0
+    /* `selection` flattens masters into child profiles/tests; identical to
+       usp_telo_create_order so grouping never diverges. fromMaster tags
+       master-derived sample codes 'mp'/'mt'. */
+    ;WITH selection AS (
+        SELECT i.testMasterId AS effId, CAST(0 AS BIT) AS isProfile,
+               i.code AS effCode, i.name AS effName, CAST(0 AS BIT) AS fromMaster
+        FROM @items i WHERE i.itemKind = 0
         UNION ALL
-        SELECT i.testMasterId AS originId, i.isProfile,
-               i.code AS originCode, i.name AS originName,
+        SELECT i.testMasterId, CAST(1 AS BIT), i.code, i.name, CAST(0 AS BIT)
+        FROM @items i WHERE i.itemKind = 1
+        UNION ALL
+        SELECT mpp.profileid, CAST(1 AS BIT),
+               pmf.Profile_Code, pmf.Profile_Name, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_profile_param mpp ON mpp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_profile_master pmf ON pmf.id = mpp.profileid AND pmf.IsActive = 1
+        WHERE i.itemKind = 2
+        UNION ALL
+        SELECT mtp.testid, CAST(0 AS BIT),
+               CONVERT(NVARCHAR(50), tmf.TestCode), tmf.Testname, CAST(1 AS BIT)
+        FROM @items i
+        JOIN dbo.tbl_med_test_master_test_param mtp ON mtp.master_profileid = i.testMasterId
+        JOIN dbo.tbl_med_test_master tmf ON tmf.id = mtp.testid AND tmf.IsActive = 1
+        WHERE i.itemKind = 2
+    ),
+    item_resolution AS (
+        SELECT s.effId AS originId, s.isProfile, s.fromMaster,
+               s.effCode AS originCode, s.effName AS originName,
                t.id AS testMasterId, t.TestCode AS testCode,
                t.Testname AS testName, t.SampleId AS sampleTypeId
-        FROM @items i
-        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = i.testMasterId
+        FROM selection s
+        JOIN dbo.tbl_med_test_master t ON t.id = s.effId AND t.IsActive = 1
+        WHERE s.isProfile = 0
+        UNION ALL
+        SELECT s.effId AS originId, s.isProfile, s.fromMaster,
+               s.effCode AS originCode, s.effName AS originName,
+               t.id AS testMasterId, t.TestCode AS testCode,
+               t.Testname AS testName, t.SampleId AS sampleTypeId
+        FROM selection s
+        JOIN dbo.tbl_med_test_profile_param pp ON pp.profileid = s.effId
         JOIN dbo.tbl_med_test_master t ON t.id = pp.testid AND t.IsActive = 1
-        WHERE i.isProfile = 1
+        WHERE s.isProfile = 1
     ),
     profile_span AS (
         SELECT originId, COUNT(DISTINCT ISNULL(sampleTypeId, -1)) AS span
         FROM item_resolution WHERE isProfile = 1 GROUP BY originId
     ),
-    /* codeType is the LIS per-code sample-row type ('t'/'p') — see
-       usp_telo_create_order for the rationale. */
+    /* codeType is the LIS per-code sample-row type ('t'/'p', or 'mt'/'mp' for
+       master-derived codes) — see usp_telo_create_order for the rationale. */
     bucketed AS (
         SELECT ISNULL(ir.sampleTypeId, -1) AS sampleTypeId,
-               ir.testCode AS code, ir.testName AS name, 't' AS codeType
+               ir.testCode AS code, ir.testName AS name,
+               CASE WHEN ir.fromMaster = 1 THEN 'mt' ELSE 't' END AS codeType
         FROM item_resolution ir WHERE ir.isProfile = 0
         UNION ALL
         SELECT DISTINCT ISNULL(ir.sampleTypeId, -1), ir.originCode,
-               ir.originName, 'p'
+               ir.originName,
+               CASE WHEN ir.fromMaster = 1 THEN 'mp' ELSE 'p' END
         FROM item_resolution ir
         JOIN profile_span ps ON ps.originId = ir.originId
         WHERE ir.isProfile = 1 AND ps.span = 1
         UNION ALL
-        SELECT ISNULL(ir.sampleTypeId, -1), ir.testCode, ir.testName, 't'
+        SELECT ISNULL(ir.sampleTypeId, -1), ir.testCode, ir.testName,
+               CASE WHEN ir.fromMaster = 1 THEN 'mt' ELSE 't' END
         FROM item_resolution ir
         JOIN profile_span ps ON ps.originId = ir.originId
         WHERE ir.isProfile = 1 AND ps.span > 1

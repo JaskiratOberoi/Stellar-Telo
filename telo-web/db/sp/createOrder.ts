@@ -54,21 +54,27 @@ export interface CreateOrderResult {
   txnId: string | null;
 }
 
+/** TeloTestList.itemKind: 0 = test, 1 = profile, 2 = master profile. */
+function itemKindOf(kind: CartItem['kind']): number {
+  return kind === 'master' ? 2 : kind === 'profile' ? 1 : 0;
+}
+
 function buildTestListTvp(items: CartItem[]): sql.Table {
   const t = new sql.Table('dbo.TeloTestList');
   t.create = false;
   t.columns.add('testMasterId', sql.Int, { nullable: false });
-  t.columns.add('isProfile', sql.Bit, { nullable: false });
+  t.columns.add('itemKind', sql.TinyInt, { nullable: false });
   t.columns.add('code', sql.NVarChar(50), { nullable: false });
   t.columns.add('name', sql.NVarChar(200), { nullable: false });
   const seen = new Set<string>();
   for (const i of items) {
-    const key = `${i.kind === 'profile' ? 1 : 0}:${i.id}`;
+    const kind = itemKindOf(i.kind);
+    const key = `${kind}:${i.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
     t.rows.add(
       i.id,
-      i.kind === 'profile' ? 1 : 0,
+      kind,
       (i.code ?? '').slice(0, 50) || String(i.id),
       (i.name ?? '').slice(0, 200) || (i.code ?? String(i.id)),
     );

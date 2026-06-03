@@ -94,9 +94,15 @@ export default async function CartPage() {
                 <TableCell>{l.name}</TableCell>
                 <TableCell>
                   <Badge
-                    variant={l.kind === 'profile' ? 'secondary' : 'outline'}
+                    variant={
+                      l.kind === 'master'
+                        ? 'default'
+                        : l.kind === 'profile'
+                          ? 'secondary'
+                          : 'outline'
+                    }
                   >
-                    {l.kind}
+                    {l.kind === 'master' ? 'package' : l.kind}
                   </Badge>
                 </TableCell>
                 <TableCell>
