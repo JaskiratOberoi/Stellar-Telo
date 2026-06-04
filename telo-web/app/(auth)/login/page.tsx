@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { AmbientBackground } from '@/components/ui/ambient-background';
+import { RibbonBackground } from '@/components/ui/ribbon-background';
 
 const initial: LoginState = { error: null };
 
@@ -20,6 +21,7 @@ export default function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
       <AmbientBackground />
+      <RibbonBackground />
 
       <div className="relative z-10 w-full max-w-sm animate-pop">
         {/* Brand mark */}

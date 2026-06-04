@@ -9,16 +9,11 @@ import { getReceiptsInPeriod } from '@/db/read/receipts';
 import { getMccScope } from '@/auth/scope';
 import { fmtIST, todayIST, addDaysIST, firstOfMonthIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
+import { getUnpinnedBillIds } from '@/db/pins';
 import { AccountsReport } from '@/components/balances/accounts-report';
+import { MccBalanceFilters } from '@/components/balances/mcc-balance-filters';
+import { BalancesBillsTable } from '@/components/balances/balances-bills-table';
 import { PrintReportButton } from '@/components/balances/print-report-button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,15 +31,6 @@ const firstOfWeek = (): string => {
   return addDaysIST(t, diff);
 };
 const firstOfYear = (): string => `${todayIST().slice(0, 4)}-01-01`;
-// Patient age label — ageType 1=Years (default), 2=Months, 3=Days.
-function fmtPatientAge(
-  age: number | null,
-  ageType: number | null,
-): string {
-  if (age == null) return '—';
-  const unit = ageType === 2 ? 'M' : ageType === 3 ? 'D' : 'Y';
-  return `${age}${unit}`;
-}
 
 export default async function BalanceMccPage({
   params,
@@ -65,9 +51,6 @@ export default async function BalanceMccPage({
   const to = sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today();
   // "My Accounts Summary" filter: only bills this Telo user registered.
   const mine = sp.mine === '1';
-  // Build a same-page href preserving the active date range + mine filter.
-  const hrefFor = (f: string, t: string, m: boolean): string =>
-    `/balances/${mccId}?from=${f}&to=${t}${m ? '&mine=1' : ''}`;
 
   // Receipts query is scoped to this MCC only — needs the user's mcc scope
   // to defend against URL-typing, so we fetch scope first then receipts in
@@ -103,6 +86,14 @@ export default async function BalanceMccPage({
     { label: 'This year',  from: firstOfYear(),  to: td },
   ];
   const activePeriod = periods.find((p) => p.from === from && p.to === to);
+
+  // Negative-balance bills are pinned to the top by default; load this user's
+  // unpin exceptions so the client table can render the right pin state. Only
+  // negative bills are pinnable, so the lookup set is naturally small.
+  const negativeBillIds = data.bills
+    .filter((b) => b.balance < 0)
+    .map((b) => b.billId);
+  const unpinnedIds = await getUnpinnedBillIds(user.uid, negativeBillIds);
 
   // ── Summary aggregates ─────────────────────────────────────────────────
   // Bill-date-keyed (what was billed in the window):
@@ -161,72 +152,20 @@ export default async function BalanceMccPage({
         </div>
       </div>
 
-      {/* ── Period quick-select ─────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
-          Period
-        </span>
-        {periods.map((p) => {
-          const active = p.label === activePeriod?.label;
-          return (
-            <Link
-              key={p.label}
-              href={hrefFor(p.from, p.to, mine)}
-              className={cn(
-                'rounded-full px-3 py-1 text-xs transition-all duration-150',
-                active
-                  ? 'bg-primary/20 text-foreground font-medium'
-                  : 'border border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
-              )}
-            >
-              {p.label}
-            </Link>
-          );
-        })}
-        {!activePeriod && (
-          <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-muted-foreground">
-            Custom range
-          </span>
-        )}
-      </div>
-
-      {/* ── "My Accounts Summary" filter ─────────────────────────────── */}
-      {/* Toggles the addedby='telo:<uid>' registrar filter. Multiple users can
-          share a client code (e.g. MDCARE); this narrows to the signed-in
-          user's own registrations. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
-          View
-        </span>
-        <Link
-          href={hrefFor(from, to, false)}
-          className={cn(
-            'rounded-full px-3 py-1 text-xs transition-all duration-150',
-            !mine
-              ? 'bg-primary/20 text-foreground font-medium'
-              : 'border border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
-          )}
-        >
-          All registrations
-        </Link>
-        <Link
-          href={hrefFor(from, to, true)}
-          className={cn(
-            'rounded-full px-3 py-1 text-xs transition-all duration-150',
-            mine
-              ? 'bg-primary/20 text-foreground font-medium'
-              : 'border border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
-          )}
-        >
-          My Accounts Summary
-        </Link>
-        {mine && (
-          <span className="text-[11px] text-muted-foreground">
-            Showing only bills registered by{' '}
-            <span className="text-foreground">{user.name || user.username}</span>
-          </span>
-        )}
-      </div>
+      {/* Period quick-select + "My Accounts Summary" registrar filter.
+          Client-side router navigation (see MccBalanceFilters) so repeated
+          query-only filter changes always re-fetch — avoids the Next.js 15
+          stale Router Cache bug that plain <Link> hit here. */}
+      <MccBalanceFilters
+        mccId={mccId}
+        from={from}
+        to={to}
+        mine={mine}
+        periods={periods}
+        activeLabel={activePeriod?.label ?? null}
+        userLabel={user.name || user.username}
+        maxDate={td}
+      />
 
       {/* ── Summary cards ──────────────────────────────────────────── */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -261,85 +200,27 @@ export default async function BalanceMccPage({
         />
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-24">Bill #</TableHead>
-            <TableHead className="w-28">Date</TableHead>
-            <TableHead>Patient</TableHead>
-            <TableHead>Ref. doctor</TableHead>
-            <TableHead>Ref. customer</TableHead>
-            <TableHead className="w-24">Payment</TableHead>
-            <TableHead className="w-14 text-right">Age</TableHead>
-            <TableHead className="w-24 text-right">Amount</TableHead>
-            <TableHead className="w-24 text-right">Paid</TableHead>
-            <TableHead className="w-24 text-right">Balance</TableHead>
-            <TableHead className="w-20" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.bills.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={11} className="text-muted-foreground">
-                {mine
-                  ? 'No bills registered by you for this client in this date range.'
-                  : 'No Telo bills for this client in this date range.'}
-              </TableCell>
-            </TableRow>
-          ) : (
-            data.bills.map((b) => {
-              const detailHref = `/orders/${b.billId}?back=${encodeURIComponent(`/balances/${mccId}?from=${from}&to=${to}`)}`;
-              return (
-                <TableRow key={b.billId}>
-                  <TableCell>
-                    <Link
-                      href={detailHref}
-                      className="font-mono text-xs underline"
-                    >
-                      {b.billNumber ?? b.billId}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{fmtIST(b.billDate, 'date')}</TableCell>
-                  <TableCell>{b.patientName ?? '—'}</TableCell>
-                  <TableCell className="text-sm">
-                    {b.doctorName ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {b.customerName ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {b.paymentType ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
-                    {fmtPatientAge(b.age, b.ageType)}
-                  </TableCell>
-                  <TableCell className="text-right">{inr(b.amount)}</TableCell>
-                  <TableCell className="text-right">
-                    {inr(b.amountPaid)}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {inr(b.balance)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link
-                      href={detailHref}
-                      className="inline-flex items-center justify-center rounded-md border border-white/10 px-2.5 py-1 text-xs text-muted-foreground transition-all duration-150 hover:bg-white/5 hover:text-foreground hover:border-white/20"
-                    >
-                      View →
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
+      <BalancesBillsTable
+        bills={data.bills.map((b) => ({
+          billId: b.billId,
+          billNumber: b.billNumber,
+          billDate: b.billDate,
+          patientName: b.patientName,
+          doctorName: b.doctorName,
+          customerName: b.customerName,
+          paymentType: b.paymentType,
+          age: b.age,
+          ageType: b.ageType,
+          amount: b.amount,
+          amountPaid: b.amountPaid,
+          balance: b.balance,
+        }))}
+        unpinnedIds={unpinnedIds}
+        mccId={mccId}
+        from={from}
+        to={to}
+        mine={mine}
+      />
       </div>{/* end screen view */}
     </div>
   );

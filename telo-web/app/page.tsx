@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, FileText, Receipt, Wallet } from 'lucide-react';
 import { AmbientBackground } from '@/components/ui/ambient-background';
+import { RibbonBackground } from '@/components/ui/ribbon-background';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +19,7 @@ export default function HomePage() {
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-16 text-center">
       <AmbientBackground className="fixed" />
+      <RibbonBackground className="fixed" />
 
       <div className="relative z-10 flex w-full max-w-xl flex-col items-center gap-7">
         {/* Network badge */}
