@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   searchAccountsBills,
@@ -316,14 +315,17 @@ export function AccountsSummaryView({
             </TableRow>
           ) : (
             rows.map((r) => (
-              <TableRow key={r.mccId}>
+              <TableRow
+                key={r.mccId}
+                onClick={() =>
+                  router.push(`/balances/${r.mccId}/dashboard?from=${from}&to=${to}`)
+                }
+                className="cursor-pointer"
+              >
                 <TableCell>
-                  <Link
-                    href={`/balances/${r.mccId}?from=${from}&to=${to}${pay !== 'all' ? `&pay=${pay}` : ''}`}
-                    className="font-medium text-primary underline-offset-2 hover:underline"
-                  >
+                  <span className="font-medium text-primary underline-offset-2 hover:underline">
                     {r.mccCode || r.mccId}
-                  </Link>
+                  </span>
                   {r.mccName && (
                     <span className="ml-1 text-xs text-muted-foreground">
                       · {r.mccName}

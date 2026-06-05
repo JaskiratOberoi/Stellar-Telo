@@ -13,6 +13,7 @@ import { getUnpinnedBillIds } from '@/db/pins';
 import { AccountsReport } from '@/components/balances/accounts-report';
 import { MccBalanceFilters } from '@/components/balances/mcc-balance-filters';
 import { BalancesBillsTable } from '@/components/balances/balances-bills-table';
+import { BalanceViewTabs } from '@/components/balances/balance-view-tabs';
 import { PrintReportButton } from '@/components/balances/print-report-button';
 
 export const dynamic = 'force-dynamic';
@@ -143,6 +144,9 @@ export default async function BalanceMccPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {showBackLink && (
+            <BalanceViewTabs mccId={mccId} from={from} to={to} active="bills" />
+          )}
           <PrintReportButton />
           {showBackLink && (
             <Link href={backHref} className="text-sm underline">
