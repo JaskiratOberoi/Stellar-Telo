@@ -36,6 +36,10 @@ export interface ReportSearchRow {
   testNames: string | null;
   /** YYYY-MM-DD of the sample — lets the report fragment query a tight window. */
   dateHint: string | null;
+  /** True when the sample's report is finalised (every result authorised) and
+   *  therefore safe to bulk-download. Drives the Reporting multi-select gate —
+   *  in-progress samples (e.g. "Sample Registered") are not selectable. */
+  ready: boolean;
 }
 
 /** YYYY-MM-DD from a date-ish string, or null. */
@@ -126,6 +130,9 @@ export async function searchReports(
         ymdFrom(r.sample_drawn) ??
         ymdFrom(r.last_modified_at) ??
         ymdFrom(r.regd_at),
+      // Ready = report finalised: has results and every one is authorised.
+      // Centralised here so the bulk-download gate has a single source of truth.
+      ready: r.results.length > 0 && r.results.every((t) => t.authorized),
     });
   }
   return out;

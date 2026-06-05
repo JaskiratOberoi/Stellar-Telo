@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { FileText, Search } from 'lucide-react';
+import { Download, FileText, Search, X } from 'lucide-react';
 import {
   searchReports,
   type ReportSearchRow,
 } from '@/actions/reporting.actions';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -33,6 +34,10 @@ function splitTestNames(s: string | null): string[] {
 
 const today = () => todayIST();
 
+/** Hard cap on reports per bulk download. Keep in sync with MAX_ITEMS in
+ *  app/api/reporting/pdf/bulk/route.ts. */
+const MAX_BULK = 25;
+
 export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
@@ -49,9 +54,16 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // ── Bulk selection + download ───────────────────────────────────────────
+  const [selectedSids, setSelectedSids] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
   function runSearch() {
     setError(null);
     setSelected(null);
+    setSelectedSids(new Set());
+    setBulkError(null);
     startTransition(async () => {
       try {
         const result = await searchReports({
@@ -78,6 +90,72 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
     runSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Only finalised reports are selectable for bulk download.
+  const readyRows = (rows ?? []).filter((r) => r.ready);
+  const selectedCount = selectedSids.size;
+
+  function toggleOne(sid: string) {
+    setBulkError(null);
+    setSelectedSids((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setBulkError(null);
+    setSelectedSids((prev) => {
+      // If every ready row is already selected, clear; otherwise select all.
+      const allSelected =
+        readyRows.length > 0 && readyRows.every((r) => prev.has(r.sid));
+      return allSelected ? new Set() : new Set(readyRows.map((r) => r.sid));
+    });
+  }
+
+  async function downloadBulk() {
+    const items = readyRows
+      .filter((r) => selectedSids.has(r.sid))
+      .map((r) => ({
+        sid: r.sid,
+        panel: searchedPanel,
+        date: r.dateHint,
+        patientName: r.patientName,
+      }));
+    if (items.length === 0) return;
+    if (items.length > MAX_BULK) {
+      setBulkError(`Select at most ${MAX_BULK} reports per download.`);
+      return;
+    }
+    setBulkError(null);
+    setDownloading(true);
+    try {
+      const res = await fetch('/api/reporting/pdf/bulk', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) {
+        throw new Error(`Could not generate PDF (HTTP ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.download = `Reports_${items.length}_${stamp}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : 'Download failed.');
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -176,6 +254,15 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <SelectAllCheckbox
+                      readyCount={readyRows.length}
+                      selectedReadyCount={
+                        readyRows.filter((r) => selectedSids.has(r.sid)).length
+                      }
+                      onToggle={toggleAll}
+                    />
+                  </TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>PID</TableHead>
                   <TableHead>Patient Name</TableHead>
@@ -189,8 +276,27 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
               <TableBody>
                 {rows.map((r) => {
                   const tests = splitTestNames(r.testNames);
+                  const checked = selectedSids.has(r.sid);
                   return (
-                    <TableRow key={r.sid} className="align-top">
+                    <TableRow
+                      key={r.sid}
+                      className="align-top"
+                      data-state={checked ? 'selected' : undefined}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={checked}
+                          disabled={!r.ready}
+                          onChange={() => toggleOne(r.sid)}
+                          aria-label={
+                            r.ready
+                              ? `Select report for ${r.patientName ?? r.sid}`
+                              : 'Report not finalised yet'
+                          }
+                          title={r.ready ? undefined : 'Report not finalised yet'}
+                        />
+                      </TableCell>
                       <TableCell className="text-xs">{r.clientCode ?? '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{r.pid}</TableCell>
                       <TableCell className="font-medium">
@@ -245,7 +351,71 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
           onClose={() => setSelected(null)}
         />
       )}
+
+      {/* ── Bulk selection bar ──────────────────────────────────────────── */}
+      {selectedCount > 0 && (
+        <div className="sticky bottom-0 z-40 -mx-4 mt-2 border-t border-white/10 bg-card/80 px-4 py-3 backdrop-blur-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 text-sm">
+              <span className="font-medium">
+                {selectedCount} report{selectedCount === 1 ? '' : 's'} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedSids(new Set())}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+              {bulkError && (
+                <span className="text-xs text-destructive">{bulkError}</span>
+              )}
+              {selectedCount > MAX_BULK && !bulkError && (
+                <span className="text-xs text-destructive">
+                  Max {MAX_BULK} per download — narrow your selection.
+                </span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={downloadBulk}
+              disabled={downloading || selectedCount > MAX_BULK}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {downloading ? 'Preparing…' : 'Download merged PDF'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Header "select all" checkbox — ticks only finalised (ready) rows, with an
+ *  indeterminate state when some but not all are selected. */
+function SelectAllCheckbox({
+  readyCount,
+  selectedReadyCount,
+  onToggle,
+}: {
+  readyCount: number;
+  selectedReadyCount: number;
+  onToggle: () => void;
+}) {
+  const allChecked = readyCount > 0 && selectedReadyCount === readyCount;
+  const indeterminate = selectedReadyCount > 0 && selectedReadyCount < readyCount;
+  return (
+    <Checkbox
+      checked={allChecked}
+      indeterminate={indeterminate}
+      disabled={readyCount === 0}
+      onChange={onToggle}
+      aria-label="Select all finalised reports"
+      title={
+        readyCount === 0 ? 'No finalised reports to select' : 'Select all finalised reports'
+      }
+    />
   );
 }
 
