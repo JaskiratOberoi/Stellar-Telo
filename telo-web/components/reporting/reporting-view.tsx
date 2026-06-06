@@ -4,11 +4,13 @@ import { useEffect, useState, useTransition } from 'react';
 import { Download, FileText, Search, X } from 'lucide-react';
 import {
   searchReports,
+  searchReportTests,
   type ReportSearchRow,
 } from '@/actions/reporting.actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { RemoteCombobox } from '@/components/ui/remote-combobox';
 import {
   Table,
   TableBody,
@@ -19,7 +21,6 @@ import {
 } from '@/components/ui/table';
 import { fmtIST, todayIST } from '@/lib/datetime';
 import { ReportPreview } from '@/components/reporting/report-preview';
-import { REPORT_FILTERS, DEFAULT_FILTER_ID } from '@/lib/report/panels';
 
 /** Split the LIS test-names CSV into clean individual test names. */
 function splitTestNames(s: string | null): string[] {
@@ -38,18 +39,35 @@ const today = () => todayIST();
  *  app/api/reporting/pdf/bulk/route.ts. */
 const MAX_BULK = 25;
 
-export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
+/** Shared <select> styling (matches the Input control). */
+const SELECT_CLASS =
+  'flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
+
+export function ReportingView({
+  businessUnits,
+  statuses,
+}: {
+  businessUnits: string[];
+  statuses: string[];
+}) {
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
-  const [panel, setPanel] = useState(DEFAULT_FILTER_ID);
   const [clientCode, setClientCode] = useState('');
   const [businessUnit, setBusinessUnit] = useState('');
-  const [sid, setSid] = useState('');
-  const [pid, setPid] = useState('');
-  const [patientName, setPatientName] = useState('');
+  const [status, setStatus] = useState('');
+  // Universal search box (patient, SID, PID, test name/code…).
+  const [q, setQ] = useState('');
+  // Test-filter picker: combobox is keyed by catalog id; `testCache` resolves
+  // the picked id → its code/name (mirrors the mccLabels pattern elsewhere).
+  const [testId, setTestId] = useState<number | ''>('');
+  const [testCache, setTestCache] = useState<
+    Map<number, { code: string; name: string | null }>
+  >(() => new Map());
 
   const [rows, setRows] = useState<ReportSearchRow[] | null>(null);
-  const [searchedPanel, setSearchedPanel] = useState(DEFAULT_FILTER_ID);
+  // The test code that produced the current rows — anchors the report value
+  // column and is forwarded to the preview / PDF routes (the fragment ignores it).
+  const [searchedTestCode, setSearchedTestCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
   const [pending, startTransition] = useTransition();
@@ -64,19 +82,19 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
     setSelected(null);
     setSelectedSids(new Set());
     setBulkError(null);
+    const testCode = testId === '' ? '' : testCache.get(testId)?.code ?? '';
     startTransition(async () => {
       try {
         const result = await searchReports({
           from,
           to,
-          panel,
+          testCode,
           clientCode,
           businessUnit,
-          sid,
-          pid,
-          patientName,
+          status,
+          q,
         });
-        setSearchedPanel(panel);
+        setSearchedTestCode(testCode);
         setRows(result);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Search failed.');
@@ -120,7 +138,7 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
       .filter((r) => selectedSids.has(r.sid))
       .map((r) => ({
         sid: r.sid,
-        panel: searchedPanel,
+        panel: searchedTestCode,
         date: r.dateHint,
         patientName: r.patientName,
       }));
@@ -167,24 +185,55 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
           runSearch();
         }}
       >
-        <Field label="From">
-          <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-        </Field>
-        <Field label="To">
-          <Input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
-        </Field>
-        <Field label="Test filter">
+        {/* From + To share one cell (each half-width). */}
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="From">
+            <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+          </Field>
+          <Field label="To">
+            <Input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Status">
           <select
-            value={panel}
-            onChange={(e) => setPanel(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={SELECT_CLASS}
           >
-            {REPORT_FILTERS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
+            <option value="">All statuses</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>
+                {s}
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="Test filter">
+          <RemoteCombobox
+            value={testId}
+            onChange={(id) => setTestId(id)}
+            search={async (query) => {
+              const items = await searchReportTests(query);
+              setTestCache((prev) => {
+                const m = new Map(prev);
+                for (const it of items) m.set(it.id, { code: it.code, name: it.name });
+                return m;
+              });
+              return items;
+            }}
+            getSelectedLabel={(id) => {
+              const it = testCache.get(id);
+              return it ? `${it.name ?? it.code} (${it.code})` : undefined;
+            }}
+            placeholder="All tests — type to filter…"
+          />
+        </Field>
+        <Field label="Search">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Patient, SID, PID, test name/code…"
+          />
         </Field>
         <Field label="Client code">
           <Input
@@ -194,35 +243,18 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
           />
         </Field>
         <Field label="Business unit">
-          <Input
-            list="reporting-bu-list"
+          <select
             value={businessUnit}
             onChange={(e) => setBusinessUnit(e.target.value)}
-            placeholder="All"
-          />
-          <datalist id="reporting-bu-list">
+            className={SELECT_CLASS}
+          >
+            <option value="">All business units</option>
             {businessUnits.map((bu) => (
-              <option key={bu} value={bu} />
+              <option key={bu} value={bu}>
+                {bu}
+              </option>
             ))}
-          </datalist>
-        </Field>
-        <Field label="SID">
-          <Input value={sid} onChange={(e) => setSid(e.target.value)} placeholder="Sample ID" />
-        </Field>
-        <Field label="PID">
-          <Input
-            value={pid}
-            onChange={(e) => setPid(e.target.value)}
-            inputMode="numeric"
-            placeholder="Patient ID"
-          />
-        </Field>
-        <Field label="Patient name">
-          <Input
-            value={patientName}
-            onChange={(e) => setPatientName(e.target.value)}
-            placeholder="Partial match"
-          />
+          </select>
         </Field>
         <div className="flex items-end sm:col-span-2 lg:col-span-4">
           <Button type="submit" disabled={pending} className="gap-1.5">
@@ -345,7 +377,7 @@ export function ReportingView({ businessUnits }: { businessUnits: string[] }) {
       {selected && (
         <ReportPreview
           sid={selected.sid}
-          panel={searchedPanel}
+          panel={searchedTestCode}
           date={selected.dateHint}
           patientName={selected.patientName}
           onClose={() => setSelected(null)}

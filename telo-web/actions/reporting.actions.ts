@@ -3,18 +3,20 @@
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getWorksheetReports } from '@/lib/listec';
-import { getFilter } from '@/lib/report/panels';
+import type { WorksheetReportRow } from '@/lib/listec.types';
+import { loadCatalog, filterCatalog } from '@/db/read/catalog';
 
 export interface ReportSearchFilters {
   from: string; // YYYY-MM-DD
   to: string; // YYYY-MM-DD
-  /** Test-filter id (see lib/report/panels.ts); 'all' = any test. */
-  panel?: string;
+  /** Test/profile code to narrow the SID search by (''/undefined = any). */
+  testCode?: string;
   clientCode?: string;
   businessUnit?: string;
-  sid?: string;
-  pid?: string;
-  patientName?: string;
+  /** Exact status name to keep (from the LIS status lookups); '' = any. */
+  status?: string;
+  /** Universal query — patient name, SID, PID, test name/code, etc. */
+  q?: string;
 }
 
 /** One row in the Reporting results table (one sample). */
@@ -42,6 +44,13 @@ export interface ReportSearchRow {
   ready: boolean;
 }
 
+/** A test/profile option for the Reporting test-filter picker. */
+export interface ReportTestOption {
+  id: number;
+  code: string;
+  name: string | null;
+}
+
 /** YYYY-MM-DD from a date-ish string, or null. */
 function ymdFrom(v: string | null): string | null {
   if (!v) return null;
@@ -62,11 +71,75 @@ function ageGenderLabel(
   return `${a} / ${g}`;
 }
 
+/** Map a worksheet row → result row; resolve the anchor test's headline value. */
+function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
+  let value: string | null = null;
+  let unit: string | null = null;
+  let abnormal = false;
+  if (anchor) {
+    const t = r.results.find(
+      (x) => (x.test_code ?? '').trim().toUpperCase() === anchor,
+    );
+    if (t) {
+      value = t.value;
+      unit = t.unit;
+      abnormal = t.abnormal;
+    }
+  }
+  return {
+    sid: r.sid,
+    pid: r.pid,
+    patientName: r.patient_name,
+    ageGender: ageGenderLabel(r.age, r.age_unit, r.sex),
+    clientCode: r.client_code,
+    businessUnit: r.business_unit,
+    collectedAt: r.sample_drawn,
+    reportedAt: r.last_modified_at,
+    status: r.status,
+    value,
+    unit,
+    abnormal,
+    testNames: r.test_names_csv,
+    dateHint:
+      ymdFrom(r.sample_drawn) ??
+      ymdFrom(r.last_modified_at) ??
+      ymdFrom(r.regd_at),
+    ready: r.results.length > 0 && r.results.every((t) => t.authorized),
+  };
+}
+
+/** Does the worksheet row match the universal query (case-insensitive)? */
+function rowMatchesQuery(r: WorksheetReportRow, qLower: string): boolean {
+  const hay: (string | null | undefined)[] = [
+    r.patient_name,
+    r.sid,
+    String(r.pid ?? ''),
+    r.client_code,
+    r.business_unit,
+    r.test_names_csv,
+    r.bill_number,
+  ];
+  for (const h of hay) {
+    if (h && h.toLowerCase().includes(qLower)) return true;
+  }
+  for (const t of r.results) {
+    if (
+      (t.test_code ?? '').toLowerCase().includes(qLower) ||
+      (t.test_name ?? '').toLowerCase().includes(qLower)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Search samples for the Reporting tab. Gated to `report:view` (super admin
- * only today). The selected filter optionally narrows by a representative test
- * code; 'all' returns every sample in range. The generated report always shows
- * the full sample — this only finds the SID.
+ * Search samples for the Reporting tab. Gated to `report:view`. The optional
+ * `testCode` narrows to samples carrying that test/profile (and surfaces the
+ * test's headline value); `q` is a universal search — routed server-side
+ * (digits → SID/bill#, text → patient name/MRN) AND matched across the loaded
+ * date-range window (patient/SID/PID/client/BU/test name+code). The generated
+ * report always shows the full sample — this only finds the SID.
  */
 export async function searchReports(
   filters: ReportSearchFilters,
@@ -76,64 +149,67 @@ export async function searchReports(
     throw new Error('Not authorised to view reports.');
   }
 
-  const filter = getFilter(filters.panel);
-  const anchor = filter.testCode.trim().toUpperCase();
+  const anchor = (filters.testCode ?? '').trim().toUpperCase();
+  const q = (filters.q ?? '').trim();
+  const statusSel = (filters.status ?? '').trim().toLowerCase();
+  const passesStatus = (row: ReportSearchRow) =>
+    !statusSel || (row.status ?? '').trim().toLowerCase() === statusSel;
 
-  const pidNum =
-    filters.pid && /^\d+$/.test(filters.pid.trim())
-      ? Number(filters.pid.trim())
-      : null;
-
-  const rows = await getWorksheetReports({
+  // Shared scope filters applied to every fetch.
+  const base = {
     fromDate: filters.from,
     toDate: filters.to,
     clientCode: filters.clientCode?.trim() || null,
     businessUnit: filters.businessUnit?.trim() || null,
-    sid: filters.sid?.trim() || null,
-    pid: pidNum,
-    patientName: filters.patientName?.trim() || null,
     testCode: anchor || null,
+  };
+
+  // No universal query → plain date-range list (today's behaviour).
+  if (!q) {
+    const rows = await getWorksheetReports({ ...base, pageSize: 500 });
+    return rows.map((r) => mapRow(r, anchor)).filter(passesStatus);
+  }
+
+  const numeric = /^\d+$/.test(q);
+  const qLower = q.toLowerCase();
+
+  // (a) Precise, unbounded server fetch routed by query shape.
+  const routedPromise = getWorksheetReports({
+    ...base,
+    ...(numeric ? { sid: q } : { patientName: q }),
     pageSize: 500,
   });
+  // (b) Broad date-range window, filtered in-process across every field so test
+  //     name / code / PID also match (bounded to this window).
+  const windowPromise = getWorksheetReports({ ...base, pageSize: 1000 });
 
-  const out: ReportSearchRow[] = [];
-  for (const r of rows) {
-    // When a specific test is filtered, surface its value; only keep samples
-    // that actually carry it. When 'all', show the sample's test list instead.
-    let value: string | null = null;
-    let unit: string | null = null;
-    let abnormal = false;
-    if (anchor) {
-      const t = r.results.find(
-        (x) => (x.test_code ?? '').trim().toUpperCase() === anchor,
-      );
-      if (!t) continue;
-      value = t.value;
-      unit = t.unit;
-      abnormal = t.abnormal;
-    }
-    out.push({
-      sid: r.sid,
-      pid: r.pid,
-      patientName: r.patient_name,
-      ageGender: ageGenderLabel(r.age, r.age_unit, r.sex),
-      clientCode: r.client_code,
-      businessUnit: r.business_unit,
-      collectedAt: r.sample_drawn,
-      reportedAt: r.last_modified_at,
-      status: r.status,
-      value,
-      unit,
-      abnormal,
-      testNames: r.test_names_csv,
-      dateHint:
-        ymdFrom(r.sample_drawn) ??
-        ymdFrom(r.last_modified_at) ??
-        ymdFrom(r.regd_at),
-      // Ready = report finalised: has results and every one is authorised.
-      // Centralised here so the bulk-download gate has a single source of truth.
-      ready: r.results.length > 0 && r.results.every((t) => t.authorized),
-    });
+  const [routed, windowRows] = await Promise.all([routedPromise, windowPromise]);
+
+  // Union by sid; routed (precise) first, then window cross-field matches.
+  const bySid = new Map<string, ReportSearchRow>();
+  for (const r of routed) {
+    if (!bySid.has(r.sid)) bySid.set(r.sid, mapRow(r, anchor));
   }
-  return out;
+  for (const r of windowRows) {
+    if (bySid.has(r.sid)) continue;
+    if (rowMatchesQuery(r, qLower)) bySid.set(r.sid, mapRow(r, anchor));
+  }
+
+  return Array.from(bySid.values()).filter(passesStatus).slice(0, 500);
+}
+
+/**
+ * Type-ahead over the test + profile catalog for the Reporting test filter.
+ * Gated to `report:view` (Reporting is super-admin today). Returns up to 30
+ * matches; profiles/masters are suffixed so they read distinctly in the list.
+ */
+export async function searchReportTests(q: string): Promise<ReportTestOption[]> {
+  const user = await requireSession();
+  if (!hasCapability(user.caps, 'report:view')) return [];
+  const all = await loadCatalog();
+  return filterCatalog(all, q, 'all', 30).map((i) => ({
+    id: i.id,
+    code: i.code,
+    name: i.kind === 'test' ? i.name : `${i.name} · ${i.kind}`,
+  }));
 }

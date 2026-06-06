@@ -32,7 +32,10 @@ export default async function ReportingPage() {
           letterhead.
         </p>
       </div>
-      <ReportingView businessUnits={lookups.businessUnits ?? []} />
+      <ReportingView
+        businessUnits={lookups.businessUnits ?? []}
+        statuses={lookups.statuses ?? []}
+      />
     </div>
   );
 }
