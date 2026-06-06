@@ -22,6 +22,7 @@ type AuditEvent =
   | { kind: 'admin.user.lis_access'; actor: number; target: number; enabled: boolean }
   | { kind: 'admin.user.mrp_only'; actor: number; target: number; enabled: boolean }
   | { kind: 'admin.profile_interpretation.save'; actor: number; target: number }
+  | { kind: 'patient.info.update'; actor: number; billId: number }
   // Emitted by the auth() session callback when a request's JWT carries an
   // older session_version than the live one — the session is then dropped
   // (forcing re-login). Captures both versions for ops correlation.

@@ -44,6 +44,8 @@ export interface OrderReceipt {
 
 export interface OrderDetail extends OrderSummary {
   age: number | null;
+  /** Age unit: 1 Years, 2 Months, 3 Days (tbl_billing_patient_detail.age_type). */
+  ageType: number | null;
   gender: number | null;
   mobile: string | null;
   email: string | null;
@@ -209,6 +211,7 @@ export async function getOrder(
       amount: number;
       balance: number;
       age: number | null;
+      ageType: string | null;
       gender: number | null;
       mobile: string | null;
       email: string | null;
@@ -226,7 +229,7 @@ export async function getOrder(
       SELECT b.id AS billId, b.bill_number AS billNumber,
              b.bill_date AS billDate, b.patientname AS patientName,
              b.mcc_code AS mccCode, b.amount AS amount, b.Balance AS balance,
-             b.age, b.gender, b.mobile_number AS mobile, b.email,
+             b.age, b.age_type AS ageType, b.gender, b.mobile_number AS mobile, b.email,
              b.payment_type AS paymentType,
              d.doctor_name AS refDoctorName,
              c.customer_name AS refCustomerName,
@@ -367,6 +370,11 @@ export async function getOrder(
       amount: Number(h.amount ?? 0),
       balance: Number(h.balance ?? 0),
       age: h.age,
+      // age_type is stored VARCHAR on the bill — parse to int (1/2/3).
+      ageType:
+        h.ageType != null && /^\d+$/.test(String(h.ageType).trim())
+          ? Number(String(h.ageType).trim())
+          : null,
       gender: h.gender,
       mobile: h.mobile,
       email: h.email?.trim() || null,

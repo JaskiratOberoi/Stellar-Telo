@@ -8,6 +8,7 @@ import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { RecordPaymentForm } from '@/components/payment/record-payment';
 import { RecordRefundForm } from '@/components/payment/record-refund';
 import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-button';
+import { EditPatientInfo } from '@/components/orders/edit-patient-info';
 import { fmtIST } from '@/lib/datetime';
 import type { Capability } from '@/types/auth';
 import {
@@ -53,6 +54,8 @@ export default async function OrderReceiptPage({
   const user = await requireSession();
   const scope = await getMccScope(user.uid);
   const canViewBill = hasCapability(user.caps, 'bill:view');
+  // `user:manage` is super-admin-exclusive — gates the patient-info editor.
+  const isSuperAdmin = hasCapability(user.caps, 'user:manage');
   return (
     <ReceiptBody
       billId={billId}
@@ -60,6 +63,7 @@ export default async function OrderReceiptPage({
       scope={scope}
       canViewBill={canViewBill}
       caps={user.caps}
+      isSuperAdmin={isSuperAdmin}
     />
   );
 }
@@ -70,12 +74,14 @@ async function ReceiptBody({
   scope,
   canViewBill,
   caps,
+  isSuperAdmin,
 }: {
   billId: number;
   back: string | undefined;
   scope: number[];
   canViewBill: boolean;
   caps: Capability[];
+  isSuperAdmin: boolean;
 }) {
   const orderRaw = await getOrder(billId, scope);
   if (!orderRaw) notFound();
@@ -170,10 +176,21 @@ async function ReceiptBody({
       {/* Top row: Patient (narrow) + Samples (wide) */}
       <div className="grid gap-4 lg:grid-cols-12">
         <Card className="lg:col-span-4">
-          <CardHeader className="p-4 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 p-4 pb-2">
             <CardTitle className="text-base">
               {order.patientName ?? 'Patient'}
             </CardTitle>
+            {isSuperAdmin && (
+              <EditPatientInfo
+                billId={order.billId}
+                patientName={order.patientName}
+                age={order.age}
+                ageType={order.ageType}
+                gender={order.gender}
+                mobile={order.mobile}
+                email={order.email}
+              />
+            )}
           </CardHeader>
           <CardContent className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 p-4 pt-0 text-sm">
             <span className="text-muted-foreground">Date</span>
