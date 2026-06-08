@@ -15,6 +15,7 @@ import { MccBalanceFilters } from '@/components/balances/mcc-balance-filters';
 import { BalancesBillsTable } from '@/components/balances/balances-bills-table';
 import { BalanceViewTabs } from '@/components/balances/balance-view-tabs';
 import { PrintReportButton } from '@/components/balances/print-report-button';
+import { ExportBillsButton } from '@/components/balances/export-bills-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,6 +148,10 @@ export default async function BalanceMccPage({
           {showBackLink && (
             <BalanceViewTabs mccId={mccId} from={from} to={to} active="bills" />
           )}
+          <ExportBillsButton
+            bills={data.bills}
+            fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.csv`}
+          />
           <PrintReportButton />
           {showBackLink && (
             <Link href={backHref} className="text-sm underline">
