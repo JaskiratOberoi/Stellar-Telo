@@ -155,17 +155,23 @@ export async function searchReports(
   const passesStatus = (row: ReportSearchRow) =>
     !statusSel || (row.status ?? '').trim().toLowerCase() === statusSel;
 
-  // A report (or partial report) can only be released for AUTHORISED tests.
-  // Samples with no authorised result yet — Registered, Tested, Partially
-  // Tested, Pending — are never shown here. A partially-authorised sample (at
-  // least one authorised result) stays, so its partial report can be released.
+  // A report (or partial report) can only be released once results are
+  // authorised. Show ONLY samples whose LIS status indicates authorisation or
+  // printing has happened — AUTHORIZED, PARTIALLY AUTHORIZED, PRINTED, PARTIALLY
+  // PRINTED. Everything pre-authorisation (SAMPLE REGISTERED, SAMPLE SENT,
+  // PARTIALLY TESTED, TESTED, PENDING, REJECTED) is hidden.
   //
-  // TODO(pre-prod, ~next week): a partially-authorised sample's generated PDF
-  // still includes its not-yet-authorised tests — getSampleReport() returns all
-  // result rows. Exclude unauthorised tests from the report before prod. See the
-  // detailed note above getSampleReport in db/read/sampleReport.ts.
-  const hasAuthorisedResult = (r: WorksheetReportRow) =>
-    r.results.some((t) => t.authorized);
+  // NB: do NOT gate on per-result `authorized` — every profile's Head/title row
+  // carries auth=true even on a wholly-untested sample, so `results.some(
+  // authorized)` is true for almost everything. The sample STATUS is the
+  // reliable releasable signal.
+  //
+  // TODO(pre-prod, ~next week): a PARTIALLY-authorised/printed sample's generated
+  // PDF still includes its not-yet-authorised tests — getSampleReport() returns
+  // all result rows. Exclude unauthorised tests from the report before prod. See
+  // the detailed note above getSampleReport in db/read/sampleReport.ts.
+  const isReleasable = (r: WorksheetReportRow) =>
+    /(authoriz|authoris|print)/i.test(r.status ?? '');
 
   // Shared scope filters applied to every fetch.
   const base = {
@@ -180,7 +186,7 @@ export async function searchReports(
   if (!q) {
     const rows = await getWorksheetReports({ ...base, pageSize: 500 });
     return rows
-      .filter(hasAuthorisedResult)
+      .filter(isReleasable)
       .map((r) => mapRow(r, anchor))
       .filter(passesStatus);
   }
@@ -203,12 +209,12 @@ export async function searchReports(
   // Union by sid; routed (precise) first, then window cross-field matches.
   const bySid = new Map<string, ReportSearchRow>();
   for (const r of routed) {
-    if (!hasAuthorisedResult(r)) continue;
+    if (!isReleasable(r)) continue;
     if (!bySid.has(r.sid)) bySid.set(r.sid, mapRow(r, anchor));
   }
   for (const r of windowRows) {
     if (bySid.has(r.sid)) continue;
-    if (!hasAuthorisedResult(r)) continue;
+    if (!isReleasable(r)) continue;
     if (rowMatchesQuery(r, qLower)) bySid.set(r.sid, mapRow(r, anchor));
   }
 

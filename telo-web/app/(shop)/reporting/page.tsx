@@ -23,6 +23,13 @@ export default async function ReportingPage() {
     departments: [],
   }));
 
+  // Reporting only ever shows releasable samples (authorised / printed — see
+  // searchReports.isReleasable), so the status filter must only offer those;
+  // the pre-authorisation statuses would always yield an empty list.
+  const releasableStatuses = (lookups.statuses ?? []).filter((s) =>
+    /(authoriz|authoris|print)/i.test(s),
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -34,7 +41,7 @@ export default async function ReportingPage() {
       </div>
       <ReportingView
         businessUnits={lookups.businessUnits ?? []}
-        statuses={lookups.statuses ?? []}
+        statuses={releasableStatuses}
       />
     </div>
   );
