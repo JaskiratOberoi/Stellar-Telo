@@ -155,6 +155,13 @@ export async function searchReports(
   const passesStatus = (row: ReportSearchRow) =>
     !statusSel || (row.status ?? '').trim().toLowerCase() === statusSel;
 
+  // A report (or partial report) can only be released for AUTHORISED tests.
+  // Samples with no authorised result yet — Registered, Tested, Partially
+  // Tested, Pending — are never shown here. A partially-authorised sample (at
+  // least one authorised result) stays, so its partial report can be released.
+  const hasAuthorisedResult = (r: WorksheetReportRow) =>
+    r.results.some((t) => t.authorized);
+
   // Shared scope filters applied to every fetch.
   const base = {
     fromDate: filters.from,
@@ -167,7 +174,10 @@ export async function searchReports(
   // No universal query → plain date-range list (today's behaviour).
   if (!q) {
     const rows = await getWorksheetReports({ ...base, pageSize: 500 });
-    return rows.map((r) => mapRow(r, anchor)).filter(passesStatus);
+    return rows
+      .filter(hasAuthorisedResult)
+      .map((r) => mapRow(r, anchor))
+      .filter(passesStatus);
   }
 
   const numeric = /^\d+$/.test(q);
@@ -188,10 +198,12 @@ export async function searchReports(
   // Union by sid; routed (precise) first, then window cross-field matches.
   const bySid = new Map<string, ReportSearchRow>();
   for (const r of routed) {
+    if (!hasAuthorisedResult(r)) continue;
     if (!bySid.has(r.sid)) bySid.set(r.sid, mapRow(r, anchor));
   }
   for (const r of windowRows) {
     if (bySid.has(r.sid)) continue;
+    if (!hasAuthorisedResult(r)) continue;
     if (rowMatchesQuery(r, qLower)) bySid.set(r.sid, mapRow(r, anchor));
   }
 
