@@ -368,7 +368,7 @@ export function LabReport({ data }: { data: LabReportData }) {
   };
 
   const deptBandCls =
-    'bg-gray-100 px-2 py-1 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]';
+    'bg-gray-100 px-2 py-0.5 text-center text-[11px] font-bold uppercase tracking-wide text-[#2b2b6b]';
   const endMarker = (
     <tr>
       <td colSpan={5} className="pt-3 text-center text-[10px] font-semibold tracking-wide text-gray-600">
@@ -406,17 +406,14 @@ export function LabReport({ data }: { data: LabReportData }) {
            the page (margin-top:auto inside a page-height min-height). Each
            profile gets its own page via break-before. */
         sections.map((sec, si) => {
-          // Pagination fix (the "blank page" bug): the patient header lives in
-          // the table's <thead>, NOT as a separate block above it. Reason: a
-          // section's results <table> alone is often shorter than a page, so when
-          // the header pushes it past the page boundary Chromium moves the WHOLE
-          // table to the next page (it fits there) — stranding the header on one
-          // page and the footer on another. By folding the header into the table,
-          // the table becomes header+results (taller than a page) and is FORCED
-          // to fragment at row boundaries instead. <thead> also repeats the
-          // demographics atop each continuation page (as the LIS does), and the
-          // mt-auto footer still pins to the bottom on short single-page sections.
-          const body = (
+          // Each section is a self-contained <table>: the patient header is in
+          // <thead> and the signature/footer block is in <tfoot>, so BOTH repeat
+          // on every page the section spans. <tfoot> (table-footer-group) pins to
+          // the bottom of every FULL page — so a multi-page section keeps its
+          // signatures on page 1 (not stranded on the last page) — while the
+          // header-in-<thead> avoids the stranded-table / blank-page bug. (On a
+          // short LAST page the footer sits just under the final rows.)
+          const sectionTable = (
             <table className="w-full table-fixed border-collapse">
               <ReportColgroup />
               <thead>
@@ -431,6 +428,13 @@ export function LabReport({ data }: { data: LabReportData }) {
                 </tr>
                 <ColumnHeaderRow />
               </thead>
+              <tfoot>
+                <tr>
+                  <td colSpan={5} className="p-0 align-bottom">
+                    <ReportFooterBlock data={data} />
+                  </td>
+                </tr>
+              </tfoot>
               <tbody>
                 <tr>
                   <td colSpan={5} className={deptBandCls}>
@@ -442,20 +446,11 @@ export function LabReport({ data }: { data: LabReportData }) {
               </tbody>
             </table>
           );
-          const footer = (
-            <div className="mt-auto">
-              <ReportFooterBlock data={data} />
-            </div>
-          );
-          // PDF: printable-height flex column + a real page break.
+          // PDF: each section starts on a new page.
           if (!previewSheets) {
             return (
-              <div
-                key={si}
-                className={`flex min-h-[237mm] flex-col ${si > 0 ? '[break-before:page]' : ''}`}
-              >
-                {body}
-                {footer}
+              <div key={si} className={si > 0 ? '[break-before:page]' : ''}>
+                {sectionTable}
               </div>
             );
           }
@@ -464,7 +459,7 @@ export function LabReport({ data }: { data: LabReportData }) {
           return (
             <div
               key={si}
-              className="relative mb-6 flex min-h-[270mm] w-full flex-col rounded-sm border border-gray-300 bg-white px-[10mm] py-[8mm] shadow-md"
+              className="relative mb-6 min-h-[270mm] w-full rounded-sm border border-gray-300 bg-white px-[10mm] py-[8mm] shadow-md"
             >
               <span className="pointer-events-none absolute right-2 top-2 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-500">
                 Page {si + 1} of {sections.length}
@@ -473,8 +468,7 @@ export function LabReport({ data }: { data: LabReportData }) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
               </div>
-              {body}
-              {footer}
+              {sectionTable}
             </div>
           );
         })
@@ -537,11 +531,11 @@ function ReportColgroup() {
 function ColumnHeaderRow() {
   return (
     <tr className="border-b border-gray-400 text-[12px]">
-      <th className="py-1 pr-3 text-left font-semibold">Test Name</th>
-      <th className="py-1 pr-3 text-left font-semibold">Value</th>
-      <th className="py-1 pr-3 text-left font-semibold">Unit</th>
-      <th className="py-1 pr-3 text-left font-semibold">Biological Ref Interval</th>
-      <th className="py-1 text-left font-semibold">Method</th>
+      <th className="py-0.5 pr-3 text-left font-semibold">Test Name</th>
+      <th className="py-0.5 pr-3 text-left font-semibold">Value</th>
+      <th className="py-0.5 pr-3 text-left font-semibold">Unit</th>
+      <th className="py-0.5 pr-3 text-left font-semibold">Biological Ref Interval</th>
+      <th className="py-0.5 text-left font-semibold">Method</th>
     </tr>
   );
 }
@@ -564,8 +558,8 @@ function PatientMetaBlock({
     <>
       {/* Demographics + "Collected at" + clinical history form one header block,
           closed by a single rule that marks the end of the pseudo-header. */}
-      <div className="border-b border-gray-300 pb-2">
-        <div className="grid grid-cols-2 gap-x-10 gap-y-0.5">
+      <div className="border-b border-gray-300 pb-1">
+        <div className="grid grid-cols-2 gap-x-10 gap-y-0">
           <Meta label="Name" value={data.patientName ?? '—'} strong />
           <Meta label="Age / Gender" value={`${ageLabel(data.age, data.ageUnit)} / ${genderLabel(data.sex)}`} />
           <Meta label="SID" value={data.sid} mono strong />
@@ -646,7 +640,7 @@ function ReportFooterBlock({ data }: { data: LabReportData }) {
       <img
         src={s.signatureDataUrl ?? `/api/reporting/signature/${s.id}`}
         alt={s.doctorName ?? 'Signature'}
-        className="mb-0.5 mx-auto h-9 w-auto object-contain"
+        className="mb-0.5 mx-auto h-8 w-auto object-contain"
       />
       <p className="font-semibold leading-tight">{s.doctorName ?? ''}</p>
       {s.designation && <p className="leading-tight text-gray-600">{s.designation}</p>}
@@ -656,7 +650,7 @@ function ReportFooterBlock({ data }: { data: LabReportData }) {
   return (
     <>
       {(signers.length > 0 || data.qrDataUrl) && (
-        <div className="flex items-end gap-4 pt-3 [break-inside:avoid]">
+        <div className="flex items-end gap-4 pt-1.5 [break-inside:avoid]">
           <div className="flex flex-1 items-end justify-start gap-6">{left.map(Sig)}</div>
           {data.qrDataUrl && (
             <div className="shrink-0 text-center text-[8px] text-gray-500 [break-inside:avoid]">
@@ -664,7 +658,7 @@ function ReportFooterBlock({ data }: { data: LabReportData }) {
               <img
                 src={data.qrDataUrl}
                 alt="Scan to download / verify this report"
-                className="mx-auto h-16 w-16"
+                className="mx-auto h-12 w-12"
               />
               <p className="mt-0.5 leading-tight">Scan to verify</p>
             </div>
@@ -672,7 +666,7 @@ function ReportFooterBlock({ data }: { data: LabReportData }) {
           <div className="flex flex-1 items-end justify-end gap-6">{right.map(Sig)}</div>
         </div>
       )}
-      <div className="mt-2 border-t border-gray-300 pt-1.5 text-[9px] text-gray-500">
+      <div className="mt-1 border-t border-gray-300 pt-1 text-[9px] text-gray-500">
         {processedAtLine && (
           <p>
             <span className="font-semibold">Processed at:</span> {processedAtLine}
@@ -865,7 +859,7 @@ function GroupBlock({
   return (
     <>
       <tr className={`[break-inside:avoid] ${dim}`}>
-        <td colSpan={5} className={`pt-2 align-top ${indent ? 'pl-4' : ''}`}>
+        <td colSpan={5} className={`pt-0.5 align-top ${indent ? 'pl-4' : ''}`}>
           <span className="flex items-start gap-1.5">
             {interactive && (
               <IncludeToggle
@@ -957,20 +951,20 @@ function ResultRow({
   return (
     <>
       <tr className={`align-top ${dimClass}`}>
-        <td className={`py-1 pr-3 ${indentClass ?? ''}`}>
+        <td className={`py-0.5 pr-3 ${indentClass ?? ''}`}>
           <div className="flex items-start gap-1.5">
             {lead}
             <div className="text-[12px] font-medium">{row.name ?? '—'}</div>
           </div>
         </td>
-        <td className="py-1 pr-3">
+        <td className="py-0.5 pr-3">
           <span className={row.abnormal ? 'text-[13px] font-bold text-red-700' : ''}>{row.value ?? '—'}</span>
         </td>
-        <td className="py-1 pr-3">{row.unit ?? '—'}</td>
-        <td className="whitespace-pre-line py-1 text-[10px] leading-snug text-gray-700">
+        <td className="py-0.5 pr-3">{row.unit ?? '—'}</td>
+        <td className="whitespace-pre-line py-0.5 text-[10px] leading-tight text-gray-700">
           {formatRange(row.range)}
         </td>
-        <td className="py-1 text-[9px] leading-snug text-gray-600">{row.method ?? '—'}</td>
+        <td className="py-0.5 text-[8px] leading-tight text-gray-600">{row.method ?? '—'}</td>
       </tr>
       {row.comments && (
         <tr className={dimClass}>
