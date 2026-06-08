@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -38,6 +39,13 @@ export function ReportPreview({
     remaining: 0,
   });
   const nothingSelected = report.total > 0 && report.remaining === 0;
+
+  // Render via a portal to <body> so the modal escapes the page's <main
+  // class="relative z-10"> stacking context — otherwise the sticky navbar
+  // (z-40) paints over the modal even though the modal is z-50, because main's
+  // z-10 caps everything inside it below the navbar. Mounted-gate for SSR.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Close on Escape; lock background scroll while the modal is open.
   useEffect(() => {
@@ -112,7 +120,9 @@ export function ReportPreview({
     }
   }
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-6"
       onClick={onClose}
@@ -166,6 +176,7 @@ export function ReportPreview({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
