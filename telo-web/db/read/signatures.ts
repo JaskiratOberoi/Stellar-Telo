@@ -157,3 +157,77 @@ export async function getSignatureBytes(
   if (!envelope) return null;
   return { mime: envelope.mime, bytes: Buffer.from(envelope.bytesB64, 'base64') };
 }
+
+/** A report signatory with its signature image already inlined as a data-URI. */
+export interface InlineSigner {
+  id: number;
+  doctorName: string | null;
+  designation: string | null;
+  signatureDataUrl: string | null;
+}
+
+/**
+ * LIS-faithful fallback signatories. When a report's business unit has no
+ * signatories of its own (tbl_med_signature_master has no usable rows for it),
+ * the LIS report SP (GET_PATIENT_REPORT_VAIL_ID) falls back to the
+ * `Department_View_Sign` view — which gives each department its default PRIMARY
+ * (Expr1/Expr2/Expr3) and SECONDARY (Doctorname/Designation/Signature) doctor +
+ * signature image (the head-office signatories). We read the SAME view,
+ * restricted to the report's departments, so e.g. a Microbiology report gets
+ * Dr KD Gandhi while Biochemistry/Serology get Dr Jasneet Kaur — exactly as the
+ * LIS export does. Returns up to 3 distinct signers (primaries then secondaries)
+ * with the image inlined (so it renders on the public/token softcopy too).
+ */
+export async function getDefaultSigners(
+  departmentNames: string[],
+): Promise<InlineSigner[]> {
+  const names = [...new Set(departmentNames.map((d) => d.trim()).filter(Boolean))];
+  if (names.length === 0) return [];
+  const key = `telo:report:default-signers:${names
+    .map((n) => n.toLowerCase())
+    .sort()
+    .join('|')}`;
+  return cached<InlineSigner[]>(key, 60 * 60, () =>
+    withRetry(async () => {
+      const pool = await getPool();
+      const req = pool.request();
+      const params = names.map((n, i) => {
+        req.input(`d${i}`, sql.NVarChar(200), n);
+        return `@d${i}`;
+      });
+      const r = await req.query<{
+        pName: string | null;
+        pDesig: string | null;
+        pSig: Buffer | null;
+        sName: string | null;
+        sDesig: string | null;
+        sSig: Buffer | null;
+      }>(`
+        SELECT Expr1 AS pName, Expr2 AS pDesig, Expr3 AS pSig,
+               Doctorname AS sName, Designation AS sDesig, Signature AS sSig
+        FROM dbo.Department_View_Sign
+        WHERE Name IN (${params.join(',')})
+      `);
+      const out: InlineSigner[] = [];
+      const seen = new Set<string>();
+      let synthId = -1;
+      const add = (name: string | null, desig: string | null, sig: Buffer | null) => {
+        const nm = (name ?? '').trim();
+        const k = nm.toLowerCase();
+        if (!nm || !sig || sig.length === 0 || seen.has(k)) return;
+        seen.add(k);
+        out.push({
+          id: synthId--,
+          doctorName: nm,
+          designation: desig?.trim() || null,
+          signatureDataUrl: `data:${sniffMime(sig)};base64,${sig.toString('base64')}`,
+        });
+      };
+      // Primary signatories first (left of the QR), then secondary (right) —
+      // mirrors the DOC_TYPE 1 → 2 ordering used for configured signers.
+      for (const x of r.recordset) add(x.pName, x.pDesig, x.pSig);
+      for (const x of r.recordset) add(x.sName, x.sDesig, x.sSig);
+      return out.slice(0, 3);
+    }),
+  );
+}

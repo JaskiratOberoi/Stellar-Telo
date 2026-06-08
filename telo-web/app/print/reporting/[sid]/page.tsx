@@ -6,6 +6,7 @@ import {
   resolveBusinessUnit,
   getSignersForBusinessUnit,
   getSignatureBytes,
+  getDefaultSigners,
 } from '@/db/read/signatures';
 import { getReferringDoctor } from '@/db/read/refDoctor';
 import { getMccCentreByCode } from '@/db/read/mccUnits';
@@ -120,7 +121,7 @@ export default async function ReportingPrintFragment({
   const orderedSigners = [...rawSigners]
     .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
     .slice(0, 3);
-  const signers = await Promise.all(
+  const configuredSigners = await Promise.all(
     orderedSigners.map(async (s) => {
       const sig = await getSignatureBytes(s.id);
       return {
@@ -133,6 +134,14 @@ export default async function ReportingPrintFragment({
       };
     }),
   );
+  // When the report's business unit has no signatories of its own (e.g. MDCARE /
+  // MEDICARE), fall back to the LIS default signatories for this report's
+  // departments — exactly as GET_PATIENT_REPORT_VAIL_ID does via the
+  // Department_View_Sign view. Keeps the doctor signs from going missing.
+  const signers =
+    configuredSigners.length > 0
+      ? configuredSigners
+      : await getDefaultSigners(report.departments.map((d) => d.name));
 
   const data: LabReportData = {
     pdf: pdfMode,
