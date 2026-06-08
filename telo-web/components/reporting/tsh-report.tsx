@@ -377,14 +377,21 @@ export function LabReport({ data }: { data: LabReportData }) {
     </tr>
   );
 
+  // On screen (preview), split mode renders each section as a distinct page
+  // "sheet" so the pagination is visible — screen media has no real pages, so
+  // break-before:page / min-h are inert here. The PDF is a separate ?pdf=1
+  // render and is unaffected by any of this preview chrome.
+  const previewSheets = !data.pdf && data.splitByDepartment;
+
   return (
     <div
       className={`mx-auto w-full max-w-[820px] text-black font-sans text-[11px] leading-snug ${
-        data.pdf ? '' : 'bg-white p-8'
+        data.pdf ? '' : previewSheets ? 'bg-gray-200 p-4' : 'bg-white p-8'
       }`}
     >
-      {/* ── Recreated Noble letterhead (preview only) ───────────────────── */}
-      {!data.pdf && (
+      {/* ── Recreated Noble letterhead (preview only). In split preview the logo
+           is drawn atop each page sheet instead, so skip the once-at-top one. */}
+      {!data.pdf && !previewSheets && (
         <div className="mb-4 flex items-center gap-4 border-b-2 border-[#2b2b6b] pb-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-14 w-auto" />
@@ -398,32 +405,59 @@ export function LabReport({ data }: { data: LabReportData }) {
            top, results in the middle, signature/footer pinned to the bottom of
            the page (margin-top:auto inside a page-height min-height). Each
            profile gets its own page via break-before. */
-        sections.map((sec, si) => (
-          <div
-            key={si}
-            className={`flex min-h-[237mm] flex-col ${si > 0 ? '[break-before:page]' : ''}`}
-          >
-            <PatientMetaBlock data={data} interactive={interactive} totalLeaves={totalLeaves} />
-            <table className="w-full table-fixed border-collapse">
-              <ReportColgroup />
-              <thead>
-                <ColumnHeaderRow />
-              </thead>
-              <tbody>
-                <tr>
-                  <td colSpan={5} className={deptBandCls}>
-                    {sec.deptName}
-                  </td>
-                </tr>
-                {sec.entries.map((entry) => renderTopItem(entry))}
-                {si === sections.length - 1 && endMarker}
-              </tbody>
-            </table>
-            <div className="mt-auto">
-              <ReportFooterBlock data={data} />
+        sections.map((sec, si) => {
+          const inner = (
+            <>
+              <PatientMetaBlock data={data} interactive={interactive} totalLeaves={totalLeaves} />
+              <table className="w-full table-fixed border-collapse">
+                <ReportColgroup />
+                <thead>
+                  <ColumnHeaderRow />
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colSpan={5} className={deptBandCls}>
+                      {sec.deptName}
+                    </td>
+                  </tr>
+                  {sec.entries.map((entry) => renderTopItem(entry))}
+                  {si === sections.length - 1 && endMarker}
+                </tbody>
+              </table>
+              <div className="mt-auto">
+                <ReportFooterBlock data={data} />
+              </div>
+            </>
+          );
+          // PDF: printable-height flex column + a real page break (unchanged).
+          if (!previewSheets) {
+            return (
+              <div
+                key={si}
+                className={`flex min-h-[237mm] flex-col ${si > 0 ? '[break-before:page]' : ''}`}
+              >
+                {inner}
+              </div>
+            );
+          }
+          // PREVIEW: a distinct page "sheet" on a grey desk, with the letterhead
+          // logo on top and a page-number badge, so each page is visible.
+          return (
+            <div
+              key={si}
+              className="relative mb-6 flex min-h-[270mm] w-full flex-col rounded-sm border border-gray-300 bg-white px-[10mm] py-[8mm] shadow-md"
+            >
+              <span className="pointer-events-none absolute right-2 top-2 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-500">
+                Page {si + 1} of {sections.length}
+              </span>
+              <div className="mb-3 flex items-center gap-3 border-b-2 border-[#2b2b6b] pb-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
+              </div>
+              {inner}
             </div>
-          </div>
-        ))
+          );
+        })
       ) : (
         /* CONTINUOUS: one table — patient header + column headers repeat at the
            top of each page (thead), signature/footer at the end (tfoot), rows
