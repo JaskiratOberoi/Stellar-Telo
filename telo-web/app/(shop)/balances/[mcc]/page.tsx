@@ -151,7 +151,7 @@ export default async function BalanceMccPage({
           <ExportBillsButton
             bills={data.bills}
             receiptsByBill={data.receiptsByBill}
-            fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.csv`}
+            fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.xlsx`}
           />
           <PrintReportButton />
           {showBackLink && (

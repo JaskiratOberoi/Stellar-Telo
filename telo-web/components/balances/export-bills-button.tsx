@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { FileSpreadsheet } from 'lucide-react';
+import type { SheetData } from 'write-excel-file/browser';
 import { Button } from '@/components/ui/button';
 import { fmtIST } from '@/lib/datetime';
 
@@ -36,18 +38,30 @@ function ageLabel(age: number | null, ageType: number | null): string {
   return `${age}${unit}`;
 }
 
-/** Escape a CSV cell (quote when it contains a comma, quote or newline). */
-function csvCell(v: string | number | null | undefined): string {
-  const s = v == null ? '' : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const HEADERS = [
+  'Bill #',
+  'Date',
+  'Patient',
+  'PID',
+  'Ref. Doctor',
+  'Ref. Customer',
+  'Payment',
+  'Age',
+  'Amount',
+  'Discount',
+  'Paid',
+  'Balance',
+  'Txn ID(s)',
+];
+
+const COLUMN_WIDTHS = [12, 11, 26, 11, 22, 18, 10, 7, 11, 11, 11, 11, 24];
 
 /**
- * Export the (currently filtered) accounts bills to a CSV file that Excel opens
- * and edits natively — for mass corrections. Amounts are written as raw numbers
- * (no ₹/thousands separators) so they stay numeric/editable; a UTF-8 BOM keeps
- * patient names and symbols intact. Purely client-side download; no server call,
- * no data mutation.
+ * Export the (currently filtered) accounts bills to a real .xlsx workbook for
+ * mass corrections — amounts as raw numbers (editable/summable), one row per
+ * bill with its payment txn ids. The xlsx writer is dynamically imported so it
+ * only loads when the button is clicked (no impact on the rest of the bundle).
+ * Purely client-side: no server call, no data mutation.
  */
 export function ExportBillsButton({
   bills,
@@ -59,57 +73,52 @@ export function ExportBillsButton({
   receiptsByBill?: Record<number, ExportReceipt[]>;
   fileName: string;
 }) {
-  function onExport() {
-    const headers = [
-      'Bill #',
-      'Date',
-      'Patient',
-      'PID',
-      'Ref. Doctor',
-      'Ref. Customer',
-      'Payment',
-      'Age',
-      'Amount',
-      'Discount',
-      'Paid',
-      'Balance',
-      'Txn ID(s)',
-    ];
-    const rows = bills.map((b) => {
-      // Comma-join the bill's txn ids; tag refunds so corrections are unambiguous.
-      const txnIds = (receiptsByBill?.[b.billId] ?? [])
-        .filter((t) => t.txnId)
-        .map((t) => (t.kind === 'refund' ? `${t.txnId} (refund)` : t.txnId))
-        .join(', ');
-      return [
-        b.billNumber ?? b.billId,
-        b.billDate ? fmtIST(b.billDate, 'date') : '',
-        b.patientName ?? '',
-        b.patientId ?? '',
-        b.doctorName ?? '',
-        b.customerName ?? '',
-        b.paymentType ?? '',
-        ageLabel(b.age, b.ageType),
-        b.amount,
-        b.discount,
-        b.amountPaid,
-        b.balance,
-        txnIds,
-      ];
-    });
-    const csv = [headers, ...rows]
-      .map((r) => r.map(csvCell).join(','))
-      .join('\r\n');
-    // Prepend a UTF-8 BOM so Excel decodes names/symbols correctly.
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const [busy, setBusy] = useState(false);
+
+  async function onExport() {
+    if (busy || bills.length === 0) return;
+    setBusy(true);
+    try {
+      // Browser build (this is a client component); the package exposes only
+      // subpath exports, so import the browser entry explicitly.
+      const writeXlsxFile = (await import('write-excel-file/browser')).default;
+
+      const headerRow = HEADERS.map((value) => ({
+        value,
+        fontWeight: 'bold' as const,
+      }));
+
+      const dataRows = bills.map((b) => {
+        // Comma-join the bill's txn ids; tag refunds so corrections are clear.
+        const txnIds = (receiptsByBill?.[b.billId] ?? [])
+          .filter((t) => t.txnId)
+          .map((t) => (t.kind === 'refund' ? `${t.txnId} (refund)` : t.txnId))
+          .join(', ');
+        return [
+          { type: Number, value: b.billNumber ?? b.billId },
+          { type: String, value: b.billDate ? fmtIST(b.billDate, 'date') : '' },
+          { type: String, value: b.patientName ?? '' },
+          { type: Number, value: b.patientId ?? null },
+          { type: String, value: b.doctorName ?? '' },
+          { type: String, value: b.customerName ?? '' },
+          { type: String, value: b.paymentType ?? '' },
+          { type: String, value: ageLabel(b.age, b.ageType) },
+          { type: Number, value: b.amount },
+          { type: Number, value: b.discount },
+          { type: Number, value: b.amountPaid },
+          { type: Number, value: b.balance },
+          { type: String, value: txnIds },
+        ];
+      });
+
+      const data = [headerRow, ...dataRows] as SheetData;
+      // v4 API: returns { toFile, toBlob }; toFile() triggers the browser download.
+      await writeXlsxFile(data, {
+        columns: COLUMN_WIDTHS.map((width) => ({ width })),
+      }).toFile(fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -118,11 +127,11 @@ export function ExportBillsButton({
       size="sm"
       className="gap-1.5"
       onClick={onExport}
-      disabled={bills.length === 0}
-      title={bills.length === 0 ? 'No bills to export' : 'Download an editable spreadsheet'}
+      disabled={busy || bills.length === 0}
+      title={bills.length === 0 ? 'No bills to export' : 'Download an editable Excel workbook'}
     >
       <FileSpreadsheet className="h-3.5 w-3.5" />
-      Export Excel
+      {busy ? 'Exporting…' : 'Export Excel'}
     </Button>
   );
 }
