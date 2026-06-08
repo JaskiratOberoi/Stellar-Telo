@@ -236,6 +236,25 @@ export async function getSampleReport(
     };
   };
 
+  // Count coded 'Head' rows (testtype='Head' WITH a testcode) per testid. A
+  // multi-parameter test emits an empty-testcode "report name" Head followed by
+  // its real coded Head(s). When there's exactly ONE coded Head (e.g. TB Gene
+  // Xpert), the two collapse to a single group titled with the report name. When
+  // there are MULTIPLE (e.g. CBC → Automated 5 Part Analyzer / Differential
+  // Counts % / Differential Counts Absolute), each coded Head is a real
+  // sub-group and must keep its own name — so we DON'T collapse those.
+  const codedHeadCount = new Map<number, number>();
+  for (const x of raw) {
+    if (
+      (x.testtype ?? '').trim() === 'Head' &&
+      x.testid != null &&
+      x.testcode &&
+      x.testcode.trim()
+    ) {
+      codedHeadCount.set(x.testid, (codedHeadCount.get(x.testid) ?? 0) + 1);
+    }
+  }
+
   // Walk rows in report order, rebuilding groups, preserving department order.
   const deptOrder: string[] = [];
   const deptItems = new Map<string, SampleReportItem[]>();
@@ -300,19 +319,28 @@ export async function getSampleReport(
     // profile_id matches, else a standalone top-level group. Its 'Param' rows
     // (same testid) follow.
     if (type === 'Head') {
-      // A Has_Parameters test emits a report-name header row (empty testcode,
-      // = ReportTestname) immediately followed by the real Head row (same
-      // testid, with code) that the Param rows hang off — e.g. TB Gene Xpert.
-      // Collapse the duplicate into the already-open group so the title and
-      // interpretation aren't printed twice. The first row (the report name)
-      // wins the title; we keep it.
-      if (head && head.tid === x.testid && x.testid != null && head.group.rows.length === 0) {
+      // A Has_Parameters test emits an empty-testcode "report name" Head
+      // immediately followed by the real coded Head that the Param rows hang off
+      // — e.g. TB Gene Xpert. Collapse the empty Head into the next one so the
+      // title and interpretation aren't printed twice. BUT only when the test has
+      // a single coded Head: a profile with MULTIPLE coded Heads (CBC) keeps each
+      // sub-group's own name, so don't collapse those.
+      if (
+        head &&
+        head.tid === x.testid &&
+        x.testid != null &&
+        head.group.rows.length === 0 &&
+        (codedHeadCount.get(x.testid) ?? 0) <= 1
+      ) {
         continue;
       }
       const group: SampleReportGroup = {
-        // Show the report test name (what the LIS prints) in preference to the
-        // raw test name.
-        title: clean(x.reportTestName) ?? clean(x.testname),
+        // The result row already carries the right title: the empty-code Head's
+        // name IS the report name (kept for single-Head tests like TB via the
+        // collapse above), and each coded Head carries its real sub-group name
+        // (Automated 5 Part Analyzer, Differential Counts %, …). ReportTestname
+        // is NOT used — it's the parent's name and would clobber sub-groups.
+        title: clean(x.testname),
         testId: x.testid,
         method: clean(x.method),
         interpretation: cleanMultiline(x.interpretation),
