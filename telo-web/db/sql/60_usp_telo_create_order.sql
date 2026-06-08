@@ -62,7 +62,8 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     @paymentType      VARCHAR(50)    = NULL,
     @payMode          INT            = NULL,
     @receiptAmount    INT            = 0,
-    @billAtMrp        BIT            = 0
+    @billAtMrp        BIT            = 0,
+    @paymentRef       VARCHAR(100)   = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -525,11 +526,18 @@ BEGIN
         SET @txn = NULL;
         IF ISNULL(@receiptAmount,0) > 0
         BEGIN
+            -- card_number holds the operator-entered payment reference (UPI ref,
+            -- cheque no., card auth code) for non-cash payments — same column the
+            -- offline "record receipt" flow uses, so the ledger surfaces it.
             INSERT INTO dbo.tbl_billing_patient_amount_receipt
-                (bill_id, recd_date, amount, receivedby, receive_status, pay_mode)
+                (bill_id, recd_date, amount, receivedby, receive_status, pay_mode,
+                 card_number)
             VALUES
                 (@billId, GETDATE(), @receiptAmount,
-                 CONCAT(N'telo:', @userId), '1', @paymentType);
+                 CONCAT(N'telo:', @userId), '1', @paymentType,
+                 -- card_number is varchar(50); LEFT() so an over-long ref can
+                 -- never throw a truncation error and fail the whole order.
+                 LEFT(NULLIF(LTRIM(RTRIM(@paymentRef)), ''), 50));
             SET @rid = SCOPE_IDENTITY();
             SET @txn = CONCAT(
                 N'TXN',

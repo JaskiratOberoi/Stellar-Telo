@@ -57,6 +57,7 @@ type Fields = {
   paymentType: string;
   receiptAmount: string;
   discountAmount: string;
+  txnRef: string;
 };
 const DEFAULTS: Fields = {
   title: 'Mr',
@@ -70,6 +71,7 @@ const DEFAULTS: Fields = {
   paymentType: 'Cash',
   receiptAmount: '0',
   discountAmount: '0',
+  txnRef: '',
 };
 
 export function RegisterForm({
@@ -661,6 +663,28 @@ export function RegisterForm({
               )}
             </div>
           </div>
+
+          {/* Transaction reference — only for non-cash payments, recorded on the
+              receipt for later tracking (like the accounts "record payment" flow). */}
+          {f.paymentType !== 'Cash' && (
+            <div className="space-y-0.5 pt-3">
+              <Label htmlFor="txnRef">Transaction ID / reference (optional)</Label>
+              <Input
+                id="txnRef"
+                name="txnRef"
+                type="text"
+                maxLength={50}
+                placeholder="UPI ref / cheque no. / card auth code…"
+                value={f.txnRef}
+                onChange={upd('txnRef')}
+                suppressHydrationWarning
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Saved against this payment for later tracking. Shown in Accounts &amp;
+                the Excel export.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

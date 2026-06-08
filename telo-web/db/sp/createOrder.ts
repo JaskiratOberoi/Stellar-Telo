@@ -42,6 +42,9 @@ export interface CreateOrderInput {
   /** B2B mode: bill every line at catalogue MRP (patient price), skipping the
    *  client rate list. Defaults to false (the classic New-Order behavior). */
   billAtMrp?: boolean;
+  /** Operator-entered payment reference for a non-cash "Paid now" (UPI ref,
+   *  cheque no., card auth code). Stored on the receipt's card_number column. */
+  paymentRef?: string | null;
 }
 
 export interface CreateOrderResult {
@@ -142,6 +145,7 @@ export async function createOrder(
       .input('payMode', sql.Int, input.payMode ?? null)
       .input('receiptAmount', sql.Int, input.receiptAmount ?? 0)
       .input('billAtMrp', sql.Bit, input.billAtMrp ? 1 : 0)
+      .input('paymentRef', sql.VarChar(100), input.paymentRef ?? null)
       .execute<Record<string, unknown>>('dbo.usp_telo_create_order');
 
     const sets = r.recordsets as unknown as [

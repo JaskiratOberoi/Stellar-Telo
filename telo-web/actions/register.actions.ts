@@ -278,6 +278,10 @@ const registerSchema = z.object({
   discountAmount: zeroInt,
   paymentType: z.string().trim().max(50).optional(),
   receiptAmount: zeroInt,
+  // Operator-entered payment reference for a non-cash "Paid now" (UPI ref,
+  // cheque no., card auth code). Optional; ignored for Cash. ≤50 to fit the
+  // receipt's card_number column (the SP also LEFT()s defensively).
+  txnRef: z.string().trim().max(50).optional(),
   itemsJson: z.string(),
   // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
   b2b: z.string().optional(),
@@ -441,6 +445,9 @@ export async function registerOrder(
       payMode: 1, // LIS standard paymode; method captured in paymentType text
       receiptAmount: f.receiptAmount,
       billAtMrp: b2b,
+      // Reference only meaningful for a non-cash payment; ignored for Cash.
+      paymentRef:
+        f.paymentType && f.paymentType !== 'Cash' ? f.txnRef?.trim() || null : null,
     });
 
     if (!result.ok || result.billId == null) {
