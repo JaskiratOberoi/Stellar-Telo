@@ -211,11 +211,11 @@ export default async function BalanceMccPage({
           billDate: b.billDate,
           patientName: b.patientName,
           doctorName: b.doctorName,
-          customerName: b.customerName,
           paymentType: b.paymentType,
           age: b.age,
           ageType: b.ageType,
           amount: b.amount,
+          discount: b.discount,
           amountPaid: b.amountPaid,
           balance: b.balance,
         }))}

@@ -27,6 +27,8 @@ export interface PendingBillRow {
   amount: number;
   amountPaid: number;
   balance: number;
+  /** Discount on the bill (tbl_billing_patient_detail.discount_amount). */
+  discount: number;
   doctorName: string | null;
   customerName: string | null;
   paymentType: string | null;
@@ -251,6 +253,7 @@ export async function listTeloBillsForMcc(
         amount: number;
         amountPaid: number;
         balance: number;
+        discount: number;
         doctorName: string | null;
         customerName: string | null;
         paymentType: string | null;
@@ -263,6 +266,7 @@ export async function listTeloBillsForMcc(
           TRY_CONVERT(INT, b.medid) AS patientId,
           b.amount AS amount, b.amount_paid AS amountPaid,
           b.Balance AS balance,
+          ISNULL(b.discount_amount, 0) AS discount,
           d.doctor_name AS doctorName,
           c.customer_name AS customerName,
           b.payment_type AS paymentType,
@@ -287,6 +291,7 @@ export async function listTeloBillsForMcc(
       amount: Number(x.amount ?? 0),
       amountPaid: Number(x.amountPaid ?? 0),
       balance: Number(x.balance ?? 0),
+      discount: Number(x.discount ?? 0),
       doctorName: x.doctorName ? x.doctorName.trim() : null,
       customerName: x.customerName ? x.customerName.trim() : null,
       paymentType: x.paymentType ? x.paymentType.trim() : null,
@@ -358,6 +363,7 @@ export async function searchTeloBills(
       amount: number;
       amountPaid: number;
       balance: number;
+      discount: number;
       doctorName: string | null;
       customerName: string | null;
       paymentType: string | null;
@@ -370,6 +376,7 @@ export async function searchTeloBills(
         TRY_CONVERT(INT, b.medid) AS patientId,
         b.amount AS amount, b.amount_paid AS amountPaid,
         b.Balance AS balance,
+        ISNULL(b.discount_amount, 0) AS discount,
         d.doctor_name AS doctorName,
         c.customer_name AS customerName,
         b.payment_type AS paymentType,
@@ -400,6 +407,7 @@ export async function searchTeloBills(
       amount: Number(x.amount ?? 0),
       amountPaid: Number(x.amountPaid ?? 0),
       balance: Number(x.balance ?? 0),
+      discount: Number(x.discount ?? 0),
       doctorName: x.doctorName ? x.doctorName.trim() : null,
       customerName: x.customerName ? x.customerName.trim() : null,
       paymentType: x.paymentType ? x.paymentType.trim() : null,

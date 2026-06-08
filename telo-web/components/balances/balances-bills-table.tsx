@@ -21,11 +21,11 @@ export interface BalanceBill {
   billDate: string | null;
   patientName: string | null;
   doctorName: string | null;
-  customerName: string | null;
   paymentType: string | null;
   age: number | null;
   ageType: number | null;
   amount: number;
+  discount: number;
   amountPaid: number;
   balance: number;
 }
@@ -124,10 +124,10 @@ export function BalancesBillsTable({
           <TableHead className="w-28">Date</TableHead>
           <TableHead>Patient</TableHead>
           <TableHead>Ref. doctor</TableHead>
-          <TableHead>Ref. customer</TableHead>
           <TableHead className="w-24">Payment</TableHead>
           <TableHead className="w-14 text-right">Age</TableHead>
           <TableHead className="w-24 text-right">Amount</TableHead>
+          <TableHead className="w-24 text-right">Discount</TableHead>
           <TableHead className="w-24 text-right">Paid</TableHead>
           <TableHead className="w-24 text-right">Balance</TableHead>
           <TableHead className="w-28" />
@@ -184,11 +184,6 @@ export function BalancesBillsTable({
                     <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
-                <TableCell className="text-sm">
-                  {b.customerName ?? (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </TableCell>
                 <TableCell className="text-xs">
                   {b.paymentType ?? (
                     <span className="text-muted-foreground">—</span>
@@ -198,6 +193,13 @@ export function BalancesBillsTable({
                   {fmtPatientAge(b.age, b.ageType)}
                 </TableCell>
                 <TableCell className="text-right">{inr(b.amount)}</TableCell>
+                <TableCell className="text-right">
+                  {b.discount > 0 ? (
+                    `− ${inr(b.discount)}`
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{inr(b.amountPaid)}</TableCell>
                 <TableCell
                   className={cn(
