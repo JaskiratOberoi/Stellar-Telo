@@ -46,6 +46,44 @@ export function fmtIST(
   return datetimeFmt.format(d);
 }
 
+// ── Listec (worksheet feed) timestamps ──────────────────────────────────────
+// The Listec bridge reads naive SQL `datetime` columns (which the LIS stores as
+// IST wall-clock) with node-mssql's DEFAULT useUTC:true — i.e. it interprets the
+// stored "16:13" as 16:13 *UTC*. So a Listec timestamp arrives as the IST
+// wall-clock RE-INTERPRETED AS UTC: the instant's UTC components are the true IST
+// clock (running +5:30 ahead of the real moment). Formatting it in UTC — NOT IST
+// — recovers the correct wall-clock the LIS intends.
+//
+// Use this ONLY for values that came through Listec (sample_drawn / regd_at /
+// last_modified_at, etc.). Telo's OWN pool uses useUTC:false, so Telo-written
+// timestamps (e.g. the report's printedAt) are real instants — use fmtIST there.
+const UTC = 'UTC' as const;
+const lcDatetimeFmt = new Intl.DateTimeFormat('en-IN', {
+  timeZone: UTC, day: '2-digit', month: '2-digit', year: 'numeric',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+});
+const lcDateFmt = new Intl.DateTimeFormat('en-IN', {
+  timeZone: UTC, day: '2-digit', month: '2-digit', year: 'numeric',
+});
+const lcTimeFmt = new Intl.DateTimeFormat('en-IN', {
+  timeZone: UTC, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+});
+
+/** Format a LISTEC-sourced timestamp as its intended IST wall-clock. See the
+ *  note above — Listec returns IST wall-clock reinterpreted as UTC, so we format
+ *  in UTC to undo it. Returns '—' for null/invalid. */
+export function fmtListec(
+  input: string | Date | null | undefined,
+  kind: Kind = 'datetime',
+): string {
+  if (input == null || input === '') return '—';
+  const d = typeof input === 'string' ? new Date(input) : input;
+  if (Number.isNaN(d.getTime())) return '—';
+  if (kind === 'date') return lcDateFmt.format(d);
+  if (kind === 'time') return lcTimeFmt.format(d);
+  return lcDatetimeFmt.format(d);
+}
+
 // ── IST calendar-day helpers ────────────────────────────────────────────────
 // `new Date().toISOString().slice(0,10)` yields the UTC day, which is the
 // PREVIOUS IST day between 00:00–05:30 IST — that's the "Today shows yesterday"

@@ -19,7 +19,7 @@
 'use client';
 
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import { fmtIST } from '@/lib/datetime';
+import { fmtIST, fmtListec } from '@/lib/datetime';
 import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import type {
   SampleReportBlock,
@@ -576,9 +576,12 @@ function PatientMetaBlock({
             <Meta label="Specimen" value={data.specimens.join(', ')} />
           )}
           <Meta label="Report Status" value={data.statusLabel ?? '—'} />
-          <Meta label="Collected" value={fmtIST(data.collectedAt)} />
-          <Meta label="Registered" value={fmtIST(data.registeredAt)} />
-          <Meta label="Reported" value={fmtIST(data.reportedAt)} />
+          {/* Collected/Registered/Reported come from the Listec worksheet feed
+              (IST wall-clock reinterpreted as UTC) → fmtListec; Printed is a real
+              Telo instant → fmtIST. See lib/datetime fmtListec. */}
+          <Meta label="Collected" value={fmtListec(data.collectedAt)} />
+          <Meta label="Registered" value={fmtListec(data.registeredAt)} />
+          <Meta label="Reported" value={fmtListec(data.reportedAt)} />
           <Meta label="Printed" value={fmtIST(data.printedAt)} />
           {data.billNumber && <Meta label="Bill No." value={data.billNumber} mono />}
         </div>

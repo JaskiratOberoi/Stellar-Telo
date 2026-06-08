@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { fmtIST, todayIST } from '@/lib/datetime';
+import { fmtListec, todayIST } from '@/lib/datetime';
 import { ReportPreview } from '@/components/reporting/report-preview';
 
 /** Split the LIS test-names CSV into clean individual test names. */
@@ -351,7 +351,7 @@ export function ReportingView({
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{fmtIST(r.reportedAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{fmtListec(r.reportedAt)}</TableCell>
                       <TableCell className="text-xs">{r.status ?? '—'}</TableCell>
                       <TableCell className="text-right">
                         <Button
