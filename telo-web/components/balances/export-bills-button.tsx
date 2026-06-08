@@ -24,6 +24,12 @@ export interface ExportBill {
   balance: number;
 }
 
+/** Minimal receipt shape for the export — the bill's payment/refund txn ids. */
+export interface ExportReceipt {
+  txnId: string | null;
+  kind: 'payment' | 'refund';
+}
+
 function ageLabel(age: number | null, ageType: number | null): string {
   if (age == null) return '';
   const unit = ageType === 2 ? 'M' : ageType === 3 ? 'D' : 'Y';
@@ -45,9 +51,12 @@ function csvCell(v: string | number | null | undefined): string {
  */
 export function ExportBillsButton({
   bills,
+  receiptsByBill,
   fileName,
 }: {
   bills: ExportBill[];
+  /** Payment/refund receipts per bill id — to list their txn ids in the export. */
+  receiptsByBill?: Record<number, ExportReceipt[]>;
   fileName: string;
 }) {
   function onExport() {
@@ -64,21 +73,30 @@ export function ExportBillsButton({
       'Discount',
       'Paid',
       'Balance',
+      'Txn ID(s)',
     ];
-    const rows = bills.map((b) => [
-      b.billNumber ?? b.billId,
-      b.billDate ? fmtIST(b.billDate, 'date') : '',
-      b.patientName ?? '',
-      b.patientId ?? '',
-      b.doctorName ?? '',
-      b.customerName ?? '',
-      b.paymentType ?? '',
-      ageLabel(b.age, b.ageType),
-      b.amount,
-      b.discount,
-      b.amountPaid,
-      b.balance,
-    ]);
+    const rows = bills.map((b) => {
+      // Comma-join the bill's txn ids; tag refunds so corrections are unambiguous.
+      const txnIds = (receiptsByBill?.[b.billId] ?? [])
+        .filter((t) => t.txnId)
+        .map((t) => (t.kind === 'refund' ? `${t.txnId} (refund)` : t.txnId))
+        .join(', ');
+      return [
+        b.billNumber ?? b.billId,
+        b.billDate ? fmtIST(b.billDate, 'date') : '',
+        b.patientName ?? '',
+        b.patientId ?? '',
+        b.doctorName ?? '',
+        b.customerName ?? '',
+        b.paymentType ?? '',
+        ageLabel(b.age, b.ageType),
+        b.amount,
+        b.discount,
+        b.amountPaid,
+        b.balance,
+        txnIds,
+      ];
+    });
     const csv = [headers, ...rows]
       .map((r) => r.map(csvCell).join(','))
       .join('\r\n');
