@@ -406,37 +406,56 @@ export function LabReport({ data }: { data: LabReportData }) {
            the page (margin-top:auto inside a page-height min-height). Each
            profile gets its own page via break-before. */
         sections.map((sec, si) => {
-          const inner = (
-            <>
-              <PatientMetaBlock data={data} interactive={interactive} totalLeaves={totalLeaves} />
-              <table className="w-full table-fixed border-collapse">
-                <ReportColgroup />
-                <thead>
-                  <ColumnHeaderRow />
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={5} className={deptBandCls}>
-                      {sec.deptName}
-                    </td>
-                  </tr>
-                  {sec.entries.map((entry) => renderTopItem(entry))}
-                  {si === sections.length - 1 && endMarker}
-                </tbody>
-              </table>
-              <div className="mt-auto">
-                <ReportFooterBlock data={data} />
-              </div>
-            </>
+          // Pagination fix (the "blank page" bug): the patient header lives in
+          // the table's <thead>, NOT as a separate block above it. Reason: a
+          // section's results <table> alone is often shorter than a page, so when
+          // the header pushes it past the page boundary Chromium moves the WHOLE
+          // table to the next page (it fits there) — stranding the header on one
+          // page and the footer on another. By folding the header into the table,
+          // the table becomes header+results (taller than a page) and is FORCED
+          // to fragment at row boundaries instead. <thead> also repeats the
+          // demographics atop each continuation page (as the LIS does), and the
+          // mt-auto footer still pins to the bottom on short single-page sections.
+          const body = (
+            <table className="w-full table-fixed border-collapse">
+              <ReportColgroup />
+              <thead>
+                <tr>
+                  <td colSpan={5} className="p-0 align-top">
+                    <PatientMetaBlock
+                      data={data}
+                      interactive={interactive}
+                      totalLeaves={totalLeaves}
+                    />
+                  </td>
+                </tr>
+                <ColumnHeaderRow />
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={5} className={deptBandCls}>
+                    {sec.deptName}
+                  </td>
+                </tr>
+                {sec.entries.map((entry) => renderTopItem(entry))}
+                {si === sections.length - 1 && endMarker}
+              </tbody>
+            </table>
           );
-          // PDF: printable-height flex column + a real page break (unchanged).
+          const footer = (
+            <div className="mt-auto">
+              <ReportFooterBlock data={data} />
+            </div>
+          );
+          // PDF: printable-height flex column + a real page break.
           if (!previewSheets) {
             return (
               <div
                 key={si}
                 className={`flex min-h-[237mm] flex-col ${si > 0 ? '[break-before:page]' : ''}`}
               >
-                {inner}
+                {body}
+                {footer}
               </div>
             );
           }
@@ -454,7 +473,8 @@ export function LabReport({ data }: { data: LabReportData }) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
               </div>
-              {inner}
+              {body}
+              {footer}
             </div>
           );
         })
