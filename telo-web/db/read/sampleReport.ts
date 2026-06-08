@@ -144,6 +144,23 @@ const cleanMultiline = (s: string | null | undefined): string | null => {
   return t || null;
 };
 
+// TODO(pre-prod, ~next week): partial-report authorisation gating.
+// The Reporting list now shows PARTIALLY-authorised samples (>=1 authorised
+// result) so a partial report can be released — see actions/reporting.actions.ts
+// (hasAuthorisedResult). But this query still returns EVERY result row for the
+// SID regardless of authorisation, so a partial report's PDF would also include
+// the not-yet-authorised tests — which we must not release. Fix before prod:
+//   - Do NOT filter on the raw tbl_med_mcc_patient_test_result.auth bit: it is
+//     unreliable here (profile/Head header rows carry auth=1 while their value
+//     rows carry auth=0, so filtering by it drops the values and keeps the
+//     titles, producing a broken report).
+//   - Instead, derive the set of authorised test codes for the SID from the
+//     Listec worksheet feed (TestResult.authorized) and exclude the unauthorised
+//     tests from the rendered/downloaded report — applying to BOTH the
+//     authenticated download AND the public QR softcopy (/r/[sid]).
+//   - Alternative (simpler, zero-leak): only ever release FULLY-authorised
+//     samples — switch the list filter from "any authorised" to "all authorised"
+//     (the existing `ready` flag) and leave this query as-is.
 export async function getSampleReport(
   vailid: string,
   age: number | null,

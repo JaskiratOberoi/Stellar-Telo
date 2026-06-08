@@ -159,6 +159,11 @@ export async function searchReports(
   // Samples with no authorised result yet — Registered, Tested, Partially
   // Tested, Pending — are never shown here. A partially-authorised sample (at
   // least one authorised result) stays, so its partial report can be released.
+  //
+  // TODO(pre-prod, ~next week): a partially-authorised sample's generated PDF
+  // still includes its not-yet-authorised tests — getSampleReport() returns all
+  // result rows. Exclude unauthorised tests from the report before prod. See the
+  // detailed note above getSampleReport in db/read/sampleReport.ts.
   const hasAuthorisedResult = (r: WorksheetReportRow) =>
     r.results.some((t) => t.authorized);
 
