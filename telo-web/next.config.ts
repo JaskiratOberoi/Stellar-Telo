@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
       "default-src 'self'",
       // Next.js runtime needs inline/eval.
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // The Accounts "Export Excel" button (write-excel-file/browser) builds
+      // the .xlsx in a Web Worker spawned from a blob: URL. Without an explicit
+      // worker-src the browser falls back to script-src (no blob:), so the
+      // worker is blocked and the button hangs on "Exporting…".
+      "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",

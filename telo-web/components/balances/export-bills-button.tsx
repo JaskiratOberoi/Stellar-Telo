@@ -26,9 +26,15 @@ export interface ExportBill {
   balance: number;
 }
 
-/** Minimal receipt shape for the export — the bill's payment/refund txn ids. */
+/** Minimal receipt shape for the export — the bill's payment/refund txn ids
+ *  plus the operator-entered payment reference (UPI UTR / card ref / cheque no)
+ *  captured for non-cash payments. */
 export interface ExportReceipt {
   txnId: string | null;
+  /** Payment mode the operator picked ('Cash' / 'UPI' / 'Card' / …). */
+  method: string | null;
+  /** Operator-entered reference (card_number) — present for non-cash payments. */
+  reference: string | null;
   kind: 'payment' | 'refund';
 }
 
@@ -52,9 +58,10 @@ const HEADERS = [
   'Paid',
   'Balance',
   'Txn ID(s)',
+  'Payment Ref',
 ];
 
-const COLUMN_WIDTHS = [12, 11, 26, 11, 22, 18, 10, 7, 11, 11, 11, 11, 24];
+const COLUMN_WIDTHS = [12, 11, 26, 11, 22, 18, 10, 7, 11, 11, 11, 11, 24, 24];
 
 /**
  * Export the (currently filtered) accounts bills to a real .xlsx workbook for
@@ -94,6 +101,12 @@ export function ExportBillsButton({
           .filter((t) => t.txnId)
           .map((t) => (t.kind === 'refund' ? `${t.txnId} (refund)` : t.txnId))
           .join(', ');
+        // Operator-entered references for non-cash payments (Cash has none).
+        // Tag refunds so a returned UTR/cheque is clear in a correction sheet.
+        const paymentRefs = (receiptsByBill?.[b.billId] ?? [])
+          .filter((t) => t.reference)
+          .map((t) => (t.kind === 'refund' ? `${t.reference} (refund)` : t.reference))
+          .join(', ');
         return [
           { type: Number, value: b.billNumber ?? b.billId },
           { type: String, value: b.billDate ? fmtIST(b.billDate, 'date') : '' },
@@ -108,6 +121,7 @@ export function ExportBillsButton({
           { type: Number, value: b.amountPaid },
           { type: Number, value: b.balance },
           { type: String, value: txnIds },
+          { type: String, value: paymentRefs },
         ];
       });
 
