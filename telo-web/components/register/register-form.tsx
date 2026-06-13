@@ -307,6 +307,13 @@ export function RegisterForm({
   const aboveMaxDiscount =
     preview.total > 0 && Number(f.discountAmount || 0) > maxDiscount;
 
+  // UPI payments must carry a transaction reference so the receipt is
+  // traceable. Only required when money is actually being collected now
+  // (a UPI order with ₹0 paid-now has no transaction to reference yet).
+  const txnRequired =
+    f.paymentType === 'UPI' && Number(f.receiptAmount || 0) > 0;
+  const txnMissing = txnRequired && !f.txnRef.trim();
+
   // pageMounted gate — placed AFTER all hooks so hook count stays stable
   // across renders (Rules of Hooks). The hooks for pageMounted itself live
   // at the top of this component near useActionState.
@@ -665,23 +672,33 @@ export function RegisterForm({
           </div>
 
           {/* Transaction reference — only for non-cash payments, recorded on the
-              receipt for later tracking (like the accounts "record payment" flow). */}
+              receipt for later tracking (like the accounts "record payment" flow).
+              Mandatory for UPI so every UPI receipt is traceable to its txn. */}
           {f.paymentType !== 'Cash' && (
             <div className="space-y-0.5 pt-3">
-              <Label htmlFor="txnRef">Transaction ID / reference (optional)</Label>
+              <Label htmlFor="txnRef">
+                Transaction ID / reference {txnRequired ? '*' : '(optional)'}
+              </Label>
               <Input
                 id="txnRef"
                 name="txnRef"
                 type="text"
+                required={txnRequired}
                 maxLength={50}
                 placeholder="UPI ref / cheque no. / card auth code…"
                 value={f.txnRef}
                 onChange={upd('txnRef')}
+                aria-invalid={txnMissing}
                 suppressHydrationWarning
               />
-              <p className="text-[10px] text-muted-foreground">
-                Saved against this payment for later tracking. Shown in Accounts &amp;
-                the Excel export.
+              <p
+                className={`text-[10px] ${
+                  txnMissing ? 'text-destructive' : 'text-muted-foreground'
+                }`}
+              >
+                {txnMissing
+                  ? 'Required for UPI — enter the UPI transaction reference.'
+                  : 'Saved against this payment for later tracking. Shown in Accounts & the Excel export.'}
               </p>
             </div>
           )}
@@ -976,7 +993,8 @@ export function RegisterForm({
               mobileBlocked ||
               mobileBusy ||
               belowMinPaid ||
-              aboveMaxDiscount;
+              aboveMaxDiscount ||
+              txnMissing;
             const label = pending
               ? 'Registering…'
               : mcc === ''
@@ -1003,7 +1021,9 @@ export function RegisterForm({
                               ? `Collect at least ₹${minPaid} (50%)`
                               : aboveMaxDiscount
                                 ? `Discount can't exceed ₹${maxDiscount} (20%)`
-                                : `Review & register · ₹${preview.total}`;
+                                : txnMissing
+                                  ? 'Enter UPI transaction reference'
+                                  : `Review & register · ₹${preview.total}`;
 
             // Two-step submit. The first button only flips into review mode
             // (no commit); the operator confirms or goes back from the panel.

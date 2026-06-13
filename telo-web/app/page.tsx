@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { ArrowRight, FileText, Receipt, Wallet } from 'lucide-react';
 import { AmbientBackground } from '@/components/ui/ambient-background';
-import { RibbonBackground } from '@/components/ui/ribbon-background';
+import { LoginBackdrop } from '@/components/ui/login-backdrop';
+import { VersionBadge } from '@/components/ui/version-badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -19,7 +20,7 @@ export default function HomePage() {
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-16 text-center">
       <AmbientBackground className="fixed" />
-      <RibbonBackground className="fixed" />
+      <LoginBackdrop className="fixed" />
 
       <div className="relative z-10 flex w-full max-w-xl flex-col items-center gap-7">
         {/* Network badge */}
@@ -30,9 +31,12 @@ export default function HomePage() {
 
         {/* Wordmark + tagline */}
         <div className="animate-fade-in-up space-y-3 [animation-delay:60ms]">
-          <h1 className="bg-gradient-to-br from-white to-white/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
-            Telo
-          </h1>
+          <div className="flex items-start justify-center gap-2">
+            <h1 className="bg-gradient-to-br from-white to-white/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
+              Telo
+            </h1>
+            <VersionBadge className="mt-2 sm:mt-3" />
+          </div>
           <p className="text-balance text-base text-muted-foreground sm:text-lg">
             B2C billing for the Noble laboratory network — orders, reports and
             accounts in one place.

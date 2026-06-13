@@ -2,7 +2,8 @@
 
 import { useTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addToCart } from '@/actions/cart.actions';
+import { Check } from 'lucide-react';
+import { addToCart, removeFromCart } from '@/actions/cart.actions';
 import { Button } from '@/components/ui/button';
 import type { CartItem } from '@/domain/cart/cart.types';
 
@@ -74,16 +75,54 @@ function flyToCart(source: HTMLElement, label: string) {
   }, 720);
 }
 
-export function AddToCartButton({ item }: { item: CartItem }) {
+export function AddToCartButton({
+  item,
+  initiallyAdded = false,
+}: {
+  item: CartItem;
+  /** Seeds the Added/Remove state from the real cart so a reload (or returning
+   *  to the catalog) shows items already in the order as removable. */
+  initiallyAdded?: boolean;
+}) {
   const [pending, start] = useTransition();
-  const [added, setAdded] = useState(false);
+  const [added, setAdded] = useState(initiallyAdded);
   const router = useRouter();
+
+  // In the cart: show an "Added" marker plus a Remove button that drops just
+  // this line from the order, then refreshes so the nav badge count updates.
+  if (added) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-secondary">
+          <Check className="h-3.5 w-3.5" />
+          Added
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pending}
+          className="h-8 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => {
+            start(async () => {
+              const r = await removeFromCart(item.id, item.kind);
+              if (r.ok) {
+                setAdded(false);
+                router.refresh();
+              }
+            });
+          }}
+        >
+          {pending ? '…' : 'Remove'}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Button
       size="sm"
-      variant={added ? 'secondary' : 'outline'}
-      disabled={pending || added}
+      variant="outline"
+      disabled={pending}
       onClick={(e) => {
         // Fire the animation synchronously off the click so the user sees
         // immediate feedback even while the server action is in flight.
@@ -99,7 +138,7 @@ export function AddToCartButton({ item }: { item: CartItem }) {
         });
       }}
     >
-      {added ? 'Added' : pending ? '…' : 'Add'}
+      {pending ? '…' : 'Add'}
     </Button>
   );
 }

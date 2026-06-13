@@ -61,10 +61,10 @@ export function LabInvoice({
         : 'free';
 
   return (
-    <div className="w-full bg-white text-black font-sans text-[11px] leading-snug border border-gray-400">
+    <div className="w-full bg-white text-black font-sans text-[13px] leading-snug border border-gray-400">
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-4 text-center">
-        <p className="text-lg font-bold tracking-tight">{labName}</p>
+        <p className="text-xl font-bold tracking-tight">{labName}</p>
         {addressLine && (
           <p className="mt-0.5 text-gray-600">{addressLine}</p>
         )}
@@ -83,11 +83,11 @@ export function LabInvoice({
       {/* ── Bill meta + payment status ─────────────────────────────── */}
       <div className="border-b border-gray-400 grid grid-cols-3 px-5 py-3 gap-x-4 items-center">
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[9px]">Receipt No.</span>
+          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[11px]">Receipt No.</span>
           <span className="font-bold">{order.billNumber ?? order.billId}</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[9px]">Date</span>
+          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[11px]">Date</span>
           <span>{dateLabel}</span>
         </div>
         <div className="flex justify-end">
@@ -97,7 +97,7 @@ export function LabInvoice({
 
       {/* ── Patient details ────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">
-        <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
           Patient Details
         </p>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1">
@@ -120,7 +120,7 @@ export function LabInvoice({
         </div>
         {order.clinicalHistory && (
           <div className="mt-2 pt-2 border-t border-gray-200">
-            <span className="text-gray-500 text-[9px] uppercase tracking-wide">Clinical history</span>
+            <span className="text-gray-500 text-[11px] uppercase tracking-wide">Clinical history</span>
             <p className="mt-0.5 text-gray-700">{order.clinicalHistory}</p>
           </div>
         )}
@@ -128,19 +128,19 @@ export function LabInvoice({
 
       {/* ── Tests table ────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">
-        <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
           Tests
         </p>
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-gray-300 bg-gray-50">
-              <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-6">
+              <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-6">
                 #
               </th>
-              <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
+              <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-24">
                 Code
               </th>
-              <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500">
+              <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500">
                 Test Name
               </th>
             </tr>
@@ -149,7 +149,7 @@ export function LabInvoice({
             {order.lines.map((l, idx) => (
               <tr key={idx} className="border-b border-gray-100">
                 <td className="py-0.5 pr-2 text-gray-500">{idx + 1}</td>
-                <td className="py-0.5 pr-2 font-mono text-[10px]">{l.testCode ?? '—'}</td>
+                <td className="py-0.5 pr-2 font-mono text-[12px]">{l.testCode ?? '—'}</td>
                 <td className="py-0.5 pr-2">{l.testName ?? '—'}</td>
               </tr>
             ))}
@@ -160,16 +160,16 @@ export function LabInvoice({
       {/* ── Samples ────────────────────────────────────────────────── */}
       {order.samples.length > 0 && (
         <div className="border-b border-gray-400 px-5 py-3">
-          <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+          <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
             Sample IDs
           </p>
           <div className="grid gap-1 sm:grid-cols-2">
             {order.samples.map((s) => (
               <div key={s.vailid} className="flex items-baseline gap-2 border-l-2 border-gray-300 pl-2">
                 <span className="font-medium">{s.sampleTypeName}</span>
-                <span className="font-mono text-[10px] text-gray-600">{s.vailid}</span>
+                <span className="font-mono text-[12px] text-gray-600">{s.vailid}</span>
                 {s.testCodes && (
-                  <span className="text-gray-400 text-[9px] truncate">{s.testCodes}</span>
+                  <span className="text-gray-400 text-[11px] truncate">{s.testCodes}</span>
                 )}
               </div>
             ))}
@@ -179,7 +179,7 @@ export function LabInvoice({
 
       {/* ── Footer ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 items-end px-5 py-4">
-        <p className="text-gray-400 text-[9px]">
+        <p className="text-gray-400 text-[11px]">
           This is a computer-generated receipt.
         </p>
         {showSignatory && (
@@ -206,7 +206,7 @@ function Row({
   return (
     <div className="flex items-baseline gap-1.5">
       <span className="text-gray-500 shrink-0 w-16">{label}</span>
-      <span className={mono ? 'font-mono text-[10px]' : ''}>{value}</span>
+      <span className={mono ? 'font-mono text-[12px]' : ''}>{value}</span>
     </div>
   );
 }
@@ -215,7 +215,7 @@ function Row({
 function LabUseOnlyBadge() {
   return (
     <div className="border-b-2 border-dashed border-amber-700 bg-amber-50 px-5 py-2.5 text-center">
-      <span className="inline-block rounded border-2 border-amber-800 bg-amber-100 px-5 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-amber-950">
+      <span className="inline-block rounded border-2 border-amber-800 bg-amber-100 px-5 py-1 text-[13px] font-bold uppercase tracking-[0.2em] text-amber-950">
         Internal — Lab use only
       </span>
     </div>
@@ -233,7 +233,7 @@ function PaymentStatusPill({ status }: { status: 'paid' | 'pending' | 'free' }) 
     status === 'paid' ? '✓ Paid' : status === 'pending' ? 'Payment Pending' : 'No Charge';
   return (
     <span
-      className={`rounded border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${styles}`}
+      className={`rounded border px-2.5 py-1 text-[12px] font-bold uppercase tracking-wider ${styles}`}
     >
       {label}
     </span>

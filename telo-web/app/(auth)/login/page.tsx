@@ -9,6 +9,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { AmbientBackground } from '@/components/ui/ambient-background';
 import { LoginBackdrop } from '@/components/ui/login-backdrop';
+import { VersionBadge } from '@/components/ui/version-badge';
 
 const initial: LoginState = { error: null };
 
@@ -78,8 +79,11 @@ export default function LoginPage() {
 
           <div className="max-w-md space-y-8">
             <div className="animate-card-in [animation-delay:100ms] motion-reduce:animate-none">
-              <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.4)] motion-reduce:animate-none">
-                Telo
+              <span className="inline-flex items-start gap-2">
+                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.4)] motion-reduce:animate-none">
+                  Telo
+                </span>
+                <VersionBadge className="mt-1.5" />
               </span>
               <p className="mt-4 text-lg leading-relaxed text-foreground/80">
                 Billing for the Noble laboratory network — orders, reports and
@@ -124,8 +128,11 @@ export default function LoginPage() {
           <div className="relative w-full max-w-sm">
             {/* Compact brand header (mobile only) */}
             <div className="mb-10 animate-card-in text-center lg:hidden motion-reduce:animate-none">
-              <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-4xl font-bold tracking-tight text-transparent drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
-                Telo
+              <span className="inline-flex items-start justify-center gap-1.5">
+                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-4xl font-bold tracking-tight text-transparent drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
+                  Telo
+                </span>
+                <VersionBadge className="mt-1" />
               </span>
               <p className="mt-1 text-sm text-muted-foreground">
                 Noble laboratory billing

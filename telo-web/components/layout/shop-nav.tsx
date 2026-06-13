@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
+import { VersionBadge } from '@/components/ui/version-badge';
 import { cn } from '@/lib/utils';
 
 interface NavLink {
@@ -50,7 +51,10 @@ export function ShopNav({
                 : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <span className="text-primary">Telo</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-primary">Telo</span>
+              <VersionBadge />
+            </span>
           </Link>
 
           <span className="mx-1 h-4 w-px bg-white/10" />

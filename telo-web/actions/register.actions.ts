@@ -443,6 +443,19 @@ export async function registerOrder(
       };
     }
 
+    // UPI payments must carry a transaction reference (mirrors the client gate)
+    // so every UPI receipt is traceable. Only enforced when money is actually
+    // collected now — a UPI order with ₹0 paid-now has no txn to reference yet.
+    if (
+      f.paymentType === 'UPI' &&
+      Number(f.receiptAmount ?? 0) > 0 &&
+      !f.txnRef?.trim()
+    ) {
+      return {
+        error: 'Enter the UPI transaction ID / reference for this payment.',
+      };
+    }
+
     const refDoc = parseRefValue(f.refDoctorJson);
     const refCust = parseRefValue(f.refCustomerJson);
     const clinicalPdf = await readClinicalPdf(formData);

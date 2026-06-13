@@ -3,6 +3,7 @@ import { hasCapability } from '@/auth/rbac';
 import { getMccScope, ownCentreIds } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { loadCatalogPricedForMcc } from '@/db/read/catalog';
+import { getCart } from '@/db/cartStore';
 import { CatalogBrowser } from '@/components/catalog/catalog-browser';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,13 @@ export default async function CatalogPage({
   // pagination stay entirely in the browser (no per-keystroke RSC round-trip).
   const items = await loadCatalogPricedForMcc(selectedMccId);
 
+  // Which catalog items are already in this user's order cart — keyed
+  // `${kind}-${id}` — so each row can render Add vs. Added/Remove correctly on
+  // load (and after a refresh), not just within the current session.
+  const inCartKeys = canOrder
+    ? (await getCart(user.uid)).items.map((i) => `${i.kind}-${i.id}`)
+    : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -51,6 +59,7 @@ export default async function CatalogPage({
         canOrder={canOrder}
         units={units}
         selectedMccId={selectedMccId}
+        inCartKeys={inCartKeys}
       />
     </div>
   );

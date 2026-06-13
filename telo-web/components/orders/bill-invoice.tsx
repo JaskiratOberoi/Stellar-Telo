@@ -165,7 +165,7 @@ export function BillInvoice({
   const total = order.lines.reduce((s, l) => s + l.amount, 0);
 
   return (
-    <div className="w-full bg-white text-black font-sans text-[11px] leading-snug border border-gray-400">
+    <div className="w-full bg-white text-black font-sans text-[13px] leading-snug border border-gray-400">
       {/* ── Header: [left logo] | lab name block | [right logo] ──────────────
            Layout per dbo.telo_mcc_invoice_config (Telo only, no LIS DDL):
              noble_logo_position  = 'left' | 'right'  (default 'left')
@@ -179,7 +179,7 @@ export function BillInvoice({
       <div className="border-b border-gray-400 px-5 py-4 grid grid-cols-[96px_1fr_96px] items-center gap-3">
         <div className="flex items-center justify-start overflow-hidden">{leftPane}</div>
         <div className="text-center min-w-0">
-          <p className="text-lg font-bold tracking-tight">{labName}</p>
+          <p className="text-xl font-bold tracking-tight">{labName}</p>
           {addressLine && (
             <p className="mt-0.5 text-gray-600">{addressLine}</p>
           )}
@@ -197,18 +197,18 @@ export function BillInvoice({
       {/* ── Bill meta ──────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 grid grid-cols-2 px-5 py-3 gap-x-4">
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[9px]">Bill No.</span>
+          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[11px]">Bill No.</span>
           <span className="font-bold">{order.billNumber ?? order.billId}</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[9px]">Date</span>
+          <span className="font-semibold text-gray-500 uppercase tracking-wide text-[11px]">Date</span>
           <span>{dateLabel}</span>
         </div>
       </div>
 
       {/* ── Patient details ────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">
-        <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
           Patient Details
         </p>
         <div className="grid grid-cols-2 gap-x-6 gap-y-1">
@@ -231,7 +231,7 @@ export function BillInvoice({
         </div>
         {order.clinicalHistory && (
           <div className="mt-2 pt-2 border-t border-gray-200">
-            <span className="text-gray-500 text-[9px] uppercase tracking-wide">Clinical history</span>
+            <span className="text-gray-500 text-[11px] uppercase tracking-wide">Clinical history</span>
             <p className="mt-0.5 text-gray-700">{order.clinicalHistory}</p>
           </div>
         )}
@@ -239,19 +239,19 @@ export function BillInvoice({
 
       {/* ── Line items ─────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">
-        <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+        <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
           Services
         </p>
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-gray-300 bg-gray-50">
-              <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-6">
+              <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-6">
                 #
               </th>
-              <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500">
+              <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500">
                 Description
               </th>
-              <th className="py-1 text-right font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-28">
+              <th className="py-1 text-right font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-28">
                 Amount (₹)
               </th>
             </tr>
@@ -279,28 +279,28 @@ export function BillInvoice({
       {/* ── Payment history ────────────────────────────────────────── */}
       {billReceipts.length > 0 && (
         <div className="border-b border-gray-400 px-5 py-3">
-          <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
+          <p className="font-semibold text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
             Payments &amp; Refunds · {billReceipts.length}
           </p>
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-gray-300 bg-gray-50">
-                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-6">
+                <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-6">
                   #
                 </th>
-                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
+                <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-24">
                   Date
                 </th>
-                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-20">
+                <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-20">
                   Method
                 </th>
-                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500">
+                <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500">
                   Reference
                 </th>
-                <th className="py-1 pr-2 text-left font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
+                <th className="py-1 pr-2 text-left font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-24">
                   Txn ID
                 </th>
-                <th className="py-1 text-right font-semibold text-[9px] uppercase tracking-wide text-gray-500 w-24">
+                <th className="py-1 text-right font-semibold text-[11px] uppercase tracking-wide text-gray-500 w-24">
                   Amount (₹)
                 </th>
               </tr>
@@ -317,15 +317,15 @@ export function BillInvoice({
                     <td className="py-0.5 pr-2">
                       {rcpt.method ?? 'Cash'}
                       {isRefund && (
-                        <span className="ml-1.5 rounded border border-red-300 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-red-700">
+                        <span className="ml-1.5 rounded border border-red-300 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-700">
                           refund
                         </span>
                       )}
                     </td>
-                    <td className="py-0.5 pr-2 font-mono text-[10px] text-gray-600">
+                    <td className="py-0.5 pr-2 font-mono text-[12px] text-gray-600">
                       {rcpt.reference ?? '—'}
                     </td>
-                    <td className="py-0.5 pr-2 font-mono text-[10px] text-gray-700">
+                    <td className="py-0.5 pr-2 font-mono text-[12px] text-gray-700">
                       {rcpt.txnId ?? '—'}
                     </td>
                     <td
@@ -353,7 +353,7 @@ export function BillInvoice({
           <div className="border-t border-gray-300 pt-1 mt-1">
             <SummaryRow label="Balance Due" value={inr(order.balance)} bold />
           </div>
-          <p className="mt-1.5 text-right text-[10px] italic text-gray-500">
+          <p className="mt-1.5 text-right text-[12px] italic text-gray-500">
             On behalf of {onBehalfName}
           </p>
         </div>
@@ -362,7 +362,7 @@ export function BillInvoice({
       {/* ── Prepared by ────────────────────────────────────────────── */}
       {preparedBy && (
         <div className="border-b border-gray-400 px-5 py-2">
-          <p className="text-[10px] text-gray-700">
+          <p className="text-[12px] text-gray-700">
             <span className="font-semibold uppercase tracking-wide text-gray-600">
               Prepared By:
             </span>{' '}
@@ -373,10 +373,10 @@ export function BillInvoice({
 
       {/* ── Notes ──────────────────────────────────────────────────── */}
       <div className="border-b border-gray-400 px-5 py-3">
-        <p className="mb-1 font-semibold text-[10px] uppercase tracking-wide text-gray-600">
+        <p className="mb-1 font-semibold text-[12px] uppercase tracking-wide text-gray-600">
           Note:
         </p>
-        <ol className="list-decimal space-y-0.5 pl-4 text-[10px] text-gray-700">
+        <ol className="list-decimal space-y-0.5 pl-4 text-[12px] text-gray-700">
           <li>Not Valid for medico legal use.</li>
           <li>Non refundable, subject to realization of cheque.</li>
           <li>All above services are exempted under GST.</li>
@@ -386,13 +386,13 @@ export function BillInvoice({
       {/* ── Disclaimer (toggle: default on, MDCARE off) ────────────── */}
       {showDisclaimer && (
         <div className="border-b border-gray-400 px-5 py-2">
-          <p className="text-[9px] italic text-gray-600">{DISCLAIMER_TEXT}</p>
+          <p className="text-[11px] italic text-gray-600">{DISCLAIMER_TEXT}</p>
         </div>
       )}
 
       {/* ── Footer ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 items-end px-5 py-4">
-        <p className="text-gray-400 text-[9px]">
+        <p className="text-gray-400 text-[11px]">
           This is a computer-generated bill.
         </p>
         {showSignatory && (
@@ -419,7 +419,7 @@ function Row({
   return (
     <div className="flex items-baseline gap-1.5">
       <span className="text-gray-500 shrink-0 w-16">{label}</span>
-      <span className={mono ? 'font-mono text-[10px]' : ''}>{value}</span>
+      <span className={mono ? 'font-mono text-[12px]' : ''}>{value}</span>
     </div>
   );
 }

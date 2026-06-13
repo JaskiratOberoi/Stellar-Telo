@@ -35,17 +35,23 @@ export function CatalogBrowser({
   canOrder,
   units = [],
   selectedMccId = null,
+  inCartKeys = [],
 }: {
   items: CatalogItemPriced[];
   canOrder: boolean;
   units?: ScopedMcc[];
   selectedMccId?: number | null;
+  /** `${kind}-${id}` keys already in the order cart — seeds each row's
+   *  Added/Remove state on load. */
+  inCartKeys?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const [switching, startSwitch] = useTransition();
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<KindFilter>('all');
+
+  const inCart = useMemo(() => new Set(inCartKeys), [inCartKeys]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -118,7 +124,7 @@ export function CatalogBrowser({
             <TableHead>Name</TableHead>
             <TableHead className="w-24">Type</TableHead>
             <TableHead className="w-28 text-right">Rate</TableHead>
-            {canOrder && <TableHead className="w-20" />}
+            {canOrder && <TableHead className="w-36" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -161,6 +167,7 @@ export function CatalogBrowser({
                         code: i.code,
                         name: i.name,
                       }}
+                      initiallyAdded={inCart.has(`${i.kind}-${i.id}`)}
                     />
                   </TableCell>
                 )}
