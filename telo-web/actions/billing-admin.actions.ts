@@ -8,18 +8,22 @@ import { getPool, sql, withRetry } from '@/db/pool';
 import { setBillDiscount } from '@/db/sp/setBillDiscount';
 import { voidReceipt } from '@/db/sp/voidReceipt';
 import { cancelTest } from '@/db/sp/cancelTest';
+import { recordMccPayment } from '@/db/sp/recordMccPayment';
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
 
 /*
- * Super-admin-only edits to an EXISTING bill from the order/receipt page:
- *   - setBillDiscountAction: change the discount, recompute Balance.
- *   - voidReceiptAction:     void a recorded payment/refund txn.
- *   - cancelTestAction:      cancel a single test on the bill.
+ * Super-admin-only billing/account mutations:
+ *   - setBillDiscountAction:  change a bill's discount, recompute Balance.
+ *   - voidReceiptAction:      void a recorded payment/refund txn.
+ *   - cancelTestAction:       cancel a single test on the bill.
+ *   - recordMccPaymentAction: post a manual client payment into the LIS
+ *                             franchise-wallet ledger (Client Accounts screen).
  *
- * Both are gated by the `user:manage` capability (super-admin-exclusive, same
- * gate as the patient-info editor), re-check MCC scope server-side, and are
- * throttled. They touch only Telo-origin bills (the SPs also enforce this).
+ * The bill mutations are gated by `user:manage`; the franchise-wallet payment by
+ * `account:manage` — both super-admin-exclusive. All re-check MCC scope
+ * server-side and are throttled. Bill mutations touch only Telo-origin bills
+ * (the SPs also enforce this).
  */
 
 export interface BillingAdminState {
@@ -179,5 +183,66 @@ export async function cancelTestAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong cancelling the test.');
+  }
+}
+
+const mccPaymentSchema = z.object({
+  mcc: z.coerce.number().int().positive(),
+  amount: z.coerce.number().int().positive(),
+  // deposittype: 1 DD · 2 Cheque · 3 Cash · 4 NEFT/Transfer · 5 Online · 6 Other
+  mode: z.coerce.number().int().min(1).max(6),
+  // Date-only ('YYYY-MM-DD'); blank → SP records "now". Bound as VarChar(10) and
+  // CAST in SQL, matching the IST calendar-day handling in db/read/mccLedger.ts.
+  depositDate: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date')
+    .optional()
+    .or(z.literal('')),
+  chequeNo: z.string().trim().max(50).optional().default(''),
+  reason: z.string().trim().max(200).optional().default(''),
+});
+
+/**
+ * Records a MANUAL client payment (deposit toward Noble) into the shared LIS
+ * franchise-wallet ledger from the Client Accounts screen. SUPER-ADMIN ONLY
+ * (`account:manage`). Re-checks MCC scope, throttles and audits. Posts the same
+ * tables the LIS Mcc_Account "Save" writes, so the balance reconciles in BOTH
+ * portals — see db/sql/85_usp_telo_record_mcc_payment.sql.
+ */
+export async function recordMccPaymentAction(
+  _prev: BillingAdminState,
+  formData: FormData,
+): Promise<BillingAdminState> {
+  try {
+    const actor = await requireCapability('account:manage');
+    await throttleAdminAction(actor.uid, 'mcc_payment');
+
+    const parsed = mccPaymentSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('Please check the payment details and try again.');
+    const { mcc, amount, mode, depositDate, chequeNo, reason } = parsed.data;
+
+    const scope = await getMccScope(actor.uid);
+    if (!inScope(scope, mcc)) {
+      return err('This client is not in your assigned collection centres.');
+    }
+
+    const res = await recordMccPayment({
+      mcc,
+      actor: actor.uid,
+      amount,
+      mode,
+      depositDate: depositDate || null,
+      chequeNo: chequeNo || null,
+      reason: reason || null,
+    });
+    if (!res.ok) return err(res.message ?? 'Could not record the payment.');
+
+    audit({ kind: 'mcc.payment.recorded', actor: actor.uid, mcc, amount, mode });
+    revalidatePath(`/client-accounts/${mcc}`);
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong recording the payment.');
   }
 }

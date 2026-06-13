@@ -12,6 +12,7 @@ import {
 import { StatCard } from '@/components/ui/stat-card';
 import { ClientAccountFilters } from '@/components/client-accounts/client-account-filters';
 import { AccountDetailTable } from '@/components/client-accounts/account-detail-table';
+import { RecordClientPayment } from '@/components/client-accounts/record-client-payment';
 import { fmtIST, todayIST, addDaysIST, firstOfMonthIST } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,8 @@ export default async function ClientAccountPage({
 
   const user = await requireSession();
   if (!hasCapability(user.caps, 'account:view')) redirect('/dashboard');
+  // Recording manual payments into the shared LIS wallet is Super-Admin-only.
+  const canManagePayments = hasCapability(user.caps, 'account:manage');
 
   const sp = await searchParams;
   const from =
@@ -104,6 +107,8 @@ export default async function ClientAccountPage({
           </Link>
         )}
       </div>
+
+      {canManagePayments && <RecordClientPayment mccId={mccId} today={td} />}
 
       <ClientAccountFilters
         mccId={mccId}

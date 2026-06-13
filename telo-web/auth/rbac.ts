@@ -32,6 +32,7 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:manage',
     'balance:view',
     'account:view',
+    'account:manage',
     'sales:view',
     'dashboard:view',
     // Reporting is gated to super_admin only while the feature is finalised.
@@ -66,8 +67,9 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'payment:capture',
     'rate:view',
     'balance:view',
-    'account:view',
-    'sales:view',
+    // Sales (sales:view) and Client Accounts (account:view) are intentionally
+    // hidden for Billing — the nav tabs disappear and both pages redirect to
+    // /dashboard on direct URL access.
     'dashboard:view',
   ],
   technician: [

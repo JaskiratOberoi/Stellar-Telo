@@ -25,6 +25,7 @@ export type Capability =
   | 'rate:manage'
   | 'balance:view'
   | 'account:view'       // Client Accounts — franchise wallet ledger (read-only; mirrors LIS Mcc_Account, menu 18)
+  | 'account:manage'     // Record manual client payments into the franchise wallet (Super Admin only)
   | 'sales:view'         // Sales Data — per-franchise itemised test sales (read-only; mirrors LIS SalesDataforMcc, menu 32)
   | 'dashboard:view'     // Revenue KPIs / live dashboard (not for Technicians)
   | 'report:view';       // Reporting tab — customer-facing result reports (super admin only for now)
