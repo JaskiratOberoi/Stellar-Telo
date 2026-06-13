@@ -148,6 +148,7 @@ export async function dailyCollectionSeries(
       FROM dbo.tbl_billing_patient_amount_receipt r
       JOIN dbo.tbl_billing_patient_detail b ON b.id = r.bill_id
       WHERE b.addedby LIKE 'telo:%'
+        AND NOT EXISTS (SELECT 1 FROM dbo.telo_receipt_void v WHERE v.receipt_id = r.id)
         AND b.mcc_code = @mcc
         AND r.recd_date >= @from
         AND r.recd_date <  DATEADD(day, 1, @to)
@@ -185,6 +186,7 @@ export async function paymentModeBreakdown(
       FROM dbo.tbl_billing_patient_amount_receipt r
       JOIN dbo.tbl_billing_patient_detail b ON b.id = r.bill_id
       WHERE b.addedby LIKE 'telo:%'
+        AND NOT EXISTS (SELECT 1 FROM dbo.telo_receipt_void v WHERE v.receipt_id = r.id)
         AND b.mcc_code = @mcc
         AND r.receive_status = '1'
         AND r.recd_date >= @from

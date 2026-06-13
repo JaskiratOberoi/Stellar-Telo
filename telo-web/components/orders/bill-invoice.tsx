@@ -115,6 +115,12 @@ export function BillInvoice({
   const nobleVisible = config?.nobleLogoVisible ?? true;
   const customVisible = config?.customLogoVisible ?? true;
 
+  // The printed bill is a clean financial document: voided transactions are
+  // dropped entirely (the on-screen receipt keeps them, struck through, for
+  // audit). The summary totals already net out voids (amount_paid is adjusted
+  // by the void), so only the line list needs filtering here.
+  const billReceipts = order.receipts.filter((r) => !r.voided);
+
   // Plain <img> on purpose — BillInvoice is mounted inside a `hidden print:block`
   // wrapper (display:none on screen). Next/Image's wrapper + IntersectionObserver
   // path doesn't reliably preload inside a display:none ancestor, so the print
@@ -265,10 +271,10 @@ export function BillInvoice({
       </div>
 
       {/* ── Payment history ────────────────────────────────────────── */}
-      {order.receipts.length > 0 && (
+      {billReceipts.length > 0 && (
         <div className="border-b border-gray-400 px-5 py-3">
           <p className="font-semibold text-[9px] uppercase tracking-wide text-gray-500 mb-1.5">
-            Payments &amp; Refunds · {order.receipts.length}
+            Payments &amp; Refunds · {billReceipts.length}
           </p>
           <table className="w-full border-collapse">
             <thead>
@@ -294,7 +300,7 @@ export function BillInvoice({
               </tr>
             </thead>
             <tbody>
-              {order.receipts.map((rcpt, idx) => {
+              {billReceipts.map((rcpt, idx) => {
                 const isRefund = rcpt.kind === 'refund';
                 return (
                   <tr key={idx} className="border-b border-gray-100">

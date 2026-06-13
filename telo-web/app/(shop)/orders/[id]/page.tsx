@@ -9,6 +9,8 @@ import { RecordPaymentForm } from '@/components/payment/record-payment';
 import { RecordRefundForm } from '@/components/payment/record-refund';
 import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-button';
 import { EditPatientInfo } from '@/components/orders/edit-patient-info';
+import { EditDiscount } from '@/components/orders/edit-discount';
+import { VoidReceiptButton } from '@/components/orders/void-receipt-button';
 import { fmtIST } from '@/lib/datetime';
 import type { Capability } from '@/types/auth';
 import {
@@ -323,7 +325,16 @@ async function ReceiptBody({
             <CardContent className="space-y-3 p-4 pt-0 text-sm text-zinc-900">
               <div className="space-y-1">
                 <Row label="Amount" value={`₹${order.amount}`} />
-                <Row label="Discount" value={`₹${order.discount}`} />
+                {isSuperAdmin ? (
+                  <EditDiscount
+                    billId={order.billId}
+                    amount={order.amount}
+                    discount={order.discount}
+                    amountPaid={order.amountPaid}
+                  />
+                ) : (
+                  <Row label="Discount" value={`₹${order.discount}`} />
+                )}
               </div>
 
               {order.receipts.length > 0 && (
@@ -333,7 +344,12 @@ async function ReceiptBody({
                   </p>
                   <div className="space-y-1">
                     {order.receipts.map((rcpt, idx) => (
-                      <ReceiptRow key={idx} rcpt={rcpt} />
+                      <ReceiptRow
+                        key={idx}
+                        rcpt={rcpt}
+                        billId={order.billId}
+                        canVoid={isSuperAdmin}
+                      />
                     ))}
                   </div>
                   <div className="border-t border-zinc-200 pt-1.5">
@@ -395,17 +411,25 @@ function Row({
 }
 
 // One line per payment / refund in the Summary card. Refunds show in red
-// with a leading minus so the running net is clear at a glance.
+// with a leading minus so the running net is clear at a glance. Voided
+// receipts are struck through and tagged — they no longer count toward the
+// net (the void already reversed amount_paid). Super admins get a "Void"
+// control on still-active receipts.
 function ReceiptRow({
   rcpt,
+  billId,
+  canVoid,
 }: {
   rcpt: import('@/db/read/orders').OrderReceipt;
+  billId: number;
+  canVoid: boolean;
 }) {
   const isRefund = rcpt.kind === 'refund';
+  const isVoided = rcpt.voided;
   const dateLabel = rcpt.date ? fmtIST(rcpt.date, 'date') : '—';
   return (
     <div className="flex items-baseline justify-between gap-2 text-xs">
-      <span className="flex-1 truncate">
+      <span className={`flex-1 truncate ${isVoided ? 'line-through opacity-60' : ''}`}>
         <span className="text-zinc-500">{dateLabel}</span>
         <span className="mx-1 text-zinc-300">·</span>
         <span className="text-zinc-900">{rcpt.method ?? 'Cash'}</span>
@@ -422,15 +446,28 @@ function ReceiptRow({
           </>
         )}
         {isRefund && (
-          <span className="ml-1.5 rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-700">
+          <span className="ml-1.5 rounded bg-red-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-700 no-underline">
             refund
           </span>
         )}
       </span>
+      {isVoided && (
+        <span className="rounded bg-zinc-200 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+          voided
+        </span>
+      )}
+      {canVoid && !isVoided && (
+        <VoidReceiptButton
+          billId={billId}
+          receiptId={rcpt.receiptId}
+          kind={rcpt.kind}
+          amount={rcpt.amount}
+        />
+      )}
       <span
-        className={
+        className={`${
           isRefund ? 'font-medium text-red-700' : 'font-medium text-zinc-900'
-        }
+        } ${isVoided ? 'line-through opacity-60' : ''}`}
       >
         {isRefund ? '− ' : ''}₹{rcpt.amount.toLocaleString('en-IN')}
       </span>

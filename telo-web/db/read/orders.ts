@@ -34,12 +34,17 @@ export interface OrderSample {
  * `card_number` column (column name is legacy, the value is generic).
  */
 export interface OrderReceipt {
+  /** PK of the receipt row — the void target for super admins. */
+  receiptId: number;
   date: string | null;
   amount: number;
   method: string | null;
   reference: string | null;
   txnId: string | null;
   kind: 'payment' | 'refund';
+  /** True once a super admin has voided this receipt (telo_receipt_void). The
+   *  row is kept for the trail but no longer counts toward amount_paid. */
+  voided: boolean;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -286,21 +291,26 @@ export async function getOrder(
       .request()
       .input('bid', sql.Int, billId)
       .query<{
+        receiptId: number;
         date: Date | null;
         amount: number;
         method: string | null;
         reference: string | null;
         status: string | null;
         txnId: string | null;
+        voided: number;
       }>(`
-        SELECT r.recd_date AS date,
+        SELECT r.id AS receiptId,
+               r.recd_date AS date,
                r.amount,
                r.pay_mode AS method,
                r.card_number AS reference,
                r.receive_status AS status,
-               t.txn_id AS txnId
+               t.txn_id AS txnId,
+               CASE WHEN v.receipt_id IS NULL THEN 0 ELSE 1 END AS voided
         FROM dbo.tbl_billing_patient_amount_receipt r
         LEFT JOIN dbo.telo_txn t ON t.receipt_id = r.id
+        LEFT JOIN dbo.telo_receipt_void v ON v.receipt_id = r.id
         WHERE r.bill_id = @bid
         ORDER BY r.id
       `);
@@ -345,12 +355,14 @@ export async function getOrder(
     ]);
 
     const receipts: OrderReceipt[] = rcr.recordset.map((x) => ({
+      receiptId: x.receiptId,
       date: x.date ? x.date.toISOString() : null,
       amount: Number(x.amount ?? 0),
       method: x.method?.trim() || null,
       reference: x.reference?.trim() || null,
       txnId: x.txnId?.trim() || null,
       kind: x.status === '2' ? 'refund' : 'payment',
+      voided: x.voided === 1,
     }));
 
     const samples: OrderSample[] = sr.recordset.map((x) => ({

@@ -458,6 +458,7 @@ export async function listTeloReceiptsForBills(
       LEFT JOIN dbo.telo_txn t ON t.receipt_id = r.id
       JOIN dbo.tbl_billing_patient_detail b ON b.id = r.bill_id
       WHERE b.addedby LIKE 'telo:%'
+        AND NOT EXISTS (SELECT 1 FROM dbo.telo_receipt_void v WHERE v.receipt_id = r.id)
         AND r.bill_id IN (${inClause})
       ORDER BY r.bill_id, r.id
     `);
