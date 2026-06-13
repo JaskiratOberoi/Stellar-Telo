@@ -28,6 +28,10 @@ import {
   type CreatableValue,
 } from '@/components/ui/creatable-combobox';
 import { SidField, type SidStatus } from '@/components/register/sid-field';
+import {
+  MobileField,
+  type MobileStatus,
+} from '@/components/register/mobile-field';
 import { ChevronDown } from 'lucide-react';
 import {
   Card,
@@ -100,6 +104,9 @@ export function RegisterForm({
     units.length === 1 ? units[0].id : '',
   );
   const [f, setF] = useState<Fields>(DEFAULTS);
+  // Live per-number usage check (max patients per mobile) — status lifted
+  // here so the submit gate below can block on it, like the SID checks.
+  const [mobileStatus, setMobileStatus] = useState<MobileStatus>('idle');
   // Auto-fill "Paid now" with 50% of the running total so a bill is never
   // saved with ₹0 collected by mistake. Stops mirroring once the operator
   // edits the field manually, so an explicit amount is always respected.
@@ -465,19 +472,12 @@ export function RegisterForm({
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-0.5">
-              <Label htmlFor="mobile">Mobile *</Label>
-              <Input
-                id="mobile"
-                name="mobile"
-                required
-                inputMode="tel"
-                minLength={10}
-                maxLength={20}
-                value={f.mobile}
-                onChange={upd('mobile')}
-              />
-            </div>
+            <MobileField
+              value={f.mobile}
+              onChange={(next) => setF((s) => ({ ...s, mobile: next }))}
+              status={mobileStatus}
+              onStatus={setMobileStatus}
+            />
             <div className="space-y-0.5">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -958,6 +958,11 @@ export function RegisterForm({
               !f.age.trim() ||
               !f.mobile.trim() ||
               f.mobile.trim().length < 10;
+            // The mobile usage cap blocks like a taken SID: at the limit,
+            // while checking, or unverifiable — never save on an unknown.
+            const mobileBlocked = mobileStatus === 'blocked';
+            const mobileBusy =
+              mobileStatus === 'checking' || mobileStatus === 'error';
             const blocked =
               pending ||
               picked.length === 0 ||
@@ -968,6 +973,8 @@ export function RegisterForm({
               anyError ||
               hasClientDup ||
               coreMissing ||
+              mobileBlocked ||
+              mobileBusy ||
               belowMinPaid ||
               aboveMaxDiscount;
             const label = pending
@@ -976,7 +983,13 @@ export function RegisterForm({
                 ? 'Select a Client code'
                 : coreMissing
                   ? 'Patient details required'
-                  : groups.length === 0
+                  : mobileBlocked
+                    ? 'Mobile number limit reached'
+                    : mobileStatus === 'checking'
+                      ? 'Checking mobile number…'
+                      : mobileStatus === 'error'
+                        ? 'Could not verify mobile number'
+                        : groups.length === 0
                     ? 'Add tests to continue'
                     : anyTaken
                       ? 'Sample ID already exists'

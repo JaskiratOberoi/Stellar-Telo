@@ -7,6 +7,13 @@ export interface ScopedMcc {
   name: string | null;
 }
 
+/** A scoped MCC with its parent Business Unit — for the Client-Accounts filter
+ *  bar, where Business Unit narrows the client switcher (mirrors the LIS). */
+export interface ScopedClient extends ScopedMcc {
+  buId: number | null; // tbl_med_mcc_unit_master.BusinessUnitCode → business_unit.id
+  buName: string | null;
+}
+
 /** A collection centre's contact details, for the report's "Collected at". */
 export interface CollectionCentre {
   code: string;
@@ -137,6 +144,56 @@ export async function searchMccUnits(
       id: x.id,
       code: (x.code ?? '').trim(),
       name: x.name ? x.name.trim() : null,
+    }));
+  });
+}
+
+/**
+ * Like fetchScopedMccUnits but also resolves each centre's Business Unit, for
+ * the Client-Accounts filter bar (BU narrows the client switcher). Same
+ * scope + own-inactive-override semantics as fetchScopedMccUnits.
+ */
+export async function fetchScopedClients(
+  scopeIds: number[],
+  ownIds: number[] = [],
+): Promise<ScopedClient[]> {
+  const ids = scopeIds.filter((n) => Number.isInteger(n));
+  if (ids.length === 0) return [];
+  const own = ownIds.filter((n) => Number.isInteger(n) && ids.includes(n));
+  return withRetry(async () => {
+    const pool = await getPool();
+    const req = pool.request();
+    const params = ids.map((id, i) => {
+      req.input(`u${i}`, sql.Int, id);
+      return `@u${i}`;
+    });
+    const ownParams = own.map((id, i) => {
+      req.input(`o${i}`, sql.Int, id);
+      return `@o${i}`;
+    });
+    const activeClause = ownParams.length
+      ? `(u.IsActive = 1 OR u.id IN (${ownParams.join(',')}))`
+      : `u.IsActive = 1`;
+    const r = await req.query<{
+      id: number;
+      code: string;
+      name: string | null;
+      buId: number | null;
+      buName: string | null;
+    }>(`
+      SELECT u.id, u.MCCUnitCode AS code, u.MCCUnitName AS name,
+             u.BusinessUnitCode AS buId, b.BusinessUnitName AS buName
+      FROM dbo.tbl_med_mcc_unit_master u
+      LEFT JOIN dbo.tbl_med_business_unit_master b ON b.id = u.BusinessUnitCode
+      WHERE u.id IN (${params.join(',')}) AND ${activeClause}
+      ORDER BY u.MCCUnitName
+    `);
+    return r.recordset.map((x) => ({
+      id: x.id,
+      code: (x.code ?? '').trim(),
+      name: x.name ? x.name.trim() : null,
+      buId: x.buId ?? null,
+      buName: x.buName ? x.buName.trim() : null,
     }));
   });
 }

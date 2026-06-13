@@ -16,8 +16,14 @@ interface BillInvoiceProps {
   mccCode?: string | null;
   /** Per-MCC branding config from telo_mcc_invoice_config (may be null) */
   config: MccInvoiceConfig | null;
-  /** LIS centre fallback for the header address block. */
-  centreFallback?: { address: string | null; city: string | null } | null;
+  /** LIS centre fallback for the header (address/city/phone/email) — used per
+   *  field whenever the invoice-config override leaves that field blank. */
+  centreFallback?: {
+    address: string | null;
+    city: string | null;
+    phone: string | null;
+    email: string | null;
+  } | null;
 }
 
 // (No currency formatting — the lab receipt is a pre-analytical document
@@ -35,8 +41,8 @@ export function LabInvoice({
   const city    = config?.city?.trim()    || centreFallback?.city?.trim()    || null;
   const stateNm = config?.state?.trim()   || null;
   const pincode = config?.pincode?.trim() || null;
-  const phone   = config?.phone?.trim()   || null;
-  const email   = config?.email?.trim()   || null;
+  const phone   = config?.phone?.trim()   || centreFallback?.phone?.trim()   || null;
+  const email   = config?.email?.trim()   || centreFallback?.email?.trim()   || null;
   const addressLine = [address, city, stateNm, pincode].filter(Boolean).join(', ');
   const { showSignatory } = resolveInvoiceDefaults(config, mccCode);
 

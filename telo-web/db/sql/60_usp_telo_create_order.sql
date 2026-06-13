@@ -159,6 +159,29 @@ BEGIN
         SELECT * FROM @emptySamples;
         RETURN;
     END
+    /* A mobile number may belong to at most 4 Telo-registered patients. The
+       form and registerOrder pre-check this live; this is the authoritative
+       gate. Only Telo-created rows count (addedby 'telo:%' — native LIS
+       patients don't consume the allowance) and only a NEW patient row can
+       consume a slot (@patientId reuse adds no patient). */
+    IF (@patientId IS NULL OR @patientId = 0)
+       AND @mobile IS NOT NULL AND LTRIM(RTRIM(@mobile)) <> ''
+    BEGIN
+        DECLARE @mobileUses INT =
+            (SELECT COUNT(*) FROM dbo.tbl_med_mcc_patient_master
+             WHERE mobile_number = @mobile AND addedby LIKE 'telo:%');
+        IF @mobileUses >= 4
+        BEGIN
+            SELECT ok = CAST(0 AS BIT), error_code = 'CONFLICT',
+                   message = CONCAT(N'This mobile number is already used by ',
+                                    @mobileUses,
+                                    N' patients — the limit is 4 patients per number.'),
+                   patient_id = NULL, bill_id = NULL, bill_number = NULL,
+                   total = 0, sample_count = 0;
+            SELECT * FROM @emptySamples;
+            RETURN;
+        END
+    END
 
     SELECT @rateTypeId = RateType, @buCode = BusinessUnitCode
     FROM dbo.tbl_med_mcc_unit_master WHERE id = @mcc;

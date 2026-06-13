@@ -31,6 +31,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:view',
     'rate:manage',
     'balance:view',
+    'account:view',
+    'sales:view',
     'dashboard:view',
     // Reporting is gated to super_admin only while the feature is finalised.
     // Widen by adding 'report:view' to other roles here.
@@ -49,6 +51,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'rate:view',
     'rate:manage',
     'balance:view',
+    'account:view',
+    'sales:view',
     'dashboard:view',
   ],
   billing: [
@@ -62,6 +66,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'payment:capture',
     'rate:view',
     'balance:view',
+    'account:view',
+    'sales:view',
     'dashboard:view',
   ],
   technician: [
@@ -78,6 +84,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'bill:view',
     'rate:view',
     'balance:view',
+    'account:view',
+    'sales:view',
     'dashboard:view',
   ],
 };

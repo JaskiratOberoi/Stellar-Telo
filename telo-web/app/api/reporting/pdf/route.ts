@@ -42,10 +42,11 @@ export async function POST(req: Request) {
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';
   const splitParam = split === true || split === '1' || split === 'true' ? '&split=1' : '';
-  // Tests the user unticked in the preview — dropped from the rendered PDF.
+  // Tests/parameters the user unticked in the preview — dropped from the PDF.
   const excludeList = Array.isArray(exclude)
     ? exclude.filter(
-        (s): s is string => typeof s === 'string' && /^\d+:\d+(?::\d+)?$/.test(s),
+        (s): s is string =>
+          typeof s === 'string' && /^\d+:\d+(?::\d+){0,2}$/.test(s),
       )
     : [];
   const excludeParam = excludeList.length

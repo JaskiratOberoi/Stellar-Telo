@@ -49,12 +49,13 @@ export default async function ReportingPrintFragment({
   const splitByDepartment = sp.split === '1' || sp.split === 'true';
 
   // Tests the user unticked in the preview. Keys are "deptIndex:itemIndex" for a
-  // top-level item, or "deptIndex:itemIndex:childIndex" for a panel child. Only
+  // top-level item, "deptIndex:itemIndex:childIndex" for a panel child, with an
+  // optional trailing row index for an individual parameter inside a group. Only
   // honoured by the PDF render; the preview manages selection client-side.
   const excludedKeys = (sp.exclude ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => /^\d+:\d+(?::\d+)?$/.test(s));
+    .filter((s) => /^\d+:\d+(?::\d+){0,2}$/.test(s));
 
   const decodedSid = decodeURIComponent(sid).trim();
   if (!decodedSid) notFound();

@@ -27,8 +27,14 @@ interface BillInvoiceProps {
    */
   mccCode: string | null;
   config: MccInvoiceConfig | null;
-  /** LIS centre fallback for the header address block (when config is blank). */
-  centreFallback?: { address: string | null; city: string | null } | null;
+  /** LIS centre fallback for the header (address/city/phone/email) — used per
+   *  field whenever the invoice-config override leaves that field blank. */
+  centreFallback?: {
+    address: string | null;
+    city: string | null;
+    phone: string | null;
+    email: string | null;
+  } | null;
   /**
    * URL to the per-MCC custom logo bytes (typically `/api/mcc-invoice-logo/[mccId]`).
    * Pass null when no logo is uploaded for this MCC. The endpoint serves the
@@ -86,8 +92,8 @@ export function BillInvoice({
   const city    = config?.city?.trim()    || centreFallback?.city?.trim()    || null;
   const stateNm = config?.state?.trim()   || null;
   const pincode = config?.pincode?.trim() || null;
-  const phone   = config?.phone?.trim()   || null;
-  const email   = config?.email?.trim()   || null;
+  const phone   = config?.phone?.trim()   || centreFallback?.phone?.trim()   || null;
+  const email   = config?.email?.trim()   || centreFallback?.email?.trim()   || null;
   // Header line 2: address, city, state, pincode (whichever are present).
   const addressLine = [address, city, stateNm, pincode].filter(Boolean).join(', ');
 

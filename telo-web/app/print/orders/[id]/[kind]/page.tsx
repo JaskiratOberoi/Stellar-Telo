@@ -54,10 +54,17 @@ export default async function PrintFragmentPage({
     mccId != null && invoiceConfig?.hasTopRightLogo
       ? customLogoApiPath(mccId)
       : null;
-  // LIS centre — header address fallback when invoice config leaves it blank.
+  // LIS centre — header fallback (address/city/phone/email) for whichever
+  // fields the invoice-config override leaves blank. Lets a client-detail edit
+  // in the LIS propagate to bills live without a Telo-side re-entry.
   const centre = mccAccountCode ? await getMccCentreByCode(mccAccountCode) : null;
   const centreFallback = centre
-    ? { address: centre.address ?? null, city: centre.city ?? null }
+    ? {
+        address: centre.address ?? null,
+        city: centre.city ?? null,
+        phone: centre.phone ?? null,
+        email: centre.email ?? null,
+      }
     : null;
 
   // The print iframe loads this page with an explicit @media print stylesheet

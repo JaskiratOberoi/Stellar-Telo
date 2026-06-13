@@ -15,6 +15,8 @@ import {
   type RefEntity,
 } from '@/db/read/refData';
 import { sidExists } from '@/db/read/sid';
+import { countMobileUsage } from '@/db/read/mobileUsage';
+import { MAX_PATIENTS_PER_MOBILE } from '@/lib/limits';
 import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import {
@@ -113,6 +115,37 @@ export async function checkSid(
     return { status: (await sidExists(v)) ? 'taken' : 'available' };
   } catch {
     return { status: 'error' };
+  }
+}
+
+/**
+ * Real-time mobile-number usage check for the New Order form. A mobile number
+ * may be attached to at most MAX_PATIENTS_PER_MOBILE Telo-registered patients;
+ * the form shows the running count as the receptionist types and blocks the
+ * submit at the limit. Advisory only — registerOrder re-checks and
+ * usp_telo_create_order is the hard guarantee, so a race between two open
+ * forms still cannot exceed the limit by more than the in-flight overlap.
+ *
+ * Returns 'error' (never a fake 'ok') when the lookup can't run, so the field
+ * blocks saving instead of silently waving a maxed-out number through.
+ */
+export async function checkMobileUsage(
+  mobile: string,
+): Promise<{ status: 'ok' | 'blocked' | 'empty' | 'error'; count: number }> {
+  const v = (mobile ?? '').trim();
+  if (v.length < 10) return { status: 'empty', count: 0 };
+  const user = await currentUser();
+  if (!user || !hasCapability(user.caps, 'order:create')) {
+    return { status: 'error', count: 0 };
+  }
+  try {
+    const count = await countMobileUsage(v);
+    return {
+      status: count >= MAX_PATIENTS_PER_MOBILE ? 'blocked' : 'ok',
+      count,
+    };
+  } catch {
+    return { status: 'error', count: 0 };
   }
 }
 
@@ -366,6 +399,16 @@ export async function registerOrder(
     const user = await currentUser();
     if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
     await requireCapabilityForMcc('order:create', f.mcc);
+
+    // Per-mobile patient cap. The form pre-checks this live, but a tampered
+    // POST (or a stale form) must not slip past — the SP repeats this count
+    // inside the write as the final word.
+    const mobileUses = await countMobileUsage(f.mobile);
+    if (mobileUses >= MAX_PATIENTS_PER_MOBILE) {
+      return {
+        error: `This mobile number is already used by ${mobileUses} patients — the limit is ${MAX_PATIENTS_PER_MOBILE} patients per number.`,
+      };
+    }
 
     const b2b = f.b2b === '1';
     isB2b = b2b;

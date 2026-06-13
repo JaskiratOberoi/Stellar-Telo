@@ -7,13 +7,16 @@ import { Button } from '@/components/ui/button';
 import type { CartItem } from '@/domain/cart/cart.types';
 
 /**
- * Fly a small chip from `source` to the nav element marked
- * `data-cart-target`. Visual feedback only — has no functional effect.
- * Silently no-ops if the target isn't in the DOM (e.g. for users without
- * `order:view`, the "New order" link isn't rendered).
+ * Fly a small chip from `source` to the order destination. Prefers the
+ * on-page "New Order" FAB (`data-cart-fab`) now that it rides along on every
+ * page, and falls back to the navbar "New order" tab (`data-cart-target`)
+ * when the FAB isn't rendered. Visual feedback only — no functional effect.
+ * Silently no-ops if neither target is in the DOM.
  */
 function flyToCart(source: HTMLElement, label: string) {
-  const target = document.querySelector<HTMLElement>('[data-cart-target]');
+  const target =
+    document.querySelector<HTMLElement>('[data-cart-fab]') ??
+    document.querySelector<HTMLElement>('[data-cart-target]');
   if (!target) return;
 
   const start = source.getBoundingClientRect();

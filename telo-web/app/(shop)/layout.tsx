@@ -3,6 +3,7 @@ import { hasCapability } from '@/auth/rbac';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
 import type { Capability } from '@/types/auth';
 import { ShopNav } from '@/components/layout/shop-nav';
+import { NewOrderFab } from '@/components/layout/new-order-fab';
 import { AmbientBackground } from '@/components/ui/ambient-background';
 import { getCart } from '@/db/cartStore';
 
@@ -27,6 +28,8 @@ const NAV: NavItem[] = [
   // { href: '/orders', label: 'Orders', cap: 'order:view' },
   // { href: '/rate-lists', label: 'Rate lists', cap: 'rate:view' },
   { href: '/balances', label: 'Accounts', cap: 'balance:view' },
+  { href: '/client-accounts', label: 'Client Accounts', cap: 'account:view' },
+  { href: '/sales', label: 'Sales', cap: 'sales:view' },
   { href: '/reporting', label: 'Reporting', cap: 'report:view' },
   // href: '/admin' so the active-link indicator covers /admin/users AND
   // /admin/invoice (ShopNav uses pathname.startsWith(href)).
@@ -56,9 +59,8 @@ export default async function ShopLayout({
       : user.usertypeName ?? null;
 
   // Cart count for the "New order" badge — only relevant for order:create users.
-  const cartCount = hasCapability(user.caps, 'order:create')
-    ? (await getCart(user.uid)).items.length
-    : 0;
+  const canCreate = hasCapability(user.caps, 'order:create');
+  const cartCount = canCreate ? (await getCart(user.uid)).items.length : 0;
 
   // User's "home" — Dashboard for everyone except Technicians, who land
   // directly on the New Order worklist. The Telo brand mark navigates here.
@@ -80,6 +82,9 @@ export default async function ShopLayout({
       <main className="container relative z-10 py-6 print:p-0 print:max-w-none">
         {children}
       </main>
+      {/* Global FAB — register a new order from anywhere. Self-gates on
+          capability/route. Badge mirrors the navbar cart count. */}
+      <NewOrderFab canCreate={canCreate} cartCount={cartCount} />
     </div>
   );
 }

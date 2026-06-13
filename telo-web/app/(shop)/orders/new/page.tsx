@@ -27,13 +27,12 @@ export default async function NewOrderWorklistPage({
         <h1 className="text-xl font-bold tracking-tight">New order</h1>
         <p className="text-sm text-muted-foreground">
           {canCreate
-            ? 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes, or use the + button to register a new order.'
+            ? 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes, or use the New Order button to register a new order.'
             : 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes.'}
         </p>
       </div>
       <PendingAccessionsList
         initial={feed}
-        canCreate={canCreate}
         highlightBillId={highlightBillId}
       />
     </div>

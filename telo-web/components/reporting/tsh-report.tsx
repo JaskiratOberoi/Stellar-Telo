@@ -10,7 +10,10 @@
  * Test selection: in preview mode every toggleable test carries a tick box (all
  * ticked by default). A profile panel (e.g. LIVER FUNCTION TEST) gets a parent
  * tick box that cascades to all its children; each child (a sub-group like
- * BILIRUBIN, or a standalone test like AST) keeps its own tick box too.
+ * BILIRUBIN, or a standalone test like AST) keeps its own tick box too, and
+ * every individual parameter row inside a group (e.g. Hemoglobin within the CBC
+ * analyzer block) gets its own tick box as well — unticking a group cascades to
+ * its parameters exactly like a profile cascades to its children.
  * Unticking dims the item and posts the excluded keys up to the preview modal,
  * which forwards them to the PDF route — so the saved file contains exactly the
  * ticked tests. In PDF mode the excluded keys arrive via `excludedKeys` and
@@ -133,9 +136,11 @@ export interface LabReportData {
   /** Start each department on a new page (the LIS "split" layout). */
   splitByDepartment?: boolean;
   /** Item keys the user unticked — omitted from the PDF render. A top-level item
-   *  is "deptIndex:itemIndex"; a panel child is "deptIndex:itemIndex:childIndex".
-   *  Excluding a panel key cascades to all its children. Empty/undefined means
-   *  "include every test" (the default). */
+   *  is "deptIndex:itemIndex"; a panel child is "deptIndex:itemIndex:childIndex";
+   *  an individual parameter row appends its row index to its group's key (so
+   *  "di:ii:ri" under a top-level group, "di:ii:ci:ri" under a profile child).
+   *  Excluding a panel/group key cascades to everything beneath it.
+   *  Empty/undefined means "include every test" (the default). */
   excludedKeys?: string[];
   patientName: string | null;
   pid: number;
@@ -198,6 +203,8 @@ function ageLabel(age: number | null, unit: string | null): string {
 const topKey = (di: number, ii: number) => `${di}:${ii}`;
 /** Panel-child key, nested under its panel's top-level key. */
 const childKey = (di: number, ii: number, ci: number) => `${di}:${ii}:${ci}`;
+/** Parameter-row key, nested under its group's key (top-level or panel child). */
+const rowKey = (groupKey: string, ri: number) => `${groupKey}:${ri}`;
 
 export function LabReport({ data }: { data: LabReportData }) {
   // Preview shows tick boxes and instant client-side dimming; the PDF render is
@@ -223,17 +230,32 @@ export function LabReport({ data }: { data: LabReportData }) {
   const leafOff = (key: string, panelKey?: string) =>
     excluded.has(key) || (panelKey != null && excluded.has(panelKey));
 
-  // Count selectable leaf tests and how many survive the current selection, so
-  // the preview modal can block a download with nothing ticked.
+  // Count selectable leaves (individual parameter rows for groups, the test
+  // itself otherwise) and how many survive the current selection, so the
+  // preview modal can block a download with nothing ticked.
   let totalLeaves = 0;
   let remainingLeaves = 0;
   data.departments.forEach((dept, di) => {
     dept.items.forEach((item, ii) => {
       const key = topKey(di, ii);
       if (item.kind === 'panel' && item.panel) {
-        item.panel.children.forEach((_, ci) => {
+        item.panel.children.forEach((child, ci) => {
+          const ckey = childKey(di, ii, ci);
+          const childOff = leafOff(ckey, key);
+          if (child.kind === 'group' && child.group) {
+            child.group.rows.forEach((_, ri) => {
+              totalLeaves += 1;
+              if (!childOff && !excluded.has(rowKey(ckey, ri))) remainingLeaves += 1;
+            });
+          } else {
+            totalLeaves += 1;
+            if (!childOff) remainingLeaves += 1;
+          }
+        });
+      } else if (item.kind === 'group' && item.group) {
+        item.group.rows.forEach((_, ri) => {
           totalLeaves += 1;
-          if (!leafOff(childKey(di, ii, ci), key)) remainingLeaves += 1;
+          if (!excluded.has(key) && !excluded.has(rowKey(key, ri))) remainingLeaves += 1;
         });
       } else {
         totalLeaves += 1;
@@ -296,7 +318,17 @@ export function LabReport({ data }: { data: LabReportData }) {
         if (interactive) return true;
         if (excluded.has(key)) return false;
         if (item.kind === 'panel' && item.panel) {
-          return item.panel.children.some((_, ci) => !excluded.has(childKey(di, ii, ci)));
+          return item.panel.children.some((child, ci) => {
+            const ckey = childKey(di, ii, ci);
+            if (excluded.has(ckey)) return false;
+            if (child.kind === 'group' && child.group) {
+              return child.group.rows.some((_, ri) => !excluded.has(rowKey(ckey, ri)));
+            }
+            return true;
+          });
+        }
+        if (item.kind === 'group' && item.group) {
+          return item.group.rows.some((_, ri) => !excluded.has(rowKey(key, ri)));
         }
         return true;
       });
@@ -345,9 +377,12 @@ export function LabReport({ data }: { data: LabReportData }) {
         <GroupBlock
           key={key}
           group={item.group}
+          groupKey={key}
           interactive={interactive}
-          excluded={excluded.has(key)}
-          onToggle={() => toggle(key)}
+          excludedSet={excluded}
+          groupOff={excluded.has(key)}
+          onToggle={toggle}
+          pdf={!!data.pdf}
         />
       );
     }
@@ -383,6 +418,30 @@ export function LabReport({ data }: { data: LabReportData }) {
   // render and is unaffected by any of this preview chrome.
   const previewSheets = !data.pdf && data.splitByDepartment;
 
+  // The signature/footer block can't be bottom-pinned from inside <tfoot>: a
+  // table-footer-group repeats on every page but bottoms-out just under the last
+  // row, so on a short/last page it floats up the page instead of sitting at the
+  // bottom. Fix: keep the <tfoot> copy purely as an *invisible* spacer (it still
+  // reserves the footer's exact height on every page, so flowing content never
+  // runs under the footer), and render a second, *visible* copy that is pinned to
+  // the page bottom — `position:fixed; bottom:0` for the PDF (Chromium paints a
+  // fixed element at the content-box bottom of EVERY printed page; transforms /
+  // negative offsets are NOT repositioned reliably per page, so we use a bare
+  // bottom:0), and an absolutely-positioned per-sheet copy for the on-screen
+  // split preview. Continuous preview keeps the footer visible in <tfoot>.
+  const ghostFooter = data.pdf || previewSheets;
+  const tfootFooter = (
+    <tfoot>
+      <tr>
+        <td colSpan={5} className="p-0 align-bottom">
+          <div className={ghostFooter ? 'invisible' : ''}>
+            <ReportFooterBlock data={data} />
+          </div>
+        </td>
+      </tr>
+    </tfoot>
+  );
+
   return (
     <div
       className={`mx-auto w-full max-w-[820px] text-black font-sans text-[11px] leading-snug ${
@@ -401,18 +460,14 @@ export function LabReport({ data }: { data: LabReportData }) {
       {sections.length === 0 ? (
         <p className="py-4 text-center text-gray-500">No results available for this sample.</p>
       ) : data.splitByDepartment ? (
-        /* SPLIT: each section is a full-page flex column — patient header on
-           top, results in the middle, signature/footer pinned to the bottom of
-           the page (margin-top:auto inside a page-height min-height). Each
-           profile gets its own page via break-before. */
+        /* SPLIT: each section is a self-contained <table> — patient header in
+           <thead> (repeats atop every page the section spans), results in
+           <tbody>, and the signature/footer as an invisible <tfoot> spacer that
+           reserves the footer's height on every page (so flowing rows never run
+           under it). The visible footer is pinned to the page bottom separately:
+           position:fixed for the PDF, an absolute per-sheet copy for this
+           preview. Each profile gets its own page via break-before. */
         sections.map((sec, si) => {
-          // Each section is a self-contained <table>: the patient header is in
-          // <thead> and the signature/footer block is in <tfoot>, so BOTH repeat
-          // on every page the section spans. <tfoot> (table-footer-group) pins to
-          // the bottom of every FULL page — so a multi-page section keeps its
-          // signatures on page 1 (not stranded on the last page) — while the
-          // header-in-<thead> avoids the stranded-table / blank-page bug. (On a
-          // short LAST page the footer sits just under the final rows.)
           const sectionTable = (
             <table className="w-full table-fixed border-collapse">
               <ReportColgroup />
@@ -428,13 +483,7 @@ export function LabReport({ data }: { data: LabReportData }) {
                 </tr>
                 <ColumnHeaderRow />
               </thead>
-              <tfoot>
-                <tr>
-                  <td colSpan={5} className="p-0 align-bottom">
-                    <ReportFooterBlock data={data} />
-                  </td>
-                </tr>
-              </tfoot>
+              {tfootFooter}
               <tbody>
                 <tr>
                   <td colSpan={5} className={deptBandCls}>
@@ -469,6 +518,11 @@ export function LabReport({ data }: { data: LabReportData }) {
                 <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
               </div>
               {sectionTable}
+              {/* The <tfoot> above is an invisible spacer; this visible copy is
+                  pinned to the bottom of the sheet (matching the px/py inset). */}
+              <div className="absolute inset-x-[10mm] bottom-[8mm]">
+                <ReportFooterBlock data={data} />
+              </div>
             </div>
           );
         })
@@ -486,13 +540,7 @@ export function LabReport({ data }: { data: LabReportData }) {
             </tr>
             <ColumnHeaderRow />
           </thead>
-          <tfoot>
-            <tr>
-              <td colSpan={5} className="p-0 align-bottom">
-                <ReportFooterBlock data={data} />
-              </td>
-            </tr>
-          </tfoot>
+          {tfootFooter}
           <tbody>
             {sections.map((sec, si) => (
               <Fragment key={si}>
@@ -509,6 +557,18 @@ export function LabReport({ data }: { data: LabReportData }) {
             {endMarker}
           </tbody>
         </table>
+      )}
+
+      {/* PDF: the single visible footer, pinned to the bottom of EVERY printed
+          page. Chromium paints a position:fixed element once per page at the
+          content-box bottom (= the @page bottom margin line, just above the
+          letterhead's footer band); the <tfoot> ghost above reserves its height
+          so flowing content never overlaps it. Full-bleed with a 14mm inset to
+          match the @page side margins / report content width. */}
+      {data.pdf && sections.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 px-[14mm]">
+          <ReportFooterBlock data={data} />
+        </div>
       )}
     </div>
   );
@@ -609,8 +669,9 @@ function PatientMetaBlock({
       {/* Tick-box hint (preview only). */}
       {interactive && totalLeaves > 0 && (
         <p className="mt-2 text-center text-[10px] italic text-gray-500 print:hidden">
-          Tick the tests to include. Unticking a profile drops all its tests;
-          unticked tests are left out of the download and the saved PDF.
+          Tick the tests and parameters to include. Unticking a profile or test
+          drops everything under it; unticked items are left out of the download
+          and the saved PDF.
         </p>
       )}
     </>
@@ -708,7 +769,7 @@ function IncludeToggle({
       onChange={onToggle}
       title={
         disabled
-          ? 'Re-tick the profile to choose individual tests'
+          ? 'Re-tick the parent to choose individual items'
           : excluded
             ? `Include ${label} in the PDF`
             : `Exclude ${label} from the PDF`
@@ -745,17 +806,26 @@ function PanelBlock({
   const panelOff = excluded.has(panelKey);
   const kids = panel.children.map((child, ci) => ({ child, ckey: childKeyFor(ci) }));
   const visibleKids = pdf
-    ? kids.filter(({ ckey }) => !panelOff && !excluded.has(ckey))
+    ? kids.filter(({ child, ckey }) => {
+        if (panelOff || excluded.has(ckey)) return false;
+        // A group whose parameter rows are all unticked vanishes with them.
+        if (child.kind === 'group' && child.group) {
+          return child.group.rows.some((_, ri) => !excluded.has(rowKey(ckey, ri)));
+        }
+        return true;
+      })
     : kids;
   if (pdf && visibleKids.length === 0) return null;
 
   // Static notes (e.g. TSH) still attach to the profile, from the included
-  // children's test codes.
+  // parameter rows' test codes.
   const panelCodes: (string | null)[] = [];
   for (const { child, ckey } of kids) {
     if (panelOff || excluded.has(ckey)) continue;
     if (child.kind === 'group' && child.group) {
-      for (const r of child.group.rows) panelCodes.push(r.code);
+      child.group.rows.forEach((r, ri) => {
+        if (!excluded.has(rowKey(ckey, ri))) panelCodes.push(r.code);
+      });
     } else if (child.row) {
       panelCodes.push(child.row.code);
     }
@@ -783,9 +853,10 @@ function PanelBlock({
       {visibleKids.map(({ child, ckey }) =>
         renderChild(child, ckey, {
           interactive,
-          excluded: panelOff || excluded.has(ckey),
-          disabled: panelOff,
-          onToggle: () => onToggle(ckey),
+          excludedSet: excluded,
+          panelOff,
+          pdf,
+          onToggle,
         }),
       )}
       {interpretation && <InterpretationRow text={interpretation} dim={panelOff} />}
@@ -799,17 +870,26 @@ function PanelBlock({
 function renderChild(
   child: SampleReportBlock,
   key: string,
-  ctl: { interactive: boolean; excluded: boolean; disabled: boolean; onToggle: () => void },
+  ctl: {
+    interactive: boolean;
+    excludedSet: Set<string>;
+    panelOff: boolean;
+    pdf: boolean;
+    onToggle: (key: string) => void;
+  },
 ): ReactNode {
   if (child.kind === 'group' && child.group) {
     return (
       <GroupBlock
         key={key}
         group={child.group}
+        groupKey={key}
         interactive={ctl.interactive}
-        excluded={ctl.excluded}
-        disabled={ctl.disabled}
+        excludedSet={ctl.excludedSet}
+        groupOff={ctl.panelOff || ctl.excludedSet.has(key)}
+        disabled={ctl.panelOff}
         onToggle={ctl.onToggle}
+        pdf={ctl.pdf}
         indent
         // Interpretation is printed once below the whole profile by PanelBlock.
         hideInterpretation
@@ -824,9 +904,9 @@ function renderChild(
         interpretation={child.interpretation ?? null}
         interpretationImageDataUrl={child.interpretationImageDataUrl ?? null}
         interactive={ctl.interactive}
-        excluded={ctl.excluded}
-        disabled={ctl.disabled}
-        onToggle={ctl.onToggle}
+        excluded={ctl.panelOff || ctl.excludedSet.has(key)}
+        disabled={ctl.panelOff}
+        onToggle={() => ctl.onToggle(key)}
         indent
         hideInterpretation
       />
@@ -835,27 +915,45 @@ function renderChild(
   return null;
 }
 
-/** A multi-parameter group: bold header (own tick box), member rows, interpretation. */
+/** A multi-parameter group: bold header (own tick box), member rows — each with
+ *  its own parameter tick box — and interpretation. Unticking the group
+ *  cascades to (and disables) its parameter boxes; in PDF mode unticked
+ *  parameters are dropped, and the whole group vanishes when none survive. */
 function GroupBlock({
   group,
+  groupKey,
   interactive,
-  excluded,
+  excludedSet,
+  groupOff,
   onToggle,
   disabled,
+  pdf,
   indent,
   hideInterpretation,
 }: {
   group: SampleReportGroup;
+  groupKey: string;
   interactive: boolean;
-  excluded: boolean;
-  onToggle: () => void;
+  /** Live exclusion set — consulted per parameter row. */
+  excludedSet: Set<string>;
+  /** The whole group is off (its own untick, or its parent profile's). */
+  groupOff: boolean;
+  onToggle: (key: string) => void;
+  /** Parent profile is unticked — disables this group's tick box. */
   disabled?: boolean;
+  pdf?: boolean;
   indent?: boolean;
   /** When inside a profile, the interpretation is printed once below the whole
    *  profile (by PanelBlock) instead of after this group's rows. */
   hideInterpretation?: boolean;
 }) {
-  const dim = excluded ? 'opacity-40' : '';
+  const rowOff = (ri: number) => groupOff || excludedSet.has(rowKey(groupKey, ri));
+  const rows = group.rows.map((row, ri) => ({ row, ri }));
+  const visibleRows = pdf ? rows.filter(({ ri }) => !rowOff(ri)) : rows;
+  if (pdf && visibleRows.length === 0) return null;
+
+  const dim = groupOff ? 'opacity-40' : '';
+  const includedCodes = rows.filter(({ ri }) => !rowOff(ri)).map(({ row }) => row.code);
   return (
     <>
       <tr className={`[break-inside:avoid] ${dim}`}>
@@ -864,8 +962,8 @@ function GroupBlock({
             {interactive && (
               <IncludeToggle
                 label={group.title ?? 'test'}
-                excluded={excluded}
-                onToggle={onToggle}
+                excluded={groupOff}
+                onToggle={() => onToggle(groupKey)}
                 disabled={disabled}
               />
             )}
@@ -873,18 +971,31 @@ function GroupBlock({
           </span>
         </td>
       </tr>
-      {group.rows.map((r, i) => (
-        <ResultRow key={i} row={r} dim={excluded} indentClass={indent ? 'pl-4' : ''} />
+      {visibleRows.map(({ row, ri }) => (
+        <ResultRow
+          key={ri}
+          row={row}
+          dim={rowOff(ri)}
+          indentClass={indent ? 'pl-4' : ''}
+          lead={
+            interactive ? (
+              <IncludeToggle
+                label={row.name ?? 'parameter'}
+                excluded={rowOff(ri)}
+                onToggle={() => onToggle(rowKey(groupKey, ri))}
+                disabled={groupOff}
+              />
+            ) : undefined
+          }
+        />
       ))}
       {!hideInterpretation && group.interpretation && (
-        <InterpretationRow text={group.interpretation} dim={excluded} />
+        <InterpretationRow text={group.interpretation} dim={groupOff} />
       )}
       {!hideInterpretation && group.interpretationImageDataUrl && (
-        <InterpretationImageRow src={group.interpretationImageDataUrl} dim={excluded} />
+        <InterpretationImageRow src={group.interpretationImageDataUrl} dim={groupOff} />
       )}
-      {!hideInterpretation && (
-        <NoteRow notes={notesForCodes(group.rows.map((r) => r.code))} dim={excluded} />
-      )}
+      {!hideInterpretation && <NoteRow notes={notesForCodes(includedCodes)} dim={groupOff} />}
     </>
   );
 }

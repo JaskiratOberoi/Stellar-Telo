@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * B2B Orders worklist — mirrors the New Order worklist but lists ONLY B2B
- * orders (tagged in telo_order_kind; billed at MRP). Use the + button to
- * register a new B2B order. Hidden from MRP-only accounts (e.g. MDCARE); the
+ * orders (tagged in telo_order_kind; billed at MRP). Use the New B2B Order
+ * button to register one. Hidden from MRP-only accounts (e.g. MDCARE); the
  * guard below also closes the door to URL-typing.
  */
 export default async function B2bOrderWorklistPage({
@@ -34,13 +34,12 @@ export default async function B2bOrderWorklistPage({
         <h1 className="text-xl font-bold tracking-tight">B2B Orders</h1>
         <p className="text-sm text-muted-foreground">
           {canCreate
-            ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the + button to register a new B2B order. The patient bill is at MRP; the client rate & margin are shown while registering.'
+            ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the New B2B Order button to register one. The patient bill is at MRP; the client rate & margin are shown while registering.'
             : 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes.'}
         </p>
       </div>
       <PendingAccessionsList
         initial={feed}
-        canCreate={canCreate}
         highlightBillId={highlightBillId}
         variant="b2b"
       />
