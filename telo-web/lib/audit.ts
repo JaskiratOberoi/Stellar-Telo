@@ -25,6 +25,7 @@ type AuditEvent =
   | { kind: 'patient.info.update'; actor: number; billId: number }
   | { kind: 'bill.discount.set'; actor: number; billId: number; discount: number }
   | { kind: 'receipt.voided'; actor: number; billId: number; receiptId: number }
+  | { kind: 'bill.test.cancelled'; actor: number; billId: number; lineId: number }
   // Emitted by the auth() session callback when a request's JWT carries an
   // older session_version than the live one — the session is then dropped
   // (forcing re-login). Captures both versions for ops correlation.

@@ -7,6 +7,7 @@ import { getMccScope } from '@/auth/scope';
 import { getPool, sql, withRetry } from '@/db/pool';
 import { setBillDiscount } from '@/db/sp/setBillDiscount';
 import { voidReceipt } from '@/db/sp/voidReceipt';
+import { cancelTest } from '@/db/sp/cancelTest';
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
 
@@ -14,6 +15,7 @@ import { AppError } from '@/lib/errors';
  * Super-admin-only edits to an EXISTING bill from the order/receipt page:
  *   - setBillDiscountAction: change the discount, recompute Balance.
  *   - voidReceiptAction:     void a recorded payment/refund txn.
+ *   - cancelTestAction:      cancel a single test on the bill.
  *
  * Both are gated by the `user:manage` capability (super-admin-exclusive, same
  * gate as the patient-info editor), re-check MCC scope server-side, and are
@@ -133,5 +135,49 @@ export async function voidReceiptAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong voiding the transaction.');
+  }
+}
+
+const cancelTestSchema = z.object({
+  billId: z.coerce.number().int().positive(),
+  lineId: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Cancels a single test on an existing bill. SUPER-ADMIN ONLY. Reason is
+ * mandatory. Keeps the original line, adds a negative "(Cancelled)" offset line,
+ * removes the ordered-test row and pulls the code from a still-registered SID —
+ * see db/sql/84_usp_telo_cancel_test.sql. The SP refuses accessioned samples,
+ * masters and split items; their message is surfaced to the operator.
+ */
+export async function cancelTestAction(
+  _prev: BillingAdminState,
+  formData: FormData,
+): Promise<BillingAdminState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'test_cancel');
+
+    const parsed = cancelTestSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('A reason is required to cancel a test.');
+    const { billId, lineId, reason } = parsed.data;
+
+    const mcc = await billMcc(billId);
+    if (mcc == null) return err('Bill not found.');
+    const scope = await getMccScope(actor.uid);
+    if (!inScope(scope, mcc)) {
+      return err('This bill is not in your assigned collection centres.');
+    }
+
+    const res = await cancelTest({ billId, lineId, actor: actor.uid, reason });
+    if (!res.ok) return err(res.message ?? 'Could not cancel the test.');
+
+    audit({ kind: 'bill.test.cancelled', actor: actor.uid, billId, lineId });
+    revalidatePath(`/orders/${billId}`);
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong cancelling the test.');
   }
 }

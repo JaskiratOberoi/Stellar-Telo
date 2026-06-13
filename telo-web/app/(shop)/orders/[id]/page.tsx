@@ -11,6 +11,7 @@ import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-
 import { EditPatientInfo } from '@/components/orders/edit-patient-info';
 import { EditDiscount } from '@/components/orders/edit-discount';
 import { VoidReceiptButton } from '@/components/orders/void-receipt-button';
+import { CancelTestButton } from '@/components/orders/cancel-test-button';
 import { fmtIST } from '@/lib/datetime';
 import type { Capability } from '@/types/auth';
 import {
@@ -286,7 +287,7 @@ async function ReceiptBody({
         <Card className={canViewBill ? 'lg:col-span-8' : 'lg:col-span-12'}>
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">
-              Tests · {order.lines.length}
+              Tests · {order.lines.filter((l) => l.amount > 0 && !l.cancelled).length}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
@@ -298,20 +299,56 @@ async function ReceiptBody({
                   {canViewBill && (
                     <TableHead className="w-24 text-right">Amount</TableHead>
                   )}
+                  {isSuperAdmin && <TableHead className="w-16" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.lines.map((l, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-mono text-xs">
-                      {l.testCode}
-                    </TableCell>
-                    <TableCell>{l.testName}</TableCell>
-                    {canViewBill && (
-                      <TableCell className="text-right">₹{l.amount}</TableCell>
-                    )}
-                  </TableRow>
-                ))}
+                {order.lines.map((l, idx) => {
+                  // amount < 0 → the negative "(Cancelled)" offset line added by
+                  // a cancellation; `cancelled` → the original line that was
+                  // cancelled (kept for the trail). Only an active positive,
+                  // not-cancelled line gets a Cancel control.
+                  const isCredit = l.amount < 0;
+                  const dimmed = isCredit || l.cancelled;
+                  return (
+                    <TableRow key={idx}>
+                      <TableCell
+                        className={`font-mono text-xs ${dimmed ? 'text-muted-foreground line-through' : ''}`}
+                      >
+                        {l.testCode}
+                      </TableCell>
+                      <TableCell className={dimmed ? 'text-muted-foreground' : ''}>
+                        <span className={l.cancelled ? 'line-through' : ''}>
+                          {l.testName}
+                        </span>
+                        {l.cancelled && (
+                          <span className="ml-1.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                            cancelled
+                          </span>
+                        )}
+                      </TableCell>
+                      {canViewBill && (
+                        <TableCell
+                          className={`text-right ${isCredit ? 'text-destructive' : ''}`}
+                        >
+                          {isCredit ? '− ' : ''}₹{Math.abs(l.amount)}
+                        </TableCell>
+                      )}
+                      {isSuperAdmin && (
+                        <TableCell className="text-right">
+                          {l.amount > 0 && !l.cancelled && (
+                            <CancelTestButton
+                              billId={order.billId}
+                              lineId={l.lineId}
+                              testName={l.testName}
+                              amount={l.amount}
+                            />
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

@@ -12,10 +12,17 @@ export interface OrderSummary {
 }
 
 export interface OrderLine {
+  /** PK of the bill line (tbl_billing_patient_test_detail.id) — the cancel
+   *  target for super admins. */
+  lineId: number;
   testCode: string | null;
   testName: string | null;
   testType: string | null;
   amount: number;
+  /** True once a super admin has cancelled this test line (telo_test_cancellation).
+   *  The original line is kept; a negative "(Cancelled)" offset line (amount < 0)
+   *  is added alongside it. */
+  cancelled: boolean;
 }
 
 export interface OrderSample {
@@ -272,16 +279,20 @@ export async function getOrder(
       .request()
       .input('bid', sql.Int, billId)
       .query<{
+        lineId: number;
         testCode: string | null;
         testName: string | null;
         testType: string | null;
         amount: number;
+        cancelled: number;
       }>(`
-        SELECT testcode AS testCode, testname AS testName,
-               testtype AS testType, testamount AS amount
-        FROM dbo.tbl_billing_patient_test_detail
-        WHERE billid = @bid
-        ORDER BY id
+        SELECT d.id AS lineId, d.testcode AS testCode, d.testname AS testName,
+               d.testtype AS testType, d.testamount AS amount,
+               CASE WHEN tc.line_id IS NULL THEN 0 ELSE 1 END AS cancelled
+        FROM dbo.tbl_billing_patient_test_detail d
+        LEFT JOIN dbo.telo_test_cancellation tc ON tc.line_id = d.id
+        WHERE d.billid = @bid
+        ORDER BY d.id
       `);
 
     // Per-bill payment + refund history. `card_number` carries the txn
@@ -401,10 +412,12 @@ export async function getOrder(
       registeredByUsername: h.registeredByUsername?.trim() || null,
       preparedByOverride: h.preparedByOverride?.trim() || null,
       lines: lr.recordset.map((x) => ({
+        lineId: x.lineId,
         testCode: x.testCode,
         testName: x.testName,
         testType: x.testType,
         amount: Number(x.amount ?? 0),
+        cancelled: x.cancelled === 1,
       })),
       samples,
       receipts,
