@@ -36,6 +36,11 @@ export interface PendingBillRow {
   age: number | null;
   /** Age unit code: 1 Years, 2 Months, 3 Days (matches tbl_med_mcc_patient_master.age_type). */
   ageType: number | null;
+  /** Patient mobile on the bill — searchable in the bills table. */
+  mobile: string | null;
+  /** Comma-joined Sample IDs (vailid) accessioned for this bill's patient, for
+   *  search. Null when no samples (e.g. not yet accessioned). */
+  sids: string | null;
 }
 
 /** One payment or refund row for a bill (with Telo txn id). */
@@ -259,6 +264,8 @@ export async function listTeloBillsForMcc(
         paymentType: string | null;
         age: number | null;
         ageType: string | null;
+        mobile: string | null;
+        sids: string | null;
       }>(`
         SELECT
           b.id AS billId, b.bill_number AS billNumber,
@@ -271,7 +278,11 @@ export async function listTeloBillsForMcc(
           c.customer_name AS customerName,
           b.payment_type AS paymentType,
           b.age AS age,
-          b.age_type AS ageType
+          b.age_type AS ageType,
+          b.mobile_number AS mobile,
+          (SELECT STRING_AGG(s.vailid, ',')
+             FROM dbo.tbl_med_mcc_patient_samples s
+            WHERE s.patient_id = TRY_CONVERT(INT, b.medid)) AS sids
         FROM dbo.tbl_billing_patient_detail b
         LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
         LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
@@ -301,6 +312,8 @@ export async function listTeloBillsForMcc(
         x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
           ? Number(String(x.ageType).trim())
           : null,
+      mobile: x.mobile ? String(x.mobile).trim() || null : null,
+      sids: x.sids ? String(x.sids).trim() || null : null,
     }));
   });
 }
@@ -369,6 +382,8 @@ export async function searchTeloBills(
       paymentType: string | null;
       age: number | null;
       ageType: string | null;
+      mobile: string | null;
+      sids: string | null;
     }>(`
       SELECT TOP (200)
         b.id AS billId, b.bill_number AS billNumber,
@@ -381,7 +396,11 @@ export async function searchTeloBills(
         c.customer_name AS customerName,
         b.payment_type AS paymentType,
         b.age AS age,
-        b.age_type AS ageType
+        b.age_type AS ageType,
+        b.mobile_number AS mobile,
+        (SELECT STRING_AGG(s.vailid, ',')
+           FROM dbo.tbl_med_mcc_patient_samples s
+          WHERE s.patient_id = TRY_CONVERT(INT, b.medid)) AS sids
       FROM dbo.tbl_billing_patient_detail b
       LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
       LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
@@ -393,8 +412,13 @@ export async function searchTeloBills(
         AND (
               b.patientname LIKE @q
            OR CONVERT(VARCHAR(20), b.bill_number) LIKE @q
+           OR CONVERT(VARCHAR(20), b.medid) LIKE @q
+           OR b.mobile_number LIKE @q
            OR d.doctor_name LIKE @q
            OR c.customer_name LIKE @q
+           OR EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_patient_samples s2
+                       WHERE s2.patient_id = TRY_CONVERT(INT, b.medid)
+                         AND s2.vailid LIKE @q)
         )
       ORDER BY b.bill_date DESC, b.id DESC
     `);
@@ -416,6 +440,8 @@ export async function searchTeloBills(
         x.ageType != null && /^\d+$/.test(String(x.ageType).trim())
           ? Number(String(x.ageType).trim())
           : null,
+      mobile: x.mobile ? String(x.mobile).trim() || null : null,
+      sids: x.sids ? String(x.sids).trim() || null : null,
     }));
   });
 }

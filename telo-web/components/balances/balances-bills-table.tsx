@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Pin, PinOff } from 'lucide-react';
+import { Pin, PinOff, Search, X } from 'lucide-react';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { toggleBalancePin } from '@/actions/balancePins.actions';
@@ -20,8 +20,13 @@ export interface BalanceBill {
   billNumber: number | null;
   billDate: string | null;
   patientName: string | null;
+  patientId: number | null;
   doctorName: string | null;
+  customerName: string | null;
   paymentType: string | null;
+  mobile: string | null;
+  /** Comma-joined Sample IDs for this bill's patient (search only). */
+  sids: string | null;
   age: number | null;
   ageType: number | null;
   amount: number;
@@ -69,22 +74,59 @@ export function BalancesBillsTable({
   );
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [, startTransition] = useTransition();
+  const [query, setQuery] = useState('');
 
   const isPinned = (b: BalanceBill) =>
     b.balance < 0 && !unpinned.has(b.billId);
 
+  // Free-text search across every field on the bill — bill #, patient name,
+  // PID, SIDs, ref doctor, MRD/visit, payment mode, mobile, and the money
+  // columns (amount/discount/paid/balance) plus the date. Pure client-side
+  // filter over the already-loaded rows, so it's instant. Multi-word queries
+  // are AND-matched (e.g. "raja 120" needs both tokens present).
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bills;
+    const terms = q.split(/\s+/);
+    return bills.filter((b) => {
+      const hay = [
+        b.billNumber,
+        b.billId,
+        b.patientName,
+        b.patientId,
+        b.sids,
+        b.doctorName,
+        b.customerName,
+        b.paymentType,
+        b.mobile,
+        b.amount,
+        b.discount,
+        b.amountPaid,
+        b.balance,
+        b.age,
+        b.billDate ? fmtIST(b.billDate, 'date') : null,
+        b.billDate, // raw ISO so YYYY-MM-DD queries also match
+      ]
+        .filter((v) => v != null && v !== '')
+        .join(' ')
+        .toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }, [bills, query]);
+
   // Pinned negative rows float to the top; everything else keeps the server's
   // date-desc order. Array.sort is stable, so equal-group rows are untouched.
   const sorted = useMemo(() => {
-    return [...bills].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const pa = isPinned(a) ? 0 : 1;
       const pb = isPinned(b) ? 0 : 1;
       return pa - pb;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bills, unpinned]);
+  }, [filtered, unpinned]);
 
   const pinnedCount = sorted.filter(isPinned).length;
+  const isSearching = query.trim() !== '';
 
   function setPin(billId: number, nextPinned: boolean) {
     // Optimistic: update local set immediately, then persist.
@@ -117,7 +159,36 @@ export function BalancesBillsTable({
   }
 
   return (
-    <Table>
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search bill #, name, PID, SID, mobile, amount, discount…"
+            aria-label="Search bills"
+            className="h-9 w-full rounded-md border border-white/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
+          />
+          {isSearching && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {isSearching && (
+          <span className="text-xs text-muted-foreground">
+            {sorted.length} match{sorted.length === 1 ? '' : 'es'} of {bills.length}
+          </span>
+        )}
+      </div>
+      <Table>
       <TableHeader>
         <TableRow>
           <TableHead className="w-24">Bill #</TableHead>
@@ -137,9 +208,11 @@ export function BalancesBillsTable({
         {sorted.length === 0 ? (
           <TableRow>
             <TableCell colSpan={11} className="text-muted-foreground">
-              {mine
-                ? 'No bills registered by you for this client in this date range.'
-                : 'No Telo bills for this client in this date range.'}
+              {isSearching
+                ? `No bills match “${query.trim()}”.`
+                : mine
+                  ? 'No bills registered by you for this client in this date range.'
+                  : 'No Telo bills for this client in this date range.'}
             </TableCell>
           </TableRow>
         ) : (
@@ -247,5 +320,6 @@ export function BalancesBillsTable({
         )}
       </TableBody>
     </Table>
+    </div>
   );
 }
