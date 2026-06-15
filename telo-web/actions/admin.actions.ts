@@ -299,7 +299,6 @@ const updateUserSchema = z.object({
   lastName: z.string().trim().max(100).optional(),
   email: z.string().trim().max(100).optional(),
   mccIdsCsv: z.string().trim().max(2000).optional().default(''),
-  preparedBy: z.string().trim().max(120).optional().default(''),
 });
 
 /**
@@ -365,21 +364,10 @@ export async function updateUserAction(
     const mccIds = parseMccIds(f.mccIdsCsv);
     await assignMccScope(f.userId, mccIds, { replace: true });
 
-    // Per-account "Prepared By" override (Telo-managed accounts have a
-    // telo_account row — the guard above already restricts to createdByTelo).
-    // Empty value clears it. A non-fatal failure here shouldn't discard the
-    // profile/scope edits that already succeeded, so surface it as a soft error.
-    const pbRes = await adminSetPreparedBy({
-      userId: f.userId,
-      preparedBy: f.preparedBy ?? '',
-      actor: actor.uid,
-    });
-    if (!pbRes.ok) {
-      revalidatePath('/admin/users');
-      return err(
-        pbRes.message ?? 'Saved profile, but could not update the Prepared-by override.',
-      );
-    }
+    // NOTE: the "Prepared By" override is NOT set here. It lives in its own
+    // action (setPreparedByAction) because — unlike name/email/scope — it only
+    // touches the Telo-owned sidecar and so is safe for native LIS accounts
+    // (which this Telo-only path rejects). See that action's doc comment.
 
     audit({
       kind: 'admin.user.update',
@@ -392,6 +380,56 @@ export async function updateUserAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong updating the user.');
+  }
+}
+
+const preparedBySchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  preparedBy: z.string().trim().max(120).optional().default(''),
+});
+
+/**
+ * Set (or clear) the per-account "Prepared By" override for ANY Telo-managed
+ * account — i.e. any user that has a `dbo.telo_account` row, whether it was
+ * Telo-created OR a native LIS account Telo later attached a sidecar row to.
+ *
+ * Deliberately NOT gated on `createdByTelo` (unlike the profile/scope Edit):
+ * the override writes only the Telo-owned `telo_account.prepared_by` sidecar
+ * column, never an LIS-managed field, so it's safe for native accounts. The
+ * SP (`usp_telo_admin_set_prepared_by`) rejects users with no telo_account
+ * row, so a non-managed LIS user can't be targeted. Empty value clears it.
+ */
+export async function setPreparedByAction(
+  _prev: AdminFormState,
+  formData: FormData,
+): Promise<AdminFormState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'prepared_by');
+    const parsed = preparedBySchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('Invalid request.');
+    const { userId, preparedBy } = parsed.data;
+
+    const res = await adminSetPreparedBy({
+      userId,
+      preparedBy: preparedBy ?? '',
+      actor: actor.uid,
+    });
+    if (!res.ok) {
+      return err(res.message || 'Could not update the Prepared-by override.');
+    }
+
+    audit({
+      kind: 'admin.user.prepared_by',
+      actor: actor.uid,
+      target: userId,
+      cleared: (preparedBy ?? '').trim().length === 0,
+    });
+    revalidatePath('/admin/users');
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating the Prepared-by override.');
   }
 }
 

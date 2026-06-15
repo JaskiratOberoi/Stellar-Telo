@@ -21,6 +21,7 @@ type AuditEvent =
   | { kind: 'admin.user.active'; actor: number; target: number; active: boolean }
   | { kind: 'admin.user.lis_access'; actor: number; target: number; enabled: boolean }
   | { kind: 'admin.user.mrp_only'; actor: number; target: number; enabled: boolean }
+  | { kind: 'admin.user.prepared_by'; actor: number; target: number; cleared: boolean }
   | { kind: 'admin.profile_interpretation.save'; actor: number; target: number }
   | { kind: 'patient.info.update'; actor: number; billId: number }
   | { kind: 'bill.discount.set'; actor: number; billId: number; discount: number }

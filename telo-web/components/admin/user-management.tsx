@@ -9,6 +9,7 @@ import {
   setLisAccessAction,
   setMrpOnlyAction,
   updateUserAction,
+  setPreparedByAction,
   getEditableUserScope,
   searchMccUnitsAction,
   fetchMccUnitsByIdsAction,
@@ -292,7 +293,7 @@ function UserRow({
   isSelf: boolean;
 }) {
   const [openRow, setOpenRow] = useState<
-    null | 'role' | 'password' | 'edit'
+    null | 'role' | 'password' | 'edit' | 'preparedBy'
   >(null);
 
   return (
@@ -385,6 +386,21 @@ function UserRow({
                 Edit
               </button>
             )}
+            {/* Prepared-by override — available for ANY Telo-managed account
+                (has a telo_account row), incl. native LIS logins, since it only
+                touches the Telo sidecar. */}
+            {user.hasTeloAccount && (
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenRow(openRow === 'preparedBy' ? null : 'preparedBy')
+                }
+                className="text-primary hover:underline"
+                title="Set the name printed as 'Prepared By' on bills this account registers"
+              >
+                Prepared by
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setOpenRow(openRow === 'role' ? null : 'role')}
@@ -414,6 +430,18 @@ function UserRow({
           <TableCell colSpan={7} className="bg-white/[0.03]">
             <EditUserForm
               user={user}
+              onDone={() => setOpenRow(null)}
+            />
+          </TableCell>
+        </TableRow>
+      )}
+      {openRow === 'preparedBy' && user.hasTeloAccount && (
+        <TableRow>
+          <TableCell colSpan={7} className="bg-white/[0.03]">
+            <SetPreparedByForm
+              userId={user.id}
+              username={user.username}
+              current={user.preparedBy}
               onDone={() => setOpenRow(null)}
             />
           </TableCell>
@@ -515,7 +543,6 @@ function EditUserForm({
   const [firstName, setFirstName] = useState(user.firstName ?? '');
   const [lastName, setLastName] = useState(user.lastName ?? '');
   const [email, setEmail] = useState(user.email ?? '');
-  const [preparedBy, setPreparedBy] = useState(user.preparedBy ?? '');
   const [pickedMccIds, setPickedMccIds] = useState<number[]>([]);
   const [pickerValue, setPickerValue] = useState<number | ''>('');
   const [scopeLoading, setScopeLoading] = useState(true);
@@ -709,23 +736,6 @@ function EditUserForm({
         )}
       </div>
 
-      <div className="space-y-0.5">
-        <Label htmlFor={`pb-${user.id}`}>Prepared by (invoice override)</Label>
-        <Input
-          id={`pb-${user.id}`}
-          name="preparedBy"
-          placeholder="e.g. Priya Sharma"
-          value={preparedBy}
-          onChange={(e) => setPreparedBy(e.target.value)}
-          maxLength={120}
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Printed as &ldquo;Prepared By&rdquo; on bills this account registers.
-          Overrides the auto-filled registering-user name and the client&apos;s
-          invoice setting. Leave blank to use the default.
-        </p>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button type="submit" size="sm" disabled={pending || scopeLoading}>
           {pending ? 'Saving…' : 'Save changes'}
@@ -734,6 +744,87 @@ function EditUserForm({
           type="button"
           variant="ghost"
           size="sm"
+          onClick={onDone}
+          disabled={pending}
+        >
+          Cancel
+        </Button>
+        {state.error && (
+          <span className="text-xs text-destructive">{state.error}</span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+// Set / clear the per-account "Prepared By" override. Shown for ANY account
+// with a telo_account row (incl. native LIS logins) — unlike the Telo-only
+// Edit form — because it only writes the Telo sidecar. See setPreparedByAction.
+function SetPreparedByForm({
+  userId,
+  username,
+  current,
+  onDone,
+}: {
+  userId: number;
+  username: string;
+  current: string | null;
+  onDone: () => void;
+}) {
+  const [state, action, pending] = useActionState(setPreparedByAction, initial);
+  const [value, setValue] = useState(current ?? '');
+
+  useEffect(() => {
+    if (state.ok) onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.ok]);
+
+  return (
+    <form action={action} className="space-y-2 py-2">
+      <input type="hidden" name="userId" value={userId} />
+      <div className="space-y-0.5">
+        <Label htmlFor={`pb-${userId}`}>
+          Prepared by (invoice override) ·{' '}
+          <span className="font-mono text-xs text-muted-foreground">
+            {username}
+          </span>
+        </Label>
+        <Input
+          id={`pb-${userId}`}
+          name="preparedBy"
+          placeholder="e.g. Priya Sharma"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          maxLength={120}
+          className="max-w-sm"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Printed as &ldquo;Prepared By&rdquo; on every bill this account
+          registers — overrides the auto-filled registering-user name and the
+          client&apos;s invoice setting. Leave blank and Save to clear (fall back
+          to the default). Applies to existing bills too — it&apos;s resolved
+          when the bill is printed.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? 'Saving…' : 'Save'}
+        </Button>
+        {value.trim().length > 0 && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setValue('')}
+            disabled={pending}
+          >
+            Clear
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
           onClick={onDone}
           disabled={pending}
         >
