@@ -17,9 +17,24 @@ import { getPool, sql, withRetry } from '@/db/pool';
  */
 
 export interface SalesRow {
-  /** Patient registration id (LIS regdno). */
+  /** Patient registration id (LIS regdno) — shown as PID. */
   regdNo: number;
   patientName: string | null;
+  /**
+   * Sample id (vailid) this test belongs to. There is no test→sample FK in the
+   * LIS; a sample carries a comma-delimited `testcodes` list, so we resolve the
+   * vailid of the sample whose list contains this test's code (per patient).
+   * Null when no sample for the patient lists the code (e.g. not yet accessioned).
+   */
+  sid: string | null;
+  /** Sample/registration date (YYYY-MM-DD), from the patient's sample_date. */
+  sampleDate: string | null;
+  /** Patient age value; pair with `ageType` for the unit. */
+  age: number | null;
+  /** Age unit: 1 = Years, 2 = Months, 3 = Days. */
+  ageType: number | null;
+  /** Gender code: 1 = Male, 2 = Female. */
+  gender: number | null;
   testCode: string | null;
   testName: string | null;
   amount: number;
@@ -68,6 +83,11 @@ export async function listSalesForMcc(
       .query<{
         regdNo: number;
         patientName: string | null;
+        sid: string | null;
+        sampleDate: string | null;
+        age: number | null;
+        ageType: number | null;
+        gender: number | null;
         testCode: string | null;
         testName: string | null;
         amount: number | null;
@@ -77,6 +97,16 @@ export async function listSalesForMcc(
         SELECT
           p.id AS regdNo,
           p.name AS patientName,
+          (SELECT TOP 1 s.vailid
+             FROM dbo.tbl_med_mcc_patient_samples s
+            WHERE s.patient_id = t.patient_id
+              AND ',' + REPLACE(ISNULL(s.testcodes, ''), ' ', '') + ','
+                  LIKE '%,' + t.test_code + ',%'
+            ORDER BY s.id) AS sid,
+          CONVERT(varchar(10), p.sample_date, 23) AS sampleDate,
+          p.age AS age,
+          p.age_type AS ageType,
+          p.gender AS gender,
           t.test_code AS testCode,
           t.test_name AS testName,
           t.test_rate AS amount,
@@ -98,6 +128,11 @@ export async function listSalesForMcc(
     const rows = (hasMore ? all.slice(0, pageSize) : all).map((x) => ({
       regdNo: x.regdNo,
       patientName: x.patientName ? x.patientName.trim() : null,
+      sid: x.sid ? x.sid.trim() || null : null,
+      sampleDate: x.sampleDate ?? null,
+      age: x.age ?? null,
+      ageType: x.ageType ?? null,
+      gender: x.gender ?? null,
       testCode: x.testCode ? x.testCode.trim() : null,
       testName: x.testName ? x.testName.trim() : null,
       amount: Number(x.amount ?? 0),
