@@ -10,12 +10,12 @@ todos:
     status: completed
   - id: authorize
     content: Get explicit authorization for the production LIS write before executing.
-    status: pending
+    status: completed
   - id: execute-verify
-    content: Run the insert against Noble, read back rows for Business_Unit_id=21, and flush the Redis telo:report:signers:21 cache key.
-    status: pending
+    content: "Done: inserted new sigId=24 (Business_Unit_id=21, Dr Aijaz Muzamil, 16704 bytes); sigId=7 unchanged on BU 5. Redis telo:report:signers:21 NOT flushed from the run host (REDIS_URL was the local box) — relies on 1h TTL or a manual flush on the prod host."
+    status: completed
   - id: confirm-report
-    content: Open a MEDICARE (MDCARE) SID report and confirm the new doctor sign renders instead of the fallback.
+    content: Open a MEDICARE (MDCARE) SID report and confirm the new doctor sign renders instead of the fallback (after the signers cache TTL/flush).
     status: pending
 ---
 
