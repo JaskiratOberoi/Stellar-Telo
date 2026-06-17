@@ -1,0 +1,16 @@
+# Keep local-only overrides OUT of the image. .env.local points NEXTAUTH_URL at
+# localhost for `next dev`; baking it in would override the production
+# NEXTAUTH_URL (telo.genomicslab.in) and break auth. The committed `.env`
+# (prod) is intentionally NOT ignored — `next build` needs it.
+.env*.local
+
+# Build/runtime artefacts and VCS — rebuilt inside the image, never shipped.
+node_modules
+.next
+.git
+.gitignore
+
+# Local noise.
+npm-debug.log*
+*.log
+.DS_Store
