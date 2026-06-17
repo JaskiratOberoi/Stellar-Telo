@@ -19,6 +19,7 @@ import { countMobileUsage } from '@/db/read/mobileUsage';
 import { MAX_PATIENTS_PER_MOBILE } from '@/lib/limits';
 import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
+import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
 import {
   previewSampleGroups,
   type SampleGroup,
@@ -309,15 +310,22 @@ const registerSchema = z.object({
   refDoctorJson: z.string().optional(),
   refCustomerJson: z.string().optional(),
   discountAmount: zeroInt,
-  paymentType: z.string().trim().max(50).optional(),
-  receiptAmount: zeroInt,
-  // Operator-entered payment reference for a non-cash "Paid now" (UPI ref,
-  // cheque no., card auth code). Optional; ignored for Cash. ≤50 to fit the
-  // receipt's card_number column (the SP also LEFT()s defensively).
-  txnRef: z.string().trim().max(50).optional(),
+  // Split payments: JSON array of { method, amount, ref } lines collected now
+  // (e.g. ₹500 Cash + ₹500 UPI). Parsed/validated separately below.
+  paymentsJson: z.string().optional(),
   itemsJson: z.string(),
   // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
   b2b: z.string().optional(),
+});
+
+// One payment line from the form. `ref` is the operator-entered reference for
+// a non-cash line (UPI ref, cheque no., card auth code); ≤50 to fit the
+// receipt's card_number column (the SP also LEFT()s defensively). Method must
+// be one of the offline PAY_METHODS.
+const paymentLineSchema = z.object({
+  method: z.enum(PAY_METHODS as unknown as [PayMethod, ...PayMethod[]]),
+  amount: z.coerce.number().int().min(0),
+  ref: z.string().trim().max(50).optional().default(''),
 });
 
 function parseRefValue(raw: string | undefined): z.infer<typeof refValueSchema> {
@@ -418,9 +426,22 @@ export async function registerOrder(
       return { error: 'The B2B Orders feature is not available for this account.' };
     }
 
+    // Parse the split-payment lines. Drop zero-amount rows (an empty line the
+    // operator never filled). Each surviving line is a receipt to be written.
+    let payments: z.infer<typeof paymentLineSchema>[];
+    try {
+      payments = z
+        .array(paymentLineSchema)
+        .parse(JSON.parse(f.paymentsJson || '[]'))
+        .filter((p) => p.amount > 0);
+    } catch {
+      return { error: 'Payment details are invalid — check the amounts.' };
+    }
+    const paidTotal = payments.reduce((s, p) => s + p.amount, 0);
+
     // Server-authoritative 50% floor. Mirrors the client gate so a tampered
-    // form can't post a receipt below half the resolved total. B2B bills at
-    // MRP, so the floor is computed against the MRP total in that mode.
+    // form can't post receipts summing below half the resolved total. B2B bills
+    // at MRP, so the floor is computed against the MRP total in that mode.
     const resolvedTotal = b2b
       ? Array.from((await mrpMapFor(items)).values()).reduce(
           (s: number, m) => s + (m ?? 0),
@@ -431,7 +452,7 @@ export async function registerOrder(
           0,
         );
     const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
-    if (Number(f.receiptAmount ?? 0) < minPaid) {
+    if (paidTotal < minPaid) {
       return {
         error: `At least ₹${minPaid} (50% of ₹${resolvedTotal}) must be collected now.`,
       };
@@ -443,16 +464,11 @@ export async function registerOrder(
       };
     }
 
-    // UPI payments must carry a transaction reference (mirrors the client gate)
-    // so every UPI receipt is traceable. Only enforced when money is actually
-    // collected now — a UPI order with ₹0 paid-now has no txn to reference yet.
-    if (
-      f.paymentType === 'UPI' &&
-      Number(f.receiptAmount ?? 0) > 0 &&
-      !f.txnRef?.trim()
-    ) {
+    // Every UPI line must carry a transaction reference (mirrors the client
+    // gate) so every UPI receipt is traceable.
+    if (payments.some((p) => p.method === 'UPI' && !p.ref.trim())) {
       return {
-        error: 'Enter the UPI transaction ID / reference for this payment.',
+        error: 'Enter the UPI transaction ID / reference for each UPI payment.',
       };
     }
 
@@ -497,13 +513,14 @@ export async function registerOrder(
         name: i.name,
       })),
       discountAmount: f.discountAmount,
-      paymentType: f.paymentType || null,
-      payMode: 1, // LIS standard paymode; method captured in paymentType text
-      receiptAmount: f.receiptAmount,
+      payMode: 1, // LIS standard paymode; real method captured per receipt line
+      // One receipt per line; ref only meaningful for non-cash (ignored for Cash).
+      payments: payments.map((p) => ({
+        method: p.method,
+        amount: p.amount,
+        ref: p.method !== 'Cash' ? p.ref.trim() || null : null,
+      })),
       billAtMrp: b2b,
-      // Reference only meaningful for a non-cash payment; ignored for Cash.
-      paymentRef:
-        f.paymentType && f.paymentType !== 'Cash' ? f.txnRef?.trim() || null : null,
     });
 
     if (!result.ok || result.billId == null) {

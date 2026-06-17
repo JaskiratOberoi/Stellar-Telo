@@ -71,9 +71,13 @@ export async function placeOrder(
       clinicalHistory: f.clinicalHistory || null,
       items: cart.items,
       discountAmount: f.discountAmount,
-      paymentType: f.paymentType || null,
       payMode: f.payMode ?? null,
-      receiptAmount: f.receiptAmount,
+      // Legacy single-payment checkout → one payment line (if anything was
+      // collected). The split-payment UI lives on /orders/new and /orders/b2b.
+      payments:
+        f.receiptAmount > 0
+          ? [{ method: f.paymentType || 'Cash', amount: f.receiptAmount }]
+          : [],
     });
 
     if (!result.ok || result.billId == null) {

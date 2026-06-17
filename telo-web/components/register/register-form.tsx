@@ -58,10 +58,7 @@ type Fields = {
   mobile: string;
   email: string;
   clinicalHistory: string;
-  paymentType: string;
-  receiptAmount: string;
   discountAmount: string;
-  txnRef: string;
 };
 const DEFAULTS: Fields = {
   title: 'Mr',
@@ -72,11 +69,13 @@ const DEFAULTS: Fields = {
   mobile: '',
   email: '',
   clinicalHistory: '',
-  paymentType: 'Cash',
-  receiptAmount: '0',
   discountAmount: '0',
-  txnRef: '',
 };
+
+// One split-payment line in the form. Amounts are kept as strings (controlled
+// inputs); the hidden paymentsJson field serialises them at submit.
+type PayLine = { method: string; amount: string; ref: string };
+const NEW_PAY_LINE: PayLine = { method: 'Cash', amount: '0', ref: '' };
 
 export function RegisterForm({
   units,
@@ -104,13 +103,28 @@ export function RegisterForm({
     units.length === 1 ? units[0].id : '',
   );
   const [f, setF] = useState<Fields>(DEFAULTS);
+  // Split payments: one or more lines (e.g. ₹500 Cash + ₹500 UPI). Starts with
+  // a single Cash line whose amount auto-pins to 50% of the total (below).
+  const [payments, setPayments] = useState<PayLine[]>([{ ...NEW_PAY_LINE }]);
   // Live per-number usage check (max patients per mobile) — status lifted
   // here so the submit gate below can block on it, like the SID checks.
   const [mobileStatus, setMobileStatus] = useState<MobileStatus>('idle');
-  // Auto-fill "Paid now" with 50% of the running total so a bill is never
-  // saved with ₹0 collected by mistake. Stops mirroring once the operator
-  // edits the field manually, so an explicit amount is always respected.
+  // Auto-fill the first payment line with 50% of the running total so a bill is
+  // never saved with ₹0 collected by mistake. Stops mirroring once the operator
+  // edits any amount / adds a line, so an explicit split is always respected.
   const [receiptTouched, setReceiptTouched] = useState(false);
+
+  const setPay = (idx: number, key: keyof PayLine, val: string) =>
+    setPayments((ps) => ps.map((p, i) => (i === idx ? { ...p, [key]: val } : p)));
+  const addPay = () => {
+    setReceiptTouched(true);
+    setPayments((ps) => [...ps, { ...NEW_PAY_LINE }]);
+  };
+  const removePay = (idx: number) => {
+    setReceiptTouched(true);
+    setPayments((ps) => (ps.length > 1 ? ps.filter((_, i) => i !== idx) : ps));
+  };
+
   const upd =
     (k: keyof Fields) =>
     (
@@ -287,32 +301,38 @@ export function RegisterForm({
     };
   }, [picked, mcc, isB2b]);
 
-  // Keep "Paid now" pinned to half the current total while the operator hasn't
-  // overridden it. Re-runs whenever the priced total changes (tests added or
-  // removed, rate list switched).
+  // Keep the FIRST payment line pinned to half the current total while the
+  // operator hasn't overridden it. Re-runs whenever the priced total changes
+  // (tests added or removed, rate list switched).
   useEffect(() => {
     if (receiptTouched) return;
     const half = preview.total > 0 ? String(Math.round(preview.total / 2)) : '0';
-    setF((s) => (s.receiptAmount === half ? s : { ...s, receiptAmount: half }));
+    setPayments((ps) => {
+      if (ps.length === 0 || ps[0].amount === half) return ps;
+      const next = [...ps];
+      next[0] = { ...next[0], amount: half };
+      return next;
+    });
   }, [preview.total, receiptTouched]);
 
-  // Hard floor for "Paid now": operators may raise the amount but can never
-  // collect below 50% of the total (same figure the effect above prefills).
+  // Sum of all payment lines = total collected now.
+  const paidSum = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+  // Hard floor: operators may raise the amount but can never collect below 50%
+  // of the total (same figure the effect above prefills).
   const minPaid = preview.total > 0 ? Math.round(preview.total / 2) : 0;
-  const belowMinPaid =
-    preview.total > 0 && Number(f.receiptAmount || 0) < minPaid;
+  const belowMinPaid = preview.total > 0 && paidSum < minPaid;
 
   // Hard cap for "Discount": never more than 20% of the total bill.
   const maxDiscount = preview.total > 0 ? Math.round(preview.total * 0.2) : 0;
   const aboveMaxDiscount =
     preview.total > 0 && Number(f.discountAmount || 0) > maxDiscount;
 
-  // UPI payments must carry a transaction reference so the receipt is
-  // traceable. Only required when money is actually being collected now
-  // (a UPI order with ₹0 paid-now has no transaction to reference yet).
-  const txnRequired =
-    f.paymentType === 'UPI' && Number(f.receiptAmount || 0) > 0;
-  const txnMissing = txnRequired && !f.txnRef.trim();
+  // Every non-empty UPI line must carry a transaction reference so the receipt
+  // is traceable. A UPI line with ₹0 has no transaction to reference yet.
+  const txnMissing = payments.some(
+    (p) => p.method === 'UPI' && Number(p.amount) > 0 && !p.ref.trim(),
+  );
 
   // pageMounted gate — placed AFTER all hooks so hook count stays stable
   // across renders (Rules of Hooks). The hooks for pageMounted itself live
@@ -352,6 +372,20 @@ export function RegisterForm({
       <input type="hidden" name="mcc" value={mcc} />
       <input type="hidden" name="b2b" value={isB2b ? '1' : ''} />
       <input type="hidden" name="itemsJson" value={JSON.stringify(picked)} />
+      <input
+        type="hidden"
+        name="paymentsJson"
+        value={JSON.stringify(
+          // Submit only filled lines; drop the ref for Cash.
+          payments
+            .map((p) => ({
+              method: p.method,
+              amount: Math.round(Number(p.amount) || 0),
+              ref: p.method !== 'Cash' ? p.ref.trim() : '',
+            }))
+            .filter((p) => p.amount > 0),
+        )}
+      />
       <input
         type="hidden"
         name="refDoctorJson"
@@ -583,61 +617,114 @@ export function RegisterForm({
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 border-t pt-3">
-            <div className="space-y-0.5">
+          {/* Split payments — one line per method the patient pays with (e.g.
+              part Cash + part UPI). Each becomes its own receipt. The first
+              line auto-prefills to 50% of the total; the sum must meet the 50%
+              floor. UPI lines need a transaction reference. */}
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex items-baseline justify-between gap-2">
               <Label>Payment</Label>
-              <select
-                name="paymentType"
-                suppressHydrationWarning
-              className={sel}
-                value={f.paymentType}
-                onChange={upd('paymentType')}
-              >
-                {PAY_METHODS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-0.5">
-              <Label htmlFor="receiptAmount">Paid now (₹)</Label>
-              <Input
-                id="receiptAmount"
-                name="receiptAmount"
-                type="number"
-                min={minPaid}
-                value={f.receiptAmount}
-                onChange={(e) => {
-                  setReceiptTouched(true);
-                  upd('receiptAmount')(e);
-                }}
-                onBlur={() => {
-                  // Snap back up to the 50% floor if the operator typed less
-                  // (or cleared the field). They can still edit it higher.
-                  if (preview.total <= 0) return;
-                  const v = Number(f.receiptAmount);
-                  if (!Number.isFinite(v) || v < minPaid) {
-                    setF((s) => ({ ...s, receiptAmount: String(minPaid) }));
-                  }
-                }}
-                aria-invalid={belowMinPaid}
-              />
               {preview.total > 0 && (
-                <p
-                  className={`text-[10px] ${
+                <span
+                  className={`text-[11px] tabular-nums ${
                     belowMinPaid ? 'text-destructive' : 'text-muted-foreground'
                   }`}
                 >
-                  {belowMinPaid
-                    ? `At least ₹${minPaid} (50%) must be collected.`
-                    : !receiptTouched
-                      ? `Prefilled at 50% — you can raise it (min ₹${minPaid}).`
-                      : `Minimum ₹${minPaid} (50%).`}
-                </p>
+                  Collected ₹{paidSum} / ₹{preview.total}
+                  {minPaid > 0 ? ` · min ₹${minPaid} (50%)` : ''}
+                </span>
               )}
             </div>
-            <div className="space-y-0.5">
+
+            {payments.map((p, idx) => {
+              const lineUpiMissing =
+                p.method === 'UPI' && Number(p.amount) > 0 && !p.ref.trim();
+              return (
+                <div
+                  key={idx}
+                  className="space-y-1.5 rounded-md border border-white/10 bg-white/[0.02] p-2"
+                >
+                  <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Method
+                      </Label>
+                      <select
+                        suppressHydrationWarning
+                        className={sel}
+                        value={p.method}
+                        onChange={(e) => setPay(idx, 'method', e.target.value)}
+                      >
+                        {PAY_METHODS.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Amount (₹)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={p.amount}
+                        onChange={(e) => {
+                          setReceiptTouched(true);
+                          setPay(idx, 'amount', e.target.value);
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePay(idx)}
+                      disabled={payments.length === 1}
+                      className="h-9 px-2 text-xs text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-30"
+                      aria-label="Remove payment line"
+                    >
+                      remove
+                    </button>
+                  </div>
+                  {p.method !== 'Cash' && (
+                    <div className="space-y-0.5">
+                      <Input
+                        type="text"
+                        maxLength={50}
+                        placeholder="UPI ref / cheque no. / card auth code…"
+                        value={p.ref}
+                        onChange={(e) => setPay(idx, 'ref', e.target.value)}
+                        aria-invalid={lineUpiMissing}
+                        suppressHydrationWarning
+                      />
+                      <p
+                        className={`text-[10px] ${
+                          lineUpiMissing
+                            ? 'text-destructive'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {lineUpiMissing
+                          ? 'Required for UPI — enter the transaction reference.'
+                          : p.method === 'UPI'
+                            ? 'UPI transaction reference (required).'
+                            : 'Reference (optional) — shown in Accounts & the Excel export.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={addPay}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              + Add payment method
+            </button>
+
+            <div className="space-y-0.5 pt-1">
               <Label htmlFor="discountAmount">Discount (₹)</Label>
               <Input
                 id="discountAmount"
@@ -670,38 +757,6 @@ export function RegisterForm({
               )}
             </div>
           </div>
-
-          {/* Transaction reference — only for non-cash payments, recorded on the
-              receipt for later tracking (like the accounts "record payment" flow).
-              Mandatory for UPI so every UPI receipt is traceable to its txn. */}
-          {f.paymentType !== 'Cash' && (
-            <div className="space-y-0.5 pt-3">
-              <Label htmlFor="txnRef">
-                Transaction ID / reference {txnRequired ? '*' : '(optional)'}
-              </Label>
-              <Input
-                id="txnRef"
-                name="txnRef"
-                type="text"
-                required={txnRequired}
-                maxLength={50}
-                placeholder="UPI ref / cheque no. / card auth code…"
-                value={f.txnRef}
-                onChange={upd('txnRef')}
-                aria-invalid={txnMissing}
-                suppressHydrationWarning
-              />
-              <p
-                className={`text-[10px] ${
-                  txnMissing ? 'text-destructive' : 'text-muted-foreground'
-                }`}
-              >
-                {txnMissing
-                  ? 'Required for UPI — enter the UPI transaction reference.'
-                  : 'Saved against this payment for later tracking. Shown in Accounts & the Excel export.'}
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -1109,7 +1164,14 @@ export function RegisterForm({
                   <span>{picked.length} item(s) · ₹{preview.total}</span>
                   <span className="text-zinc-500">Payment</span>
                   <span>
-                    {f.paymentType} · paid ₹{f.receiptAmount || 0}
+                    {payments
+                      .filter((p) => Number(p.amount) > 0)
+                      .map(
+                        (p) => `${p.method} ₹${Math.round(Number(p.amount))}`,
+                      )
+                      .join(' + ') || 'nothing collected'}
+                    {' · paid ₹'}
+                    {paidSum}
                     {Number(f.discountAmount) > 0
                       ? ` · disc ₹${f.discountAmount}`
                       : ''}

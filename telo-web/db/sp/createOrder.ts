@@ -7,6 +7,14 @@ export interface SampleSid {
   vailid: string;
 }
 
+/** One payment line collected at registration. Split payments are supported:
+ *  a patient may pay part Cash and part UPI, yielding multiple lines. */
+export interface PaymentLine {
+  method: string; // Cash / UPI / Card / Cheque / Online
+  amount: number; // rupees for this line (> 0; non-positive lines are dropped)
+  ref?: string | null; // txn reference for a non-cash line; null for Cash
+}
+
 export interface IssuedSample {
   sampleId: number;
   vailid: string;
@@ -36,15 +44,13 @@ export interface CreateOrderInput {
   newRefCustomerName?: string | null;
   items: CartItem[];
   discountAmount?: number;
-  paymentType?: string | null;
   payMode?: number | null;
-  receiptAmount?: number;
+  /** Payment lines collected now. Each becomes one receipt row; an empty array
+   *  means nothing was collected at registration. */
+  payments?: PaymentLine[];
   /** B2B mode: bill every line at catalogue MRP (patient price), skipping the
    *  client rate list. Defaults to false (the classic New-Order behavior). */
   billAtMrp?: boolean;
-  /** Operator-entered payment reference for a non-cash "Paid now" (UPI ref,
-   *  cheque no., card auth code). Stored on the receipt's card_number column. */
-  paymentRef?: string | null;
 }
 
 export interface CreateOrderResult {
@@ -83,6 +89,29 @@ function buildTestListTvp(items: CartItem[]): sql.Table {
       kind,
       (i.code ?? '').slice(0, 50) || String(i.id),
       (i.name ?? '').slice(0, 200) || (i.code ?? String(i.id)),
+    );
+  }
+  return t;
+}
+
+function buildPaymentTvp(payments: PaymentLine[]): sql.Table {
+  const t = new sql.Table('dbo.TeloPayment');
+  t.create = false;
+  t.columns.add('seq', sql.Int, { nullable: false });
+  t.columns.add('method', sql.VarChar(50), { nullable: false });
+  t.columns.add('amount', sql.Int, { nullable: false });
+  t.columns.add('ref', sql.NVarChar(50), { nullable: true });
+  let seq = 0;
+  for (const p of payments) {
+    const amount = Math.round(Number(p.amount) || 0);
+    if (amount <= 0) continue; // drop empty/zero lines; SP also guards
+    seq += 1;
+    const ref = p.ref != null ? String(p.ref).trim().slice(0, 50) : '';
+    t.rows.add(
+      seq,
+      (p.method ?? 'Cash').slice(0, 50) || 'Cash',
+      amount,
+      ref || null,
     );
   }
   return t;
@@ -141,11 +170,9 @@ export async function createOrder(
       .input('newRefCustomerName', sql.NVarChar(200), input.newRefCustomerName ?? null)
       .input('items', buildTestListTvp(input.items))
       .input('discountAmount', sql.Int, input.discountAmount ?? 0)
-      .input('paymentType', sql.VarChar(50), input.paymentType ?? null)
       .input('payMode', sql.Int, input.payMode ?? null)
-      .input('receiptAmount', sql.Int, input.receiptAmount ?? 0)
       .input('billAtMrp', sql.Bit, input.billAtMrp ? 1 : 0)
-      .input('paymentRef', sql.VarChar(100), input.paymentRef ?? null)
+      .input('payments', buildPaymentTvp(input.payments ?? []))
       .execute<Record<string, unknown>>('dbo.usp_telo_create_order');
 
     const sets = r.recordsets as unknown as [

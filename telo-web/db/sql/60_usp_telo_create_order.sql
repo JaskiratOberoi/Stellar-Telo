@@ -9,7 +9,8 @@
  *   ③ tbl_med_mcc_patient_samples  (N rows — ONE per distinct sample type)
  *   ④ tbl_billing_patient_detail   (Telo bill header, generated bill_number)
  *   ⑤ tbl_billing_patient_test_detail (one row per line)
- *   ⑥ tbl_billing_patient_amount_receipt (only if paid now)
+ *   ⑥ tbl_billing_patient_amount_receipt (one row per payment line — split
+ *                                   payments supported; none if paid ₹0)
  *
  * The franchise wallet is NOT debited here. The LIS debits it when the order
  * is moved Accessioning → Worksheet (Accession "Register" → CheckTransCash) —
@@ -63,7 +64,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     @payMode          INT            = NULL,
     @receiptAmount    INT            = 0,
     @billAtMrp        BIT            = 0,
-    @paymentRef       VARCHAR(100)   = NULL
+    @paymentRef       VARCHAR(100)   = NULL,
+    -- Split payments: one row per payment line (₹500 Cash + ₹500 UPI). When
+    -- supplied (and non-empty) it SUPERSEDES the @paymentType/@receiptAmount/
+    -- @paymentRef scalars, which are kept only for older single-payment callers.
+    @payments         dbo.TeloPayment READONLY
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -72,7 +77,7 @@ BEGIN
     DECLARE @pid INT, @billId INT, @billNo INT,
             @total INT = 0, @rateTypeId INT, @buCode INT, @pname NVARCHAR(200),
             @o BIT, @ec VARCHAR(20), @sampleCount INT = 0,
-            @rid INT, @txn VARCHAR(24);
+            @txn VARCHAR(24);
 
     /* addedby/createdby/receivedby is stamped 'telo:<userId>'. This is an
        INTENTIONAL Telo origin marker, not a defect: every Telo read path
@@ -519,7 +524,38 @@ BEGIN
             RETURN;
         END
 
-        DECLARE @balance INT = @total - ISNULL(@discountAmount,0) - ISNULL(@receiptAmount,0);
+        /* ---- payment lines: prefer the @payments TVP (split payments);
+           fall back to the legacy single scalar set for older callers. ----- */
+        DECLARE @pay TABLE (
+            seq    INT IDENTITY(1,1),
+            method VARCHAR(50),
+            amount INT,
+            ref    NVARCHAR(50)
+        );
+        IF EXISTS (SELECT 1 FROM @payments)
+            INSERT INTO @pay (method, amount, ref)
+            SELECT COALESCE(NULLIF(LTRIM(RTRIM(method)), ''), 'Cash'),
+                   amount,
+                   NULLIF(LTRIM(RTRIM(ref)), N'')
+            FROM @payments
+            WHERE ISNULL(amount, 0) > 0;
+        ELSE IF ISNULL(@receiptAmount, 0) > 0
+            INSERT INTO @pay (method, amount, ref)
+            VALUES (@paymentType, @receiptAmount, NULLIF(LTRIM(RTRIM(@paymentRef)), N''));
+
+        DECLARE @paidTotal INT = (SELECT ISNULL(SUM(amount), 0) FROM @pay);
+        DECLARE @methodCount INT = (SELECT COUNT(DISTINCT method) FROM @pay);
+        /* The bill header has a single payment_type column the legacy LIS
+           reads. Show the real method when one was used, 'Mixed' when the
+           patient split across methods, else the legacy scalar (NULL when
+           nothing was collected). Each individual receipt row below keeps its
+           own real method. */
+        DECLARE @headerPayType VARCHAR(50) =
+            CASE WHEN @paidTotal = 0   THEN @paymentType
+                 WHEN @methodCount > 1 THEN 'Mixed'
+                 ELSE (SELECT TOP 1 method FROM @pay ORDER BY seq) END;
+
+        DECLARE @balance INT = @total - ISNULL(@discountAmount,0) - @paidTotal;
 
         INSERT INTO dbo.tbl_billing_patient_detail
             (bill_number, bill_date, mcc_code, patientname, age, gender,
@@ -532,8 +568,8 @@ BEGIN
             -- LIS schema field for medical-record id; we repurpose it).
             (@billNo, GETDATE(), @mcc, LEFT(@pname,100), @age, @gender,
              CONVERT(VARCHAR(50), @pid),
-             @total, ISNULL(@discountAmount,0), ISNULL(@receiptAmount,0),
-             @balance, @paymentType, @payMode, @refDoctor, @refCustomer,
+             @total, ISNULL(@discountAmount,0), @paidTotal,
+             @balance, @headerPayType, @payMode, @refDoctor, @refCustomer,
              LEFT(@mobile,10), LEFT(@email,50),
              CONVERT(VARCHAR(10), @ageType), 1,
              CONCAT(N'telo:', @userId), GETDATE());
@@ -545,32 +581,41 @@ BEGIN
         SELECT @billId, @mcc, LEFT(l.code,10), l.name, l.rate, l.testtype
         FROM @lines l;
 
-        /* ⑥ receipt (only if paid now) */
+        /* ⑥ receipts — ONE row per payment line (split payments supported:
+           e.g. ₹500 Cash + ₹500 UPI = two receipt rows). Each receipt mints
+           its own telo_txn id. */
         SET @txn = NULL;
-        IF ISNULL(@receiptAmount,0) > 0
+        IF EXISTS (SELECT 1 FROM @pay)
         BEGIN
             -- card_number holds the operator-entered payment reference (UPI ref,
             -- cheque no., card auth code) for non-cash payments — same column the
             -- offline "record receipt" flow uses, so the ledger surfaces it.
+            -- card_number is varchar(50); the ref is already trimmed to 50 in
+            -- @pay, LEFT() again as belt-and-braces so a long ref can never
+            -- throw a truncation error and fail the whole order.
+            DECLARE @newReceipts TABLE (rid INT);
             INSERT INTO dbo.tbl_billing_patient_amount_receipt
                 (bill_id, recd_date, amount, receivedby, receive_status, pay_mode,
                  card_number)
-            VALUES
-                (@billId, GETDATE(), @receiptAmount,
-                 CONCAT(N'telo:', @userId), '1', @paymentType,
-                 -- card_number is varchar(50); LEFT() so an over-long ref can
-                 -- never throw a truncation error and fail the whole order.
-                 LEFT(NULLIF(LTRIM(RTRIM(@paymentRef)), ''), 50));
-            SET @rid = SCOPE_IDENTITY();
-            SET @txn = CONCAT(
-                N'TXN',
-                RIGHT(
-                    CONCAT(N'00000000', CONVERT(VARCHAR(20), NEXT VALUE FOR dbo.telo_txn_seq)),
-                    8
-                )
-            );
+            OUTPUT inserted.id INTO @newReceipts (rid)
+            SELECT @billId, GETDATE(), p.amount,
+                   CONCAT(N'telo:', @userId), '1', p.method,
+                   LEFT(p.ref, 50)
+            FROM @pay p;
+
+            -- One unique txn id per receipt. NEXT VALUE FOR in an INSERT…SELECT
+            -- yields a distinct sequence value for each row.
             INSERT INTO dbo.telo_txn (receipt_id, bill_id, txn_id)
-            VALUES (@rid, @billId, @txn);
+            SELECT nr.rid, @billId,
+                   CONCAT(N'TXN',
+                          RIGHT(CONCAT(N'00000000',
+                                       CONVERT(VARCHAR(20), NEXT VALUE FOR dbo.telo_txn_seq)), 8))
+            FROM @newReceipts nr;
+
+            -- Status row returns the first txn id (preserves the prior single
+            -- -receipt contract for callers that read txn_id).
+            SELECT TOP 1 @txn = txn_id FROM dbo.telo_txn
+            WHERE bill_id = @billId ORDER BY receipt_id;
         END
 
         /* NO franchise-wallet posting here. The LIS debits the franchise
