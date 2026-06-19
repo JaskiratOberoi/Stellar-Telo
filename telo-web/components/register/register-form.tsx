@@ -32,7 +32,7 @@ import {
   MobileField,
   type MobileStatus,
 } from '@/components/register/mobile-field';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, CreditCard } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -799,76 +799,97 @@ export function RegisterForm({
               )}
             </div>
 
-            {/* Gold Card (B2C only) — near the Discount input. Toggles a 50%-off
-                on the whole bill and captures the card number + holder, stored
-                at Telo table level. */}
+            {/* Gold Card (B2C only) — a button next to the Discount input that
+                expands into the card inputs. Applying it charges the whole bill
+                at 50% and stores the card at Telo table level. */}
             {!isB2b && (
-              <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-2.5">
-                <label className="flex cursor-pointer items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-amber-300">
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={goldCard}
+                  onClick={() => {
+                    const next = !goldCard;
+                    setGoldCard(next);
+                    // Card is the discount — clear any manual one, and re-pin
+                    // the prefilled "paid now" to 50% of the new total.
+                    if (next) setF((s) => ({ ...s, discountAmount: '0' }));
+                    setReceiptTouched(false);
+                  }}
+                  className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    goldCard
+                      ? 'border-amber-400/60 bg-amber-500/15 text-amber-200'
+                      : 'border-amber-500/30 bg-amber-500/[0.05] text-amber-300 hover:bg-amber-500/10'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
                     Gold Card — 50% off
                   </span>
-                  <input
-                    type="checkbox"
-                    checked={goldCard}
-                    suppressHydrationWarning
-                    onChange={(e) => {
-                      setGoldCard(e.target.checked);
-                      // Card is the discount — clear any manual one, and re-pin
-                      // the prefilled "paid now" to 50% of the new total.
-                      if (e.target.checked) {
-                        setF((s) => ({ ...s, discountAmount: '0' }));
-                      }
-                      setReceiptTouched(false);
-                    }}
-                    className="h-4 w-4 accent-amber-400"
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform duration-300 ${
+                      goldCard ? 'rotate-180' : ''
+                    }`}
                   />
-                </label>
-                {goldCard && (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          Card number
-                        </Label>
-                        <Input
-                          type="text"
-                          maxLength={50}
-                          placeholder="Gold Card number"
-                          value={goldNumber}
-                          onChange={(e) => setGoldNumber(e.target.value)}
-                          aria-invalid={goldCard && !goldNumber.trim()}
-                          suppressHydrationWarning
-                        />
+                </button>
+
+                {/* Smoothly expand/collapse via grid-rows 0fr→1fr (animatable,
+                    unlike height:auto). Inner wrapper must be overflow-hidden. */}
+                <div
+                  aria-hidden={!goldCard}
+                  className={`grid transition-all duration-300 ease-out ${
+                    goldCard
+                      ? 'mt-2 grid-rows-[1fr] opacity-100'
+                      : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-2.5">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Card number
+                          </Label>
+                          <Input
+                            type="text"
+                            maxLength={50}
+                            placeholder="Gold Card number"
+                            value={goldNumber}
+                            tabIndex={goldCard ? undefined : -1}
+                            onChange={(e) => setGoldNumber(e.target.value)}
+                            aria-invalid={goldCard && !goldNumber.trim()}
+                            suppressHydrationWarning
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Card holder
+                          </Label>
+                          <Input
+                            type="text"
+                            maxLength={200}
+                            placeholder="Card holder name"
+                            value={goldHolder}
+                            tabIndex={goldCard ? undefined : -1}
+                            onChange={(e) => setGoldHolder(e.target.value)}
+                            aria-invalid={goldCard && !goldHolder.trim()}
+                            suppressHydrationWarning
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-0.5">
-                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          Card holder
-                        </Label>
-                        <Input
-                          type="text"
-                          maxLength={200}
-                          placeholder="Card holder name"
-                          value={goldHolder}
-                          onChange={(e) => setGoldHolder(e.target.value)}
-                          aria-invalid={goldCard && !goldHolder.trim()}
-                          suppressHydrationWarning
-                        />
-                      </div>
+                      <p
+                        className={`text-[10px] ${
+                          goldMissing ? 'text-destructive' : 'text-amber-300/80'
+                        }`}
+                      >
+                        {goldMissing
+                          ? 'Enter the card number and holder name.'
+                          : preview.total > 0
+                            ? `Bill halved — total is now ₹${effectiveTotal} (was ₹${preview.total}).`
+                            : 'Bill will be charged at 50%.'}
+                      </p>
                     </div>
-                    <p
-                      className={`text-[10px] ${
-                        goldMissing ? 'text-destructive' : 'text-amber-300/80'
-                      }`}
-                    >
-                      {goldMissing
-                        ? 'Enter the card number and holder name.'
-                        : preview.total > 0
-                          ? `Bill halved — total is now ₹${effectiveTotal} (was ₹${preview.total}).`
-                          : 'Bill will be charged at 50%.'}
-                    </p>
-                  </>
-                )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
