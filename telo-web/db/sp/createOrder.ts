@@ -51,6 +51,11 @@ export interface CreateOrderInput {
   /** B2B mode: bill every line at catalogue MRP (patient price), skipping the
    *  client rate list. Defaults to false (the classic New-Order behavior). */
   billAtMrp?: boolean;
+  /** B2C Gold Card: when true (and card details supplied) the SP halves every
+   *  line — the whole bill is charged at 50%. Ignored in B2B. */
+  goldCard?: boolean;
+  goldCardNumber?: string | null;
+  goldCardHolder?: string | null;
 }
 
 export interface CreateOrderResult {
@@ -172,6 +177,9 @@ export async function createOrder(
       .input('discountAmount', sql.Int, input.discountAmount ?? 0)
       .input('payMode', sql.Int, input.payMode ?? null)
       .input('billAtMrp', sql.Bit, input.billAtMrp ? 1 : 0)
+      .input('goldCard', sql.Bit, input.goldCard ? 1 : 0)
+      .input('goldCardNumber', sql.NVarChar(50), input.goldCardNumber ?? null)
+      .input('goldCardHolder', sql.NVarChar(200), input.goldCardHolder ?? null)
       .input('payments', buildPaymentTvp(input.payments ?? []))
       .execute<Record<string, unknown>>('dbo.usp_telo_create_order');
 

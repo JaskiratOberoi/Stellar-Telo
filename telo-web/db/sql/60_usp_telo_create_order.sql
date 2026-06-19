@@ -65,6 +65,13 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     @receiptAmount    INT            = 0,
     @billAtMrp        BIT            = 0,
     @paymentRef       VARCHAR(100)   = NULL,
+    -- B2C Gold Card: when @goldCard=1 (and card details supplied) the whole
+    -- bill is charged at 50% — every line rate is halved at the source so the
+    -- header amount, line items and LIS-facing test rows are all consistent.
+    -- Ignored in B2B (@billAtMrp=1). The card is recorded in dbo.telo_gold_card.
+    @goldCard         BIT            = 0,
+    @goldCardNumber   NVARCHAR(50)   = NULL,
+    @goldCardHolder   NVARCHAR(200)  = NULL,
     -- Split payments: one row per payment line (₹500 Cash + ₹500 UPI). When
     -- supplied (and non-empty) it SUPERSEDES the @paymentType/@receiptAmount/
     -- @paymentRef scalars, which are kept only for older single-payment callers.
@@ -268,6 +275,24 @@ BEGIN
                total = 0, sample_count = 0;
         SELECT * FROM @emptySamples;
         RETURN;
+    END
+
+    /* Gold Card (B2C only): halve EVERY line so the whole bill is 50% off.
+       Done at the source so @total, the billing line items (⑤) and the
+       LIS-facing test rows (②) are all consistently halved. Ignored in B2B
+       (@billAtMrp=1) and when card details are missing. ROUND(…/2.0) matches
+       the client preview + server floor check (round half up). */
+    DECLARE @goldApplied BIT = 0;
+    IF @goldCard = 1 AND @billAtMrp = 0
+       AND NULLIF(LTRIM(RTRIM(@goldCardNumber)), N'') IS NOT NULL
+       AND NULLIF(LTRIM(RTRIM(@goldCardHolder)), N'') IS NOT NULL
+    BEGIN
+        UPDATE @lines SET rate = CAST(ROUND(rate / 2.0, 0) AS INT);
+        SET @goldApplied = 1;
+        -- The Gold Card IS the discount (50%). No manual discount may stack on
+        -- top of it — force it to zero here so even a hand-crafted caller that
+        -- bypasses the server action can never apply an extra reduction.
+        SET @discountAmount = 0;
     END
 
     SELECT @total = ISNULL(SUM(rate), 0) FROM @lines;
@@ -574,6 +599,17 @@ BEGIN
              CONVERT(VARCHAR(10), @ageType), 1,
              CONCAT(N'telo:', @userId), GETDATE());
         SET @billId = SCOPE_IDENTITY();
+
+        /* Gold Card sidecar (Telo-level): records which card slashed this bill
+           by 50%. One row per bill (unique index on bill_id). */
+        IF @goldApplied = 1
+            INSERT INTO dbo.telo_gold_card
+                (bill_id, card_number, card_holder, discount_pct, created_by)
+            VALUES
+                (@billId,
+                 LEFT(LTRIM(RTRIM(@goldCardNumber)), 50),
+                 LEFT(LTRIM(RTRIM(@goldCardHolder)), 200),
+                 50, CONCAT(N'telo:', @userId));
 
         /* ⑤ billing line items */
         INSERT INTO dbo.tbl_billing_patient_test_detail

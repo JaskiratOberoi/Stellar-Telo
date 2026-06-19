@@ -313,6 +313,11 @@ const registerSchema = z.object({
   // Split payments: JSON array of { method, amount, ref } lines collected now
   // (e.g. ₹500 Cash + ₹500 UPI). Parsed/validated separately below.
   paymentsJson: z.string().optional(),
+  // B2C Gold Card: '1' when applied. Halves the whole bill (50% off) and is
+  // mutually exclusive with the manual discount. Ignored in B2B.
+  goldCard: z.string().optional(),
+  goldCardNumber: z.string().trim().max(50).optional(),
+  goldCardHolder: z.string().trim().max(200).optional(),
   itemsJson: z.string(),
   // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
   b2b: z.string().optional(),
@@ -439,18 +444,27 @@ export async function registerOrder(
     }
     const paidTotal = payments.reduce((s, p) => s + p.amount, 0);
 
+    // Gold Card (B2C only): halves the whole bill and is mutually exclusive
+    // with the manual discount. Card number + holder are mandatory when on.
+    const gold = !b2b && f.goldCard === '1';
+    if (gold && (!f.goldCardNumber?.trim() || !f.goldCardHolder?.trim())) {
+      return { error: 'Enter the Gold Card number and card holder name.' };
+    }
+    const discountAmount = gold ? 0 : f.discountAmount;
+
     // Server-authoritative 50% floor. Mirrors the client gate so a tampered
     // form can't post receipts summing below half the resolved total. B2B bills
-    // at MRP, so the floor is computed against the MRP total in that mode.
-    const resolvedTotal = b2b
-      ? Array.from((await mrpMapFor(items)).values()).reduce(
-          (s: number, m) => s + (m ?? 0),
-          0,
-        )
-      : (await resolveRatesBatch(f.mcc, items.map(toResolveItem))).reduce(
-          (s, r) => s + (r.rate ?? 0),
-          0,
+    // at MRP, so the floor is computed against the MRP total in that mode. A
+    // Gold Card halves each line (round half up) — matching the SP exactly.
+    const rateList = b2b
+      ? Array.from((await mrpMapFor(items)).values()).map((m) => m ?? 0)
+      : (await resolveRatesBatch(f.mcc, items.map(toResolveItem))).map(
+          (r) => r.rate ?? 0,
         );
+    const resolvedTotal = rateList.reduce(
+      (s, r) => s + (gold ? Math.round(r / 2) : r),
+      0,
+    );
     const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
     if (paidTotal < minPaid) {
       return {
@@ -458,7 +472,7 @@ export async function registerOrder(
       };
     }
     const maxDiscount = resolvedTotal > 0 ? Math.round(resolvedTotal * 0.2) : 0;
-    if (Number(f.discountAmount ?? 0) > maxDiscount) {
+    if (!gold && Number(discountAmount ?? 0) > maxDiscount) {
       return {
         error: `Discount cannot exceed ₹${maxDiscount} (20% of ₹${resolvedTotal}).`,
       };
@@ -512,7 +526,7 @@ export async function registerOrder(
         code: i.code,
         name: i.name,
       })),
-      discountAmount: f.discountAmount,
+      discountAmount,
       payMode: 1, // LIS standard paymode; real method captured per receipt line
       // One receipt per line; ref only meaningful for non-cash (ignored for Cash).
       payments: payments.map((p) => ({
@@ -521,6 +535,10 @@ export async function registerOrder(
         ref: p.method !== 'Cash' ? p.ref.trim() || null : null,
       })),
       billAtMrp: b2b,
+      // Gold Card halves the bill (B2C only); the SP records the card.
+      goldCard: gold,
+      goldCardNumber: gold ? f.goldCardNumber!.trim() : null,
+      goldCardHolder: gold ? f.goldCardHolder!.trim() : null,
     });
 
     if (!result.ok || result.billId == null) {

@@ -106,6 +106,12 @@ export function RegisterForm({
   // Split payments: one or more lines (e.g. ₹500 Cash + ₹500 UPI). Starts with
   // a single Cash line whose amount auto-pins to 50% of the total (below).
   const [payments, setPayments] = useState<PayLine[]>([{ ...NEW_PAY_LINE }]);
+  // Gold Card (B2C only) — when applied the whole bill is charged at 50%.
+  // Card number + holder are captured and stored at Telo table level. Mutually
+  // exclusive with the manual discount.
+  const [goldCard, setGoldCard] = useState(false);
+  const [goldNumber, setGoldNumber] = useState('');
+  const [goldHolder, setGoldHolder] = useState('');
   // Live per-number usage check (max patients per mobile) — status lifted
   // here so the submit gate below can block on it, like the SID checks.
   const [mobileStatus, setMobileStatus] = useState<MobileStatus>('idle');
@@ -301,32 +307,49 @@ export function RegisterForm({
     };
   }, [picked, mcc, isB2b]);
 
+  // A Gold Card (B2C only) halves every line — the bill the patient pays. The
+  // SP applies the same per-line round-half-up, so the figures match exactly.
+  const goldTotal = preview.lines.reduce(
+    (s, l) => s + Math.round((l.rate ?? 0) / 2),
+    0,
+  );
+  const goldApplied = !isB2b && goldCard;
+  // The billed total everything keys off: halved when a Gold Card is applied.
+  const effectiveTotal = goldApplied ? goldTotal : preview.total;
+
   // Keep the FIRST payment line pinned to half the current total while the
   // operator hasn't overridden it. Re-runs whenever the priced total changes
-  // (tests added or removed, rate list switched).
+  // (tests added/removed, rate list switched, Gold Card toggled).
   useEffect(() => {
     if (receiptTouched) return;
-    const half = preview.total > 0 ? String(Math.round(preview.total / 2)) : '0';
+    const half =
+      effectiveTotal > 0 ? String(Math.round(effectiveTotal / 2)) : '0';
     setPayments((ps) => {
       if (ps.length === 0 || ps[0].amount === half) return ps;
       const next = [...ps];
       next[0] = { ...next[0], amount: half };
       return next;
     });
-  }, [preview.total, receiptTouched]);
+  }, [effectiveTotal, receiptTouched]);
 
   // Sum of all payment lines = total collected now.
   const paidSum = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
   // Hard floor: operators may raise the amount but can never collect below 50%
-  // of the total (same figure the effect above prefills).
-  const minPaid = preview.total > 0 ? Math.round(preview.total / 2) : 0;
-  const belowMinPaid = preview.total > 0 && paidSum < minPaid;
+  // of the (effective) total — same figure the effect above prefills.
+  const minPaid = effectiveTotal > 0 ? Math.round(effectiveTotal / 2) : 0;
+  const belowMinPaid = effectiveTotal > 0 && paidSum < minPaid;
 
-  // Hard cap for "Discount": never more than 20% of the total bill.
-  const maxDiscount = preview.total > 0 ? Math.round(preview.total * 0.2) : 0;
+  // Hard cap for "Discount": never more than 20% of the total bill. (Disabled
+  // entirely when a Gold Card is applied — the card IS the discount.)
+  const maxDiscount = effectiveTotal > 0 ? Math.round(effectiveTotal * 0.2) : 0;
   const aboveMaxDiscount =
-    preview.total > 0 && Number(f.discountAmount || 0) > maxDiscount;
+    !goldApplied &&
+    effectiveTotal > 0 &&
+    Number(f.discountAmount || 0) > maxDiscount;
+
+  // Gold Card requires a card number + holder name before it can be submitted.
+  const goldMissing = goldApplied && (!goldNumber.trim() || !goldHolder.trim());
 
   // Every non-empty UPI line must carry a transaction reference so the receipt
   // is traceable. A UPI line with ₹0 has no transaction to reference yet.
@@ -386,6 +409,22 @@ export function RegisterForm({
             .filter((p) => p.amount > 0),
         )}
       />
+      {/* Gold Card is B2C-only — only emit its fields outside B2B mode. */}
+      {!isB2b && (
+        <>
+          <input type="hidden" name="goldCard" value={goldCard ? '1' : ''} />
+          <input
+            type="hidden"
+            name="goldCardNumber"
+            value={goldCard ? goldNumber.trim() : ''}
+          />
+          <input
+            type="hidden"
+            name="goldCardHolder"
+            value={goldCard ? goldHolder.trim() : ''}
+          />
+        </>
+      )}
       <input
         type="hidden"
         name="refDoctorJson"
@@ -624,13 +663,13 @@ export function RegisterForm({
           <div className="space-y-2 border-t pt-3">
             <div className="flex items-baseline justify-between gap-2">
               <Label>Payment</Label>
-              {preview.total > 0 && (
+              {effectiveTotal > 0 && (
                 <span
                   className={`text-[11px] tabular-nums ${
                     belowMinPaid ? 'text-destructive' : 'text-muted-foreground'
                   }`}
                 >
-                  Collected ₹{paidSum} / ₹{preview.total}
+                  Collected ₹{paidSum} / ₹{effectiveTotal}
                   {minPaid > 0 ? ` · min ₹${minPaid} (50%)` : ''}
                 </span>
               )}
@@ -732,11 +771,12 @@ export function RegisterForm({
                 type="number"
                 min={0}
                 max={maxDiscount}
-                value={f.discountAmount}
+                value={goldApplied ? '0' : f.discountAmount}
+                disabled={goldApplied}
                 onChange={upd('discountAmount')}
                 onBlur={() => {
                   // Snap a too-large discount back down to the 20% cap.
-                  if (preview.total <= 0) return;
+                  if (effectiveTotal <= 0) return;
                   const v = Number(f.discountAmount);
                   if (Number.isFinite(v) && v > maxDiscount) {
                     setF((s) => ({ ...s, discountAmount: String(maxDiscount) }));
@@ -744,18 +784,93 @@ export function RegisterForm({
                 }}
                 aria-invalid={aboveMaxDiscount}
               />
-              {preview.total > 0 && (
+              {effectiveTotal > 0 && (
                 <p
                   className={`text-[10px] ${
                     aboveMaxDiscount ? 'text-destructive' : 'text-muted-foreground'
                   }`}
                 >
-                  {aboveMaxDiscount
-                    ? `Max discount ₹${maxDiscount} (20%).`
-                    : `Up to ₹${maxDiscount} (20%).`}
+                  {goldApplied
+                    ? 'Disabled — the Gold Card already applies 50% off.'
+                    : aboveMaxDiscount
+                      ? `Max discount ₹${maxDiscount} (20%).`
+                      : `Up to ₹${maxDiscount} (20%).`}
                 </p>
               )}
             </div>
+
+            {/* Gold Card (B2C only) — near the Discount input. Toggles a 50%-off
+                on the whole bill and captures the card number + holder, stored
+                at Telo table level. */}
+            {!isB2b && (
+              <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-2.5">
+                <label className="flex cursor-pointer items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-amber-300">
+                    Gold Card — 50% off
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={goldCard}
+                    suppressHydrationWarning
+                    onChange={(e) => {
+                      setGoldCard(e.target.checked);
+                      // Card is the discount — clear any manual one, and re-pin
+                      // the prefilled "paid now" to 50% of the new total.
+                      if (e.target.checked) {
+                        setF((s) => ({ ...s, discountAmount: '0' }));
+                      }
+                      setReceiptTouched(false);
+                    }}
+                    className="h-4 w-4 accent-amber-400"
+                  />
+                </label>
+                {goldCard && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Card number
+                        </Label>
+                        <Input
+                          type="text"
+                          maxLength={50}
+                          placeholder="Gold Card number"
+                          value={goldNumber}
+                          onChange={(e) => setGoldNumber(e.target.value)}
+                          aria-invalid={goldCard && !goldNumber.trim()}
+                          suppressHydrationWarning
+                        />
+                      </div>
+                      <div className="space-y-0.5">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Card holder
+                        </Label>
+                        <Input
+                          type="text"
+                          maxLength={200}
+                          placeholder="Card holder name"
+                          value={goldHolder}
+                          onChange={(e) => setGoldHolder(e.target.value)}
+                          aria-invalid={goldCard && !goldHolder.trim()}
+                          suppressHydrationWarning
+                        />
+                      </div>
+                    </div>
+                    <p
+                      className={`text-[10px] ${
+                        goldMissing ? 'text-destructive' : 'text-amber-300/80'
+                      }`}
+                    >
+                      {goldMissing
+                        ? 'Enter the card number and holder name.'
+                        : preview.total > 0
+                          ? `Bill halved — total is now ₹${effectiveTotal} (was ₹${preview.total}).`
+                          : 'Bill will be charged at 50%.'}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -912,7 +1027,14 @@ export function RegisterForm({
               })
             )}
             <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-sm font-semibold">
-              <span>Total{isB2b && ' (patient pays MRP)'}</span>
+              <span>
+                Total
+                {isB2b
+                  ? ' (patient pays MRP)'
+                  : goldApplied
+                    ? ' (Gold Card · 50% off)'
+                    : ''}
+              </span>
               <span className="flex items-center gap-3">
                 {isB2b &&
                   (() => {
@@ -929,7 +1051,14 @@ export function RegisterForm({
                       </span>
                     );
                   })()}
-                <span>₹{preview.total}</span>
+                {goldApplied && preview.total !== effectiveTotal && (
+                  <span className="text-xs font-normal text-muted-foreground line-through">
+                    ₹{preview.total}
+                  </span>
+                )}
+                <span className={goldApplied ? 'text-amber-300' : undefined}>
+                  ₹{effectiveTotal}
+                </span>
               </span>
             </div>
           </div>
@@ -1049,7 +1178,8 @@ export function RegisterForm({
               mobileBusy ||
               belowMinPaid ||
               aboveMaxDiscount ||
-              txnMissing;
+              txnMissing ||
+              goldMissing;
             const label = pending
               ? 'Registering…'
               : mcc === ''
@@ -1078,7 +1208,9 @@ export function RegisterForm({
                                 ? `Discount can't exceed ₹${maxDiscount} (20%)`
                                 : txnMissing
                                   ? 'Enter UPI transaction reference'
-                                  : `Review & register · ₹${preview.total}`;
+                                  : goldMissing
+                                    ? 'Enter Gold Card details'
+                                    : `Review & register · ₹${effectiveTotal}`;
 
             // Two-step submit. The first button only flips into review mode
             // (no commit); the operator confirms or goes back from the panel.
@@ -1161,7 +1293,25 @@ export function RegisterForm({
                     </>
                   )}
                   <span className="text-zinc-500">Tests</span>
-                  <span>{picked.length} item(s) · ₹{preview.total}</span>
+                  <span>
+                    {picked.length} item(s) · ₹{effectiveTotal}
+                    {goldApplied && (
+                      <span className="text-zinc-400">
+                        {' '}(was ₹{preview.total})
+                      </span>
+                    )}
+                  </span>
+                  {goldApplied && (
+                    <>
+                      <span className="text-zinc-500">Gold Card</span>
+                      <span>
+                        {goldNumber.trim()} · {goldHolder.trim()} ·{' '}
+                        <span className="font-medium text-amber-600">
+                          50% off
+                        </span>
+                      </span>
+                    </>
+                  )}
                   <span className="text-zinc-500">Payment</span>
                   <span>
                     {payments
@@ -1172,7 +1322,7 @@ export function RegisterForm({
                       .join(' + ') || 'nothing collected'}
                     {' · paid ₹'}
                     {paidSum}
-                    {Number(f.discountAmount) > 0
+                    {!goldApplied && Number(f.discountAmount) > 0
                       ? ` · disc ₹${f.discountAmount}`
                       : ''}
                   </span>
@@ -1225,7 +1375,7 @@ export function RegisterForm({
                   >
                     {pending
                       ? 'Registering…'
-                      : `Confirm & register · ₹${preview.total}`}
+                      : `Confirm & register · ₹${effectiveTotal}`}
                   </Button>
                 </div>
               </div>
