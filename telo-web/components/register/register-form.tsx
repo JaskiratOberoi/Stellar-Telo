@@ -15,6 +15,10 @@ import {
 import { removeFromCart } from '@/actions/cart.actions';
 import type { SampleGroup } from '@/db/sp/previewSampleGroups';
 import { PAY_METHODS } from '@/lib/payment-methods';
+import {
+  isValidGoldCardNumber,
+  isValidGoldCardHolder,
+} from '@/lib/gold-card';
 import type { ScopedMcc } from '@/db/read/mccUnits';
 import type { CatalogItemPublic } from '@/domain/catalog/catalog.types';
 import { Button } from '@/components/ui/button';
@@ -348,8 +352,11 @@ export function RegisterForm({
     effectiveTotal > 0 &&
     Number(f.discountAmount || 0) > maxDiscount;
 
-  // Gold Card requires a card number + holder name before it can be submitted.
-  const goldMissing = goldApplied && (!goldNumber.trim() || !goldHolder.trim());
+  // Gold Card requires REAL-looking card details (not just non-empty) — a
+  // plausible card number and a name — before it can be submitted.
+  const goldNumberOk = isValidGoldCardNumber(goldNumber);
+  const goldHolderOk = isValidGoldCardHolder(goldHolder);
+  const goldMissing = goldApplied && (!goldNumberOk || !goldHolderOk);
 
   // Ref. doctor is compulsory for B2C New Orders (a picked existing doctor or a
   // freshly typed name). Optional in B2B.
@@ -862,7 +869,7 @@ export function RegisterForm({
                             value={goldNumber}
                             tabIndex={goldCard ? undefined : -1}
                             onChange={(e) => setGoldNumber(e.target.value)}
-                            aria-invalid={goldCard && !goldNumber.trim()}
+                            aria-invalid={goldCard && !goldNumberOk}
                             suppressHydrationWarning
                           />
                         </div>
@@ -877,7 +884,7 @@ export function RegisterForm({
                             value={goldHolder}
                             tabIndex={goldCard ? undefined : -1}
                             onChange={(e) => setGoldHolder(e.target.value)}
-                            aria-invalid={goldCard && !goldHolder.trim()}
+                            aria-invalid={goldCard && !goldHolderOk}
                             suppressHydrationWarning
                           />
                         </div>
@@ -888,7 +895,9 @@ export function RegisterForm({
                         }`}
                       >
                         {goldMissing
-                          ? 'Enter the card number and holder name.'
+                          ? !goldNumberOk
+                            ? 'Enter a valid card number (min 4 characters).'
+                            : 'Enter the card holder’s full name.'
                           : preview.total > 0
                             ? `Bill halved — total is now ₹${effectiveTotal} (was ₹${preview.total}).`
                             : 'Bill will be charged at 50%.'}

@@ -21,6 +21,10 @@ import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
 import {
+  isValidGoldCardNumber,
+  isValidGoldCardHolder,
+} from '@/lib/gold-card';
+import {
   previewSampleGroups,
   type SampleGroup,
 } from '@/db/sp/previewSampleGroups';
@@ -447,8 +451,11 @@ export async function registerOrder(
     // Gold Card (B2C only): halves the whole bill and is mutually exclusive
     // with the manual discount. Card number + holder are mandatory when on.
     const gold = !b2b && f.goldCard === '1';
-    if (gold && (!f.goldCardNumber?.trim() || !f.goldCardHolder?.trim())) {
-      return { error: 'Enter the Gold Card number and card holder name.' };
+    if (gold && !isValidGoldCardNumber(f.goldCardNumber)) {
+      return { error: 'Enter a valid Gold Card number (at least 4 characters).' };
+    }
+    if (gold && !isValidGoldCardHolder(f.goldCardHolder)) {
+      return { error: 'Enter the Gold Card holder’s full name.' };
     }
     const discountAmount = gold ? 0 : f.discountAmount;
 
