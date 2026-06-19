@@ -351,6 +351,12 @@ export function RegisterForm({
   // Gold Card requires a card number + holder name before it can be submitted.
   const goldMissing = goldApplied && (!goldNumber.trim() || !goldHolder.trim());
 
+  // Ref. doctor is compulsory for B2C New Orders (a picked existing doctor or a
+  // freshly typed name). Optional in B2B.
+  const refDoctorMissing =
+    !isB2b &&
+    (!refDoctor || (refDoctor.kind === 'new' && !refDoctor.name.trim()));
+
   // Every non-empty UPI line must carry a transaction reference so the receipt
   // is traceable. A UPI line with ₹0 has no transaction to reference yet.
   const txnMissing = payments.some(
@@ -573,7 +579,7 @@ export function RegisterForm({
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-0.5">
-              <Label htmlFor="refDoctor">Ref. doctor</Label>
+              <Label htmlFor="refDoctor">Ref. doctor{!isB2b && ' *'}</Label>
               <CreatableCombobox
                 id="refDoctor"
                 items={doctorsItems}
@@ -1200,13 +1206,16 @@ export function RegisterForm({
               belowMinPaid ||
               aboveMaxDiscount ||
               txnMissing ||
-              goldMissing;
+              goldMissing ||
+              refDoctorMissing;
             const label = pending
               ? 'Registering…'
               : mcc === ''
                 ? 'Select a Client code'
                 : coreMissing
                   ? 'Patient details required'
+                  : refDoctorMissing
+                    ? 'Ref. doctor required'
                   : mobileBlocked
                     ? 'Mobile number limit reached'
                     : mobileStatus === 'checking'

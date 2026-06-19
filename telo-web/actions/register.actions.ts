@@ -488,6 +488,12 @@ export async function registerOrder(
 
     const refDoc = parseRefValue(f.refDoctorJson);
     const refCust = parseRefValue(f.refCustomerJson);
+    // Ref. doctor is compulsory for B2C New Orders (authoritative gate; the form
+    // also blocks submit). Optional in B2B. parseRefValue already returns null
+    // for an empty / malformed value or a 'new' entry with a blank name.
+    if (!b2b && !refDoc) {
+      return { error: 'Select or add a referring doctor.' };
+    }
     const clinicalPdf = await readClinicalPdf(formData);
 
     // Match the LIS order form exactly: it keeps the salutation in
