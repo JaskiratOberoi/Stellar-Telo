@@ -123,7 +123,7 @@ export function UserManagement({
               placeholder="Username, name, email, role…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="h-8 w-72"
+              className="h-8 w-full sm:w-72"
               suppressHydrationWarning
             />
           </div>
@@ -135,7 +135,7 @@ export function UserManagement({
                 setRoleFilter(e.target.value as TeloRole | 'unassigned' | 'all')
               }
               suppressHydrationWarning
-              className={sel + ' h-8 w-44'}
+              className={sel + ' h-8 w-full sm:w-44'}
             >
               <option value="all">All roles</option>
               {ROLES.map((r) => (
@@ -156,7 +156,7 @@ export function UserManagement({
                 )
               }
               suppressHydrationWarning
-              className={sel + ' h-8 w-48'}
+              className={sel + ' h-8 w-full sm:w-48'}
             >
               <option value="all">All LIS roles</option>
               {overview.lisUsertypes.map((t) => (
@@ -176,7 +176,7 @@ export function UserManagement({
                 )
               }
               suppressHydrationWarning
-              className={sel + ' h-8 w-32'}
+              className={sel + ' h-8 w-full sm:w-32'}
             >
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -627,7 +627,7 @@ function EditUserForm({
         name="mccIdsCsv"
         value={pickedMccIds.join(',')}
       />
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div className="space-y-0.5">
           <Label htmlFor={`fn-${user.id}`}>First name *</Label>
           <Input
@@ -1052,7 +1052,7 @@ function CreateUserPanel({
           (minimal LIS rights).
         </p>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label htmlFor="username">Username *</Label>
             <Input id="username" name="username" required maxLength={50} />
@@ -1069,7 +1069,7 @@ function CreateUserPanel({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label htmlFor="firstName">First name *</Label>
             <Input id="firstName" name="firstName" required maxLength={100} />
@@ -1085,7 +1085,7 @@ function CreateUserPanel({
           <Input id="email" name="email" type="email" maxLength={100} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label>Telo role *</Label>
             <select

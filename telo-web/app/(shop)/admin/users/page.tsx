@@ -14,7 +14,7 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight">User accounts</h1>
           <p className="text-sm text-muted-foreground">
@@ -25,7 +25,7 @@ export default async function AdminUsersPage() {
             governs LIS-side access only.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-4">
           <a
             href="/admin/interpretations"
             className="text-sm text-muted-foreground underline hover:text-foreground"

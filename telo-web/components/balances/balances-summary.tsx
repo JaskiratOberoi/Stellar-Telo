@@ -153,7 +153,7 @@ export function AccountsSummaryView({
               value={from}
               max={to}
               onChange={(e) => applyDates(e.target.value || today(), to)}
-              className="h-8 w-40"
+              className="h-8 w-full sm:w-40"
             />
           </div>
           <div className="space-y-0.5">
@@ -164,10 +164,10 @@ export function AccountsSummaryView({
               min={from}
               max={today()}
               onChange={(e) => applyDates(from, e.target.value || today())}
-              className="h-8 w-40"
+              className="h-8 w-full sm:w-40"
             />
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-white/5 bg-card p-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/5 bg-card p-1">
             {presets().map((p) => (
               <button
                 key={p.id}
@@ -194,7 +194,7 @@ export function AccountsSummaryView({
               }
               disabled={pending || mccs.length === 0}
               suppressHydrationWarning
-              className="h-8 w-44 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 w-full sm:w-44 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">All centers</option>
               {mccs.map((m) => (
@@ -212,7 +212,7 @@ export function AccountsSummaryView({
               onChange={(e) => applyPay(e.target.value as PaymentModeFilter)}
               disabled={pending}
               suppressHydrationWarning
-              className="h-8 w-32 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+              className="h-8 w-full sm:w-32 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
             >
               <option value="all">All</option>
               <option value="cash">Cash / Paying</option>
@@ -225,7 +225,7 @@ export function AccountsSummaryView({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Patient, bill #, doctor…"
-              className="h-8 w-56"
+              className="h-8 w-full sm:w-56"
               suppressHydrationWarning
             />
           </div>

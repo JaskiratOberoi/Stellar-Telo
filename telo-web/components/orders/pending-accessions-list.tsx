@@ -90,7 +90,7 @@ export function PendingAccessionsList({
             {canViewBill && (
               <TableHead className="w-24 text-right">Amount</TableHead>
             )}
-            <TableHead className="w-64 text-right">Action</TableHead>
+            <TableHead className="w-44 md:w-64 text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

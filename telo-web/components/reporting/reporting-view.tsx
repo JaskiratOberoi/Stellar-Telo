@@ -186,7 +186,7 @@ export function ReportingView({
         }}
       >
         {/* From + To share one cell (each half-width). */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Field label="From">
             <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
           </Field>
@@ -338,7 +338,7 @@ export function ReportingView({
                         </span>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{r.sid}</TableCell>
-                      <TableCell className="max-w-[26rem]">
+                      <TableCell className="max-w-[12rem] sm:max-w-[26rem]">
                         {tests.length > 0 ? (
                           <ul className="space-y-0.5">
                             {tests.map((t, i) => (

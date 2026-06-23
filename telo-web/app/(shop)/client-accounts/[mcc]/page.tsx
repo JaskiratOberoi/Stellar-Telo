@@ -86,7 +86,7 @@ export default async function ClientAccountPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
             {mccMeta?.name ?? `Client ${mccId}`}{' '}

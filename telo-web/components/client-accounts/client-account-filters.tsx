@@ -98,7 +98,7 @@ export function ClientAccountFilters({
             }
             disabled={navigating}
             suppressHydrationWarning
-            className="h-8 w-44 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+            className="h-8 w-full sm:w-44 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
           >
             <option value="">All units</option>
             {buOptions.map(([id, name]) => (
@@ -122,7 +122,7 @@ export function ClientAccountFilters({
               }}
               disabled={navigating}
               suppressHydrationWarning
-              className="h-8 w-64 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+              className="h-8 w-full sm:w-64 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
             >
               {clientSelectValue === '' && (
                 <option value="">Select a client…</option>
@@ -155,7 +155,7 @@ export function ClientAccountFilters({
             setFromLocal(v);
             goto(href(mccId, v, toLocal, typeValue));
           }}
-          className="h-8 w-40"
+          className="h-8 w-full sm:w-40"
         />
       </div>
       <div className="space-y-0.5">
@@ -172,10 +172,10 @@ export function ClientAccountFilters({
             setToLocal(v);
             goto(href(mccId, fromLocal, v, typeValue));
           }}
-          className="h-8 w-40"
+          className="h-8 w-full sm:w-40"
         />
       </div>
-      <div className="flex items-center gap-1 self-end rounded-lg border border-white/5 bg-card p-1">
+      <div className="flex flex-wrap items-center gap-1 self-end rounded-lg border border-white/5 bg-card p-1">
         {periods.map((p) => (
           <button
             key={p.label}
@@ -250,17 +250,17 @@ function ClientSearch({
   return (
     <div className="space-y-0.5">
       <label className="text-xs text-muted-foreground">Client</label>
-      <div className="relative w-64">
+      <div className="relative w-full sm:w-64">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Switch client…"
           disabled={disabled}
           suppressHydrationWarning
-          className="h-8 w-64 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+          className="h-8 w-full sm:w-64 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
         />
         {q.trim() && (
-          <div className="absolute z-20 mt-1 max-h-72 w-64 overflow-auto rounded-md border border-white/10 bg-card shadow-lg">
+          <div className="absolute z-20 mt-1 max-h-72 w-full sm:w-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-white/10 bg-card shadow-lg">
             {pending && results.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">Searching…</p>
             ) : results.length === 0 ? (

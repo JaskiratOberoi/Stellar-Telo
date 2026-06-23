@@ -156,7 +156,7 @@ async function ReceiptBody({
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <PrintLabButton
             billId={order.billId}
             billNumber={order.billNumber ?? order.billId}

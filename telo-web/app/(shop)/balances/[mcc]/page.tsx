@@ -129,7 +129,7 @@ export default async function BalanceMccPage({
 
       {/* ── Screen view: interactive ledger ────────────────────────── */}
       <div className="space-y-4 print:hidden">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
             {mccMeta?.name ?? `MCC ${mccId}`}{' '}
@@ -144,7 +144,7 @@ export default async function BalanceMccPage({
             balance · {fmtIST(from, 'date')} → {fmtIST(to, 'date')}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {showBackLink && (
             <BalanceViewTabs mccId={mccId} from={from} to={to} active="bills" />
           )}

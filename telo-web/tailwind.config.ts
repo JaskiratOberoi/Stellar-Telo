@@ -9,7 +9,13 @@ const config: Config = {
     './lib/**/*.{ts,tsx}',
   ],
   theme: {
-    container: { center: true, padding: '2rem', screens: { '2xl': '1400px' } },
+    // Tighter gutters on phones (16px) widening to 2rem on larger screens —
+    // a single high-leverage win for every page on small displays.
+    container: {
+      center: true,
+      padding: { DEFAULT: '1rem', sm: '1.5rem', lg: '2rem' },
+      screens: { '2xl': '1400px' },
+    },
     extend: {
       fontFamily: {
         sans: [

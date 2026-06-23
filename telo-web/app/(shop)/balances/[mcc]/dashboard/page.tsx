@@ -83,7 +83,7 @@ export default async function ClientDashboardPage({
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-3">
         <div>
           <h1 className="text-xl font-bold tracking-tight">
             {mccMeta?.name ?? `MCC ${mccId}`}{' '}

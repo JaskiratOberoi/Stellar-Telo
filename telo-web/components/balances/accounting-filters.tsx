@@ -53,7 +53,7 @@ export function AccountingFilters({
             setFromLocal(v);
             navigate(v, toLocal);
           }}
-          className="h-8 w-40"
+          className="h-8 w-full sm:w-40"
         />
       </div>
       <div className="space-y-0.5">
@@ -70,10 +70,10 @@ export function AccountingFilters({
             setToLocal(v);
             navigate(fromLocal, v);
           }}
-          className="h-8 w-40"
+          className="h-8 w-full sm:w-40"
         />
       </div>
-      <div className="flex items-center gap-1 self-end rounded-lg border border-white/5 bg-card p-1">
+      <div className="flex flex-wrap items-center gap-1 self-end rounded-lg border border-white/5 bg-card p-1">
         {periods.map((p) => (
           <button
             key={p.label}

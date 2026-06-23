@@ -74,7 +74,7 @@ function ChartCard({
         </p>
         {hint && <p className="text-[11px] text-muted-foreground/70">{hint}</p>}
       </div>
-      <div className="h-64 w-full">{children}</div>
+      <div className="h-48 sm:h-64 w-full">{children}</div>
     </div>
   );
 }
