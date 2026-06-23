@@ -41,6 +41,7 @@ const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
   { value: 'admin', label: 'Admin', hint: 'Everything except user mgmt' },
   { value: 'billing', label: 'Billing', hint: 'Register + accession + payments' },
+  { value: 'client', label: 'Client', hint: 'Billing + own Sales & Accounts' },
   { value: 'technician', label: 'Technician', hint: 'Accession SIDs only' },
   { value: 'viewer', label: 'Viewer', hint: 'Read-only' },
 ];

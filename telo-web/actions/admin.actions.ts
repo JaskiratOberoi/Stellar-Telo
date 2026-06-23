@@ -136,6 +136,7 @@ const teloRoleSchema = z.enum([
   'super_admin',
   'admin',
   'billing',
+  'client',
   'technician',
   'viewer',
 ]);

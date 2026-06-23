@@ -6,6 +6,7 @@ const TELO_ROLES: ReadonlySet<TeloRole> = new Set([
   'super_admin',
   'admin',
   'billing',
+  'client',
   'technician',
   'viewer',
 ]);

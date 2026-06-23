@@ -18,7 +18,7 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing',
+    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'client',
                          N'technician', N'viewer')
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',

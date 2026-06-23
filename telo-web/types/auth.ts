@@ -7,6 +7,7 @@ export type TeloRole =
   | 'super_admin'
   | 'admin'
   | 'billing'
+  | 'client'
   | 'technician'
   | 'viewer';
 

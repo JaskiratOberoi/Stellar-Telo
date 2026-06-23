@@ -72,6 +72,25 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     // /dashboard on direct URL access.
     'dashboard:view',
   ],
+  client: [
+    // B2B clients logging in with their LIS credentials. Same as billing, but
+    // WITH Sales (sales:view) + Client Accounts (account:view) so a client can
+    // see their own sales and account. Both pages scope a single-MCC user to
+    // their own client code, so there is no cross-client visibility.
+    'order:create',
+    'order:accession',
+    'order:view',
+    'order:discount',
+    'patient:create',
+    'patient:view',
+    'bill:view',
+    'payment:capture',
+    'rate:view',
+    'balance:view',
+    'account:view',
+    'sales:view',
+    'dashboard:view',
+  ],
   technician: [
     // Strictly the New Order worklist — open existing orders to add SIDs.
     // No dashboard:view → revenue KPIs are hidden and / lands on /orders/new.
@@ -104,11 +123,11 @@ export const LIS_TO_TELO_ROLE_MAP: Record<number, TeloRole> = {
   26: 'admin', // Director
   28: 'admin', // BAS ADMIN
   32: 'admin', // SALES ADMIN
-  2: 'billing', // Client
-  7: 'billing', // Sub Client
-  12: 'billing', // CLIENT INVOICE
-  29: 'billing', // WALKIN CODES
-  33: 'billing', // ENTRY
+  2: 'client', // Client
+  7: 'client', // Sub Client
+  12: 'client', // CLIENT INVOICE
+  29: 'billing', // WALKIN CODES — internal counter/entry staff (no Sales/Accounts)
+  33: 'billing', // ENTRY — internal counter/entry staff (no Sales/Accounts)
   4: 'technician', // Technician
   9: 'technician', // Molecular
   16: 'technician', // PHLEBOTMIST
