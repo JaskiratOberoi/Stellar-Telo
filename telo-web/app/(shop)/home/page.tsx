@@ -69,7 +69,9 @@ export default async function ClientHomePage({
           className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-primary/20 blur-3xl"
         />
         <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4 sm:gap-5">
+          {/* Logo + greeting: stacked on mobile, side-by-side (with a divider)
+              from sm up. */}
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
             {/* Light (transparent) recolour of the brand mark so it sits on the
                 dark hero without a white box. The original stays for print/report
                 headers (light backgrounds). */}
@@ -79,16 +81,23 @@ export default async function ClientHomePage({
               alt="Noble Diagnostics"
               className="h-12 w-auto shrink-0"
             />
-            <div className="border-l border-white/15 pl-4 sm:pl-5">
+            <div className="sm:border-l sm:border-white/15 sm:pl-5">
               <h1 className="text-2xl font-bold tracking-tight">
                 {greeting()}, {user.name.split(' ')[0]}
               </h1>
               <p className="text-sm text-muted-foreground">
                 {selected ? (
-                  <>
-                    {selected.name ?? `Client ${selected.id}`}{' '}
-                    <span className="font-mono text-xs">· {selected.code}</span>
-                  </>
+                  // Most clients have a distinct name + code (e.g. "DELTA
+                  // PATHLAB · DL0002"); when they're identical, show it once.
+                  selected.name &&
+                  selected.name.toLowerCase() !== selected.code.toLowerCase() ? (
+                    <>
+                      {selected.name}{' '}
+                      <span className="font-mono text-xs">· {selected.code}</span>
+                    </>
+                  ) : (
+                    <span className="font-mono">{selected.code}</span>
+                  )
                 ) : (
                   'Welcome to your Noble account'
                 )}
