@@ -79,6 +79,88 @@ export function PendingAccessionsList({
         </div>
       </div>
 
+      {/* Mobile (<sm): one card per pending order — the 7-column table is
+          unreadable on a phone. */}
+      <div className="space-y-2 sm:hidden">
+        {rows.length === 0 ? (
+          <div className="rounded-lg border border-white/5 bg-card p-4 text-sm text-muted-foreground">
+            {feed.orders.length === 0
+              ? 'No orders awaiting Sample IDs.'
+              : 'No match.'}
+          </div>
+        ) : (
+          rows.map((o) => {
+            const complete = o.haveGroups >= o.requiredGroups;
+            const remaining = Math.max(0, o.requiredGroups - o.haveGroups);
+            const href = detailHref(o.billId);
+            return (
+              <div
+                key={o.billId}
+                className={cn(
+                  'rounded-lg border border-white/5 bg-card p-3',
+                  highlightBillId === o.billId &&
+                    'bg-secondary/10 ring-1 ring-secondary/40',
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {o.patientName ?? '—'}
+                    </p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                      <Link
+                        href={href}
+                        className="font-mono underline underline-offset-2"
+                      >
+                        #{o.billNumber ?? o.billId}
+                      </Link>
+                      {o.mccCode && <span>· {o.mccCode}</span>}
+                      <span>· {fmtIST(o.billDate)}</span>
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        complete
+                          ? 'bg-secondary/15 text-secondary'
+                          : 'bg-amber-500/15 text-amber-400',
+                      )}
+                    >
+                      {o.haveGroups}/{o.requiredGroups} SIDs
+                    </span>
+                    {canViewBill && (
+                      <span className="text-sm font-semibold tabular-nums">
+                        ₹{o.total}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2">
+                  <Button
+                    asChild
+                    size="sm"
+                    variant={complete ? 'outline' : 'default'}
+                  >
+                    <Link href={href}>
+                      {complete
+                        ? 'View SIDs'
+                        : `Add SID${remaining === 1 ? '' : 's'}`}
+                    </Link>
+                  </Button>
+                  <PrintLabButton billId={o.billId} billNumber={o.billNumber} />
+                  {canViewBill && (
+                    <PrintBillButton billId={o.billId} billNumber={o.billNumber} />
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop (sm+): the full worklist table. */}
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           <TableRow>
@@ -181,6 +263,7 @@ export function PendingAccessionsList({
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

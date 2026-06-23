@@ -180,9 +180,9 @@ async function ClientHomeBody({
   const credit = balance > 0 ? balance : 0;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
-      {/* Left — balance + recent activity */}
-      <div className="space-y-5">
+    <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[1.35fr_1fr]">
+      {/* Balance — left column, row 1 on desktop; first on mobile. */}
+      <div className="order-1 lg:col-start-1 lg:row-start-1">
         <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-white/10 bg-card">
           <div
             className={`px-6 py-6 ${
@@ -228,8 +228,11 @@ async function ClientHomeBody({
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Recent payments */}
+      {/* Recent payments — left column, row 2 on desktop; last on mobile
+          (below the Pay panel). */}
+      <div className="order-3 lg:col-start-1 lg:row-start-2">
         <div className="animate-fade-in-up rounded-2xl border border-white/10 bg-card [animation-delay:80ms]">
           <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -282,8 +285,9 @@ async function ClientHomeBody({
         </div>
       </div>
 
-      {/* Right — Pay Now */}
-      <div className="lg:sticky lg:top-6 lg:self-start">
+      {/* Pay Now — right column on desktop (spans both rows, sticky); second
+          on mobile, directly under the balance and above recent payments. */}
+      <div className="order-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 lg:self-start">
         <PayNowPanel mcc={mcc} due={due} configured={configured} />
       </div>
     </div>

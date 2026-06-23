@@ -21,14 +21,14 @@ export default async function NewOrderCreatePage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <h1 className="text-xl font-bold tracking-tight">New order</h1>
           <p className="text-sm text-muted-foreground">
             Patient, tests &amp; payment — Sample IDs optional
           </p>
         </div>
-        <Link href="/orders/new" className="text-sm underline">
+        <Link href="/orders/new" className="shrink-0 text-sm underline">
           ← Worklist
         </Link>
       </div>

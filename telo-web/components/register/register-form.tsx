@@ -983,7 +983,8 @@ export function RegisterForm({
               Selected ({picked.length})
             </div>
             {isB2b && picked.length > 0 && (
-              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              // Header only on sm+ — on mobile each row carries its own labels.
+              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
                 <span>Test</span>
                 <span className="text-right">MRP</span>
                 <span className="text-right">Client rate</span>
@@ -1009,28 +1010,35 @@ export function RegisterForm({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-3 border-b border-white/5 px-3 py-2 text-sm last:border-0"
+                    className="border-b border-white/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
                   >
-                    <span className="min-w-0">
+                    <span className="block min-w-0">
                       <span className="font-mono text-xs">{it.code}</span>{' '}
                       {it.name}
                     </span>
-                    <span className="text-right tabular-nums">
-                      {mrp != null ? `₹${mrp}` : '…'}
+                    {/* sm:contents lets these four become direct grid cells on
+                        desktop; on mobile they wrap into a labelled row below. */}
+                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs sm:mt-0 sm:contents">
+                      <span className="tabular-nums sm:text-right">
+                        <span className="text-muted-foreground sm:hidden">MRP </span>
+                        {mrp != null ? `₹${mrp}` : '…'}
+                      </span>
+                      <span className="tabular-nums text-muted-foreground sm:text-right">
+                        <span className="sm:hidden">Client </span>
+                        {cr != null ? `₹${cr}` : '…'}
+                      </span>
+                      <span className="tabular-nums text-emerald-400 sm:text-right">
+                        <span className="sm:hidden">Profit </span>
+                        {profitPct != null ? `${profitPct}%` : '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => remove(it.id, it.kind)}
+                        className="ml-auto text-xs text-destructive hover:underline sm:ml-0 sm:text-right"
+                      >
+                        remove
+                      </button>
                     </span>
-                    <span className="text-right tabular-nums text-muted-foreground">
-                      {cr != null ? `₹${cr}` : '…'}
-                    </span>
-                    <span className="text-right tabular-nums text-emerald-400">
-                      {profitPct != null ? `${profitPct}%` : '—'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => remove(it.id, it.kind)}
-                      className="text-right text-xs text-destructive hover:underline"
-                    >
-                      remove
-                    </button>
                   </div>
                 );
               })
