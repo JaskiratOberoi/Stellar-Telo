@@ -92,13 +92,13 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
     <div className="space-y-4">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Input
             type="date"
             value={date}
             max={todayISO()}
             onChange={(e) => setDate(e.target.value || todayISO())}
-            className="h-8 w-40"
+            className="h-8 w-32 sm:w-40"
           />
           <Button
             variant="outline"

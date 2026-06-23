@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowRight, Receipt, Wallet, History } from 'lucide-react';
 import { requireSession } from '@/auth/session';
+import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { getMccScope, ownCentreIds } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getMccAccountSummary, listMccAccountDetail } from '@/db/read/mccLedger';
@@ -35,7 +36,10 @@ export default async function ClientHomePage({
 }) {
   const user = await requireSession();
   // This animated home is the B2B client landing. Staff have the full /dashboard.
-  if (user.teloRole !== 'client') redirect('/dashboard');
+  // Use the EFFECTIVE role — most clients are implicit (LIS-derived), so
+  // teloRole (explicit override only) is null for them.
+  if ((user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId)) !== 'client')
+    redirect('/dashboard');
 
   const sp = await searchParams;
 

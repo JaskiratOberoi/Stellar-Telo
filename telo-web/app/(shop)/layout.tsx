@@ -1,5 +1,5 @@
 import { requireSession } from '@/auth/session';
-import { hasCapability } from '@/auth/rbac';
+import { hasCapability, lisUsertypeToTeloRole } from '@/auth/rbac';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
 import type { Capability } from '@/types/auth';
 import { ShopNav } from '@/components/layout/shop-nav';
@@ -64,9 +64,12 @@ export default async function ShopLayout({
 
   // User's "home" — B2B clients land on the animated payment home; Technicians
   // on the New Order worklist; everyone else on the Dashboard. The Telo brand
-  // mark navigates here.
+  // mark navigates here. Use the EFFECTIVE role: most clients are implicit
+  // (derived from their LIS usertypeid), so `teloRole` (explicit override only)
+  // is null for them — fall back to the LIS-derived role.
+  const effectiveRole = user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId);
   const homeHref =
-    user.teloRole === 'client'
+    effectiveRole === 'client'
       ? '/home'
       : hasCapability(user.caps, 'dashboard:view')
         ? '/dashboard'
