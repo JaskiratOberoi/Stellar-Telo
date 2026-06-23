@@ -62,11 +62,15 @@ export default async function ShopLayout({
   const canCreate = hasCapability(user.caps, 'order:create');
   const cartCount = canCreate ? (await getCart(user.uid)).items.length : 0;
 
-  // User's "home" — Dashboard for everyone except Technicians, who land
-  // directly on the New Order worklist. The Telo brand mark navigates here.
-  const homeHref = hasCapability(user.caps, 'dashboard:view')
-    ? '/dashboard'
-    : '/orders/new';
+  // User's "home" — B2B clients land on the animated payment home; Technicians
+  // on the New Order worklist; everyone else on the Dashboard. The Telo brand
+  // mark navigates here.
+  const homeHref =
+    user.teloRole === 'client'
+      ? '/home'
+      : hasCapability(user.caps, 'dashboard:view')
+        ? '/dashboard'
+        : '/orders/new';
 
   return (
     <div className="relative min-h-screen bg-background">

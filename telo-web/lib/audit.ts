@@ -28,6 +28,10 @@ type AuditEvent =
   | { kind: 'receipt.voided'; actor: number; billId: number; receiptId: number }
   | { kind: 'bill.test.cancelled'; actor: number; billId: number; lineId: number }
   | { kind: 'mcc.payment.recorded'; actor: number; mcc: number; amount: number; mode: number }
+  // CCAvenue online client payment: a client started a payment, and the gateway
+  // callback outcome (status + whether a wallet credit was posted this call).
+  | { kind: 'mcc.online_payment.initiated'; actor: number; mcc: number; amount: number; orderId: string }
+  | { kind: 'mcc.online_payment.result'; orderId: string; status: string; recorded: boolean; alreadyRecorded: boolean }
   // Emitted by the auth() session callback when a request's JWT carries an
   // older session_version than the live one — the session is then dropped
   // (forcing re-login). Captures both versions for ops correlation.

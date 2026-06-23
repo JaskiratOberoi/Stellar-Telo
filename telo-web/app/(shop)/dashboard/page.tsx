@@ -9,6 +9,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const user = await requireSession();
+  // B2B clients are greeted on the animated payment home instead of the revenue
+  // dashboard. The login flow points everyone at /dashboard; bounce clients so
+  // any deep-link (URL bar, bookmark, brand mark) lands them home too.
+  if (user.teloRole === 'client') redirect('/home');
   // Technicians don't see revenue KPIs — their home is the New Order
   // worklist. The login flow points everyone at /dashboard; we bounce them
   // here so any deep-link (URL bar, bookmark, "Back to home") also works.
