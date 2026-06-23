@@ -76,7 +76,7 @@ export function PayNowPanel({
               onChange={(e) => setAmount(e.target.value)}
               aria-invalid={amount !== '' && !valid}
               placeholder="0"
-              className="h-14 w-full rounded-xl border border-input bg-background pl-9 pr-4 text-2xl font-bold tracking-tight tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="h-14 w-full rounded-xl border border-input bg-background pl-9 pr-4 text-2xl font-bold tracking-tight tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
           </div>
 

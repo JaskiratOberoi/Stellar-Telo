@@ -122,7 +122,7 @@ export default function LoginPage() {
           {/* Legibility scrim — fades the wave field out under the form */}
           <div
             aria-hidden
-            className="absolute inset-0 bg-gradient-to-l from-background/95 via-background/75 to-transparent lg:border-l lg:border-white/5"
+            className="absolute inset-0 bg-gradient-to-l from-background/95 via-background/75 to-transparent"
           />
 
           <div className="relative w-full max-w-sm">
