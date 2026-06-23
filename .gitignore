@@ -11,3 +11,13 @@ Listec/integration/node-mssql/dist/
 .DS_Store
 Thumbs.db
 *.log
+
+# Local tooling
+.claude/
+
+# Reference-only / accidentally-nested (not part of this repo's app)
+Stellar-Telo/
+Listec-Genomics-main/
+
+# One-off ops/debug scripts (per CLAUDE.md, not committed)
+telo-web/db/scripts/*.mjs
