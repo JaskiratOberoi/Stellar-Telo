@@ -22,6 +22,19 @@ export async function getUnpinnedBillIds(
 ): Promise<number[]> {
   const ids = billIds.filter((n) => Number.isInteger(n) && n > 0);
   if (!Number.isInteger(userId) || ids.length === 0) return [];
+  // SQL Server caps a request at 2100 parameters. Negative-balance bills are
+  // usually few, but a credit client can have many — chunk to stay clear.
+  const CHUNK = 1000;
+  if (ids.length > CHUNK) {
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      chunks.push(ids.slice(i, i + CHUNK));
+    }
+    const batches = await Promise.all(
+      chunks.map((c) => getUnpinnedBillIds(userId, c)),
+    );
+    return batches.flat();
+  }
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request().input('uid', sql.Int, userId);

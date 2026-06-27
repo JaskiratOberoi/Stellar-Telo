@@ -455,6 +455,19 @@ export async function listTeloReceiptsForBills(
 ): Promise<BillReceiptRow[]> {
   const ids = billIds.filter((n) => Number.isInteger(n) && n > 0);
   if (ids.length === 0) return [];
+  // SQL Server caps a single request at 2100 parameters. A busy client over a
+  // multi-week window can have more bills than that, and binding one param per
+  // id blew the limit ("too many parameters") — crashing /balances/[mcc].
+  // Chunk the IN list so each request stays well under 2100, then merge.
+  const CHUNK = 1000;
+  if (ids.length > CHUNK) {
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      chunks.push(ids.slice(i, i + CHUNK));
+    }
+    const batches = await Promise.all(chunks.map((c) => listTeloReceiptsForBills(c)));
+    return batches.flat();
+  }
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
