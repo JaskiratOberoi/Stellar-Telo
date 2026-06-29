@@ -77,10 +77,10 @@ export function CancelTestButton({
           aria-modal="true"
         >
           <div
-            className="mt-10 w-full max-w-sm rounded-lg border border-white/10 bg-card text-foreground shadow-2xl"
+            className="mt-10 w-full max-w-sm rounded-lg border border-foreground/10 bg-card text-foreground shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 p-3">
+            <div className="flex items-center justify-between gap-3 border-b border-foreground/10 p-3">
               <p className="text-sm font-medium">Cancel test</p>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />

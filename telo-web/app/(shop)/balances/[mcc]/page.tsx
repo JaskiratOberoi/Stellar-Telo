@@ -265,7 +265,7 @@ function StatCard({
           ? 'text-muted-foreground'
           : 'text-foreground';
   return (
-    <div className="rounded-xl border border-white/5 bg-card p-4">
+    <div className="rounded-xl border border-foreground/5 bg-card p-4">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
@@ -276,7 +276,7 @@ function StatCard({
         <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
       )}
       {breakdown && breakdown.length > 0 && (
-        <div className="mt-3 space-y-1 border-t border-white/5 pt-2">
+        <div className="mt-3 space-y-1 border-t border-foreground/5 pt-2">
           {breakdown.map((b) => (
             <div key={b.label} className="flex items-baseline justify-between text-xs">
               <span className="text-muted-foreground">{b.label}</span>

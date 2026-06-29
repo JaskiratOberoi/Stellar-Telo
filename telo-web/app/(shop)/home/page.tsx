@@ -63,7 +63,7 @@ export default async function ClientHomePage({
   return (
     <div className="space-y-5">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="animate-card-in relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-primary/15 via-card to-card p-6 sm:p-8 motion-reduce:animate-none">
+      <section className="animate-card-in relative overflow-hidden rounded-2xl border border-foreground/10 bg-gradient-to-br from-primary/15 via-card to-card p-6 sm:p-8 motion-reduce:animate-none">
         <div
           aria-hidden
           className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-primary/20 blur-3xl"
@@ -81,7 +81,7 @@ export default async function ClientHomePage({
               alt="Noble Diagnostics"
               className="h-12 w-auto shrink-0"
             />
-            <div className="sm:border-l sm:border-white/15 sm:pl-5">
+            <div className="sm:border-l sm:border-foreground/15 sm:pl-5">
               <h1 className="text-2xl font-bold tracking-tight">
                 {greeting()}, {user.name.split(' ')[0]}
               </h1>
@@ -104,7 +104,7 @@ export default async function ClientHomePage({
               </p>
             </div>
           </div>
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-card/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-foreground/10 bg-card/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
             Noble Laboratory Network
           </span>
@@ -183,7 +183,7 @@ async function ClientHomeBody({
     <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[1.35fr_1fr]">
       {/* Balance — left column, row 1 on desktop; first on mobile. */}
       <div className="order-1 lg:col-start-1 lg:row-start-1">
-        <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-white/10 bg-card">
+        <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-foreground/10 bg-card">
           <div
             className={`px-6 py-6 ${
               due > 0
@@ -209,7 +209,7 @@ async function ClientHomeBody({
                   : "You're all settled. Thank you!"}
             </p>
           </div>
-          <div className="grid grid-cols-2 divide-x divide-white/5 border-t border-white/5">
+          <div className="grid grid-cols-2 divide-x divide-foreground/5 border-t border-foreground/5">
             <div className="px-6 py-4">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                 Total paid (all-time)
@@ -233,8 +233,8 @@ async function ClientHomeBody({
       {/* Recent payments — left column, row 2 on desktop; last on mobile
           (below the Pay panel). */}
       <div className="order-3 lg:col-start-1 lg:row-start-2">
-        <div className="animate-fade-in-up rounded-2xl border border-white/10 bg-card [animation-delay:80ms]">
-          <div className="flex items-center justify-between border-b border-white/5 px-5 py-3">
+        <div className="animate-fade-in-up rounded-2xl border border-foreground/10 bg-card [animation-delay:80ms]">
+          <div className="flex items-center justify-between border-b border-foreground/5 px-5 py-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <History className="h-4 w-4 text-muted-foreground" />
               Recent payments
@@ -255,7 +255,7 @@ async function ClientHomeBody({
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-white/5">
+            <ul className="divide-y divide-foreground/5">
               {recent.slice(0, 5).map((r) => (
                 <li
                   key={r.id}

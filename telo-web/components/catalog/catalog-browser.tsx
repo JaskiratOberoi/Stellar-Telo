@@ -82,7 +82,7 @@ export function CatalogBrowser({
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as KindFilter)}
-          className="h-9 rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary"
+          className="h-9 rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary"
         >
           <option value="all">All types</option>
           <option value="test">Tests</option>
@@ -102,7 +102,7 @@ export function CatalogBrowser({
                 router.push(`${pathname}?mcc=${v}`);
               });
             }}
-            className="h-9 max-w-[16rem] rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
+            className="h-9 max-w-[16rem] rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary disabled:opacity-50"
           >
             {units.map((u) => (
               <option key={u.id} value={u.id}>

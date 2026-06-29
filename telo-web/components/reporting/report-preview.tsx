@@ -130,10 +130,10 @@ export function ReportPreview({
       aria-modal="true"
     >
       <div
-        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-white/10 bg-card shadow-2xl"
+        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-foreground/10 bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 p-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-foreground/10 p-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">
               {patientName ?? 'Report'}{' '}
@@ -146,7 +146,7 @@ export function ReportPreview({
               value={split ? 'split' : 'continuous'}
               onChange={(e) => setSplit(e.target.value === 'split')}
               title="Report layout"
-              className="h-9 rounded-md border border-white/10 bg-input px-2 text-xs text-foreground focus-visible:outline-none focus-visible:border-primary"
+              className="h-9 rounded-md border border-foreground/10 bg-input px-2 text-xs text-foreground focus-visible:outline-none focus-visible:border-primary"
             >
               <option value="continuous">Continuous</option>
               <option value="split">Split by department</option>

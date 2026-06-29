@@ -35,7 +35,7 @@ export default async function AdminInvoicePage() {
       {!tableReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
           <strong>Migration not yet run.</strong> Execute{' '}
-          <code className="font-mono text-xs bg-black/20 px-1 py-0.5 rounded">
+          <code className="font-mono text-xs bg-foreground/10 px-1 py-0.5 rounded">
             db/sql/06_table_telo_mcc_invoice_config.sql
           </code>{' '}
           against the Noble database to enable invoice configuration. The receipt
@@ -43,7 +43,7 @@ export default async function AdminInvoicePage() {
         </div>
       )}
 
-      <div className="rounded-lg border border-white/5 bg-card p-4">
+      <div className="rounded-lg border border-foreground/5 bg-card p-4">
         <InvoiceConfigManager rows={rows} tableReady={tableReady} />
       </div>
     </div>

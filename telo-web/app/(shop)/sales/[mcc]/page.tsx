@@ -128,24 +128,24 @@ export default async function SalesMccPage({
             {page > 1 ? (
               <Link
                 href={`/sales/${mccId}?${qs}&page=${page - 1}`}
-                className="rounded-md border border-white/10 px-3 py-1 hover:bg-white/5"
+                className="rounded-md border border-foreground/10 px-3 py-1 hover:bg-foreground/5"
               >
                 ← Prev
               </Link>
             ) : (
-              <span className="rounded-md border border-white/5 px-3 py-1 text-muted-foreground opacity-50">
+              <span className="rounded-md border border-foreground/5 px-3 py-1 text-muted-foreground opacity-50">
                 ← Prev
               </span>
             )}
             {sales.hasMore ? (
               <Link
                 href={`/sales/${mccId}?${qs}&page=${page + 1}`}
-                className="rounded-md border border-white/10 px-3 py-1 hover:bg-white/5"
+                className="rounded-md border border-foreground/10 px-3 py-1 hover:bg-foreground/5"
               >
                 Next →
               </Link>
             ) : (
-              <span className="rounded-md border border-white/5 px-3 py-1 text-muted-foreground opacity-50">
+              <span className="rounded-md border border-foreground/5 px-3 py-1 text-muted-foreground opacity-50">
                 Next →
               </span>
             )}

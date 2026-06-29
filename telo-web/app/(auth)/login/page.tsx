@@ -68,7 +68,7 @@ export default function LoginPage() {
         {/* ── Brand showcase (desktop only) ──────────────────────────────── */}
         <section className="relative hidden flex-col justify-between p-10 lg:flex xl:p-14">
           <div className="animate-card-in motion-reduce:animate-none">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground backdrop-blur">
+            <span className="inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1 text-xs text-muted-foreground backdrop-blur">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-secondary/60 motion-reduce:animate-none" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-secondary" />
@@ -98,7 +98,7 @@ export default function LoginPage() {
                   className="flex animate-fade-in-up items-start gap-3.5 motion-reduce:animate-none"
                   style={{ animationDelay: `${250 + i * 120}ms` }}
                 >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-primary-foreground/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-foreground/[0.04] text-primary-foreground/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
                     <f.icon className="h-4 w-4" />
                   </span>
                   <span>
@@ -149,7 +149,7 @@ export default function LoginPage() {
             </div>
 
             {!mounted ? (
-              <div className="mt-8 h-56 animate-pulse rounded-lg bg-white/[0.04]" />
+              <div className="mt-8 h-56 animate-pulse rounded-lg bg-foreground/[0.04]" />
             ) : (
               <form action={formAction} className="mt-8 space-y-5">
                 <div className="group animate-fade-in-up space-y-2 [animation-delay:200ms] motion-reduce:animate-none">
@@ -165,7 +165,7 @@ export default function LoginPage() {
                     autoComplete="username"
                     required
                     autoFocus
-                    className="h-11 rounded-lg bg-white/[0.03] px-3.5 transition-all duration-200 focus-visible:bg-white/[0.05] focus-visible:shadow-[0_0_24px_-8px_hsl(var(--primary)/0.5)]"
+                    className="h-11 rounded-lg bg-foreground/[0.03] px-3.5 transition-all duration-200 focus-visible:bg-foreground/[0.05] focus-visible:shadow-[0_0_24px_-8px_hsl(var(--primary)/0.5)]"
                   />
                 </div>
                 <div className="group animate-fade-in-up space-y-2 [animation-delay:280ms] motion-reduce:animate-none">
@@ -180,7 +180,7 @@ export default function LoginPage() {
                     name="password"
                     autoComplete="current-password"
                     required
-                    className="h-11 rounded-lg bg-white/[0.03] px-3.5 transition-all duration-200 focus-visible:bg-white/[0.05] focus-visible:shadow-[0_0_24px_-8px_hsl(var(--primary)/0.5)]"
+                    className="h-11 rounded-lg bg-foreground/[0.03] px-3.5 transition-all duration-200 focus-visible:bg-foreground/[0.05] focus-visible:shadow-[0_0_24px_-8px_hsl(var(--primary)/0.5)]"
                   />
                 </div>
                 {state.error && (

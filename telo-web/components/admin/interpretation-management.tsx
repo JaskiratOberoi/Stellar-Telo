@@ -99,12 +99,12 @@ function ProfileRow({
   }
 
   return (
-    <div className="rounded-lg border border-white/5 bg-card/50 p-3">
+    <div className="rounded-lg border border-foreground/5 bg-card/50 p-3">
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              hasText ? 'bg-secondary' : 'bg-white/20'
+              hasText ? 'bg-secondary' : 'bg-foreground/20'
             }`}
             title={hasText ? 'Has interpretation' : 'No interpretation yet'}
           />
@@ -129,7 +129,7 @@ function ProfileRow({
         }}
         rows={3}
         placeholder="Clinical significance for this profile…"
-        className="w-full resize-y rounded-md border border-white/10 bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        className="w-full resize-y rounded-md border border-foreground/10 bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
       />
     </div>
   );

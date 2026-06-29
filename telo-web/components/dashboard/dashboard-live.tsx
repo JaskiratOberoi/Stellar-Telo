@@ -23,8 +23,8 @@ const shiftISO = (iso: string, days: number) => addDaysIST(iso, days);
 const STATUS_COLORS: Record<string, string> = {
   Authorized: 'bg-secondary/15 text-secondary',
   'In progress': 'bg-primary/15 text-primary',
-  Tested: 'bg-white/10 text-foreground',
-  Printed: 'bg-white/10 text-foreground',
+  Tested: 'bg-foreground/10 text-foreground',
+  Printed: 'bg-foreground/10 text-foreground',
 };
 
 export function DashboardLive({ initial }: { initial: DayStats }) {
@@ -212,7 +212,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
       {/* Charts row */}
       <div className="grid gap-3 lg:grid-cols-2">
         {/* Revenue trend bar chart */}
-        <div className="rounded-xl border border-white/5 bg-card p-4">
+        <div className="rounded-xl border border-foreground/5 bg-card p-4">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Revenue · 7 days ending {date}
           </p>
@@ -243,7 +243,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         </div>
 
         {/* Samples by status */}
-        <div className="rounded-xl border border-white/5 bg-card p-4">
+        <div className="rounded-xl border border-foreground/5 bg-card p-4">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Samples by status
           </p>
@@ -256,7 +256,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
                   key={b.status}
                   className={cn(
                     'rounded-full px-3 py-1 text-sm font-medium transition-colors duration-200',
-                    STATUS_COLORS[b.status] ?? 'bg-white/10 text-foreground',
+                    STATUS_COLORS[b.status] ?? 'bg-foreground/10 text-foreground',
                   )}
                 >
                   {b.status}:{' '}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ThemeProvider } from '@/components/theme/theme-provider';
 
 export const metadata: Metadata = {
   title: 'Telo — Billing',
@@ -9,15 +10,16 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // suppressHydrationWarning: next-themes sets the theme class on <html> before
+  // React hydrates; browser extensions also inject <body> attributes (e.g.
+  // cz-shortcut-listen). The class is managed by ThemeProvider — light default.
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      {/* suppressHydrationWarning: some browser extensions inject attributes
-          (e.g. cz-shortcut-listen) onto <body> before React hydrates. */}
+    <html lang="en" suppressHydrationWarning>
       <body
         className="min-h-screen font-sans antialiased bg-background text-foreground"
         suppressHydrationWarning
       >
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

@@ -176,7 +176,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             with the registering user&rsquo;s name; this box overrides it.
           </p>
         </div>
-        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
           <Label className="block">Bill text &amp; footer</Label>
           <p className="text-xs text-muted-foreground">
             &ldquo;Auto&rdquo; uses the default for this client (MDCARE keeps its
@@ -192,7 +192,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                 id={`obm-${row.mccId}`}
                 name="onBehalfMode"
                 defaultValue={row.config?.onBehalfMode ?? ''}
-                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+                className="h-9 w-full rounded-md border border-foreground/10 bg-input px-2 text-sm"
               >
                 <option value="">Auto</option>
                 <option value="client">Client name</option>
@@ -213,7 +213,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                       ? 'on'
                       : 'off'
                 }
-                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+                className="h-9 w-full rounded-md border border-foreground/10 bg-input px-2 text-sm"
               >
                 <option value="">Auto</option>
                 <option value="on">Show</option>
@@ -234,7 +234,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                       ? 'on'
                       : 'off'
                 }
-                className="h-9 w-full rounded-md border border-white/10 bg-input px-2 text-sm"
+                className="h-9 w-full rounded-md border border-foreground/10 bg-input px-2 text-sm"
               >
                 <option value="">Auto</option>
                 <option value="on">Show</option>
@@ -243,7 +243,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             </div>
           </div>
         </div>
-        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
           <Label className="block">Header layout</Label>
           <p className="text-xs text-muted-foreground">
             Choose where the Noble logo sits — the custom logo (if uploaded, or
@@ -261,7 +261,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                 id={`pos-${row.mccId}`}
                 value={noblePosition}
                 onChange={(e) => setNoblePosition(e.target.value as 'left' | 'right')}
-                className="h-8 w-full rounded-md border border-white/10 bg-transparent px-2 text-sm"
+                className="h-8 w-full rounded-md border border-foreground/10 bg-transparent px-2 text-sm"
               >
                 <option value="left">Top left</option>
                 <option value="right">Top right</option>
@@ -270,7 +270,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                 Custom logo will be on the {customPosition === 'left' ? 'top left' : 'top right'}.
               </p>
             </div>
-            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 p-2">
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-foreground/10 p-2">
               <input
                 type="checkbox"
                 checked={nobleVisible}
@@ -284,7 +284,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                 </span>
               </span>
             </label>
-            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 p-2">
+            <label className="flex cursor-pointer items-start gap-2 rounded-md border border-foreground/10 p-2">
               <input
                 type="checkbox"
                 checked={customVisible}
@@ -300,7 +300,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             </label>
           </div>
         </div>
-        <div className="space-y-2 sm:col-span-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="space-y-2 sm:col-span-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-3">
           <Label htmlFor={`logo-${row.mccId}`}>Custom logo (optional)</Label>
           <p className="text-xs text-muted-foreground">
             Shown opposite the Noble logo on every bill — exact placement
@@ -314,7 +314,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
                 width={104}
                 height={72}
                 unoptimized
-                className="h-14 w-auto rounded border border-white/10 bg-white p-1"
+                className="h-14 w-auto rounded border border-foreground/10 bg-white p-1"
               />
               <Button
                 type="button"
@@ -351,7 +351,7 @@ function ConfigForm({ row, onClose }: { row: MccRow; onClose: () => void }) {
             name="topRightLogo"
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"
-            className="cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
+            className="cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-foreground/10 file:px-2 file:py-1 file:text-xs"
           />
           <p className="text-xs text-muted-foreground">PNG, JPEG, WebP, or GIF · max 2 MB</p>
         </div>
@@ -453,7 +453,7 @@ export function InvoiceConfigManager({
       {filtered.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">No match.</p>
       ) : (
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-foreground/5">
           {visible.map((row) => {
             const isOpen = editing === row.mccId;
             const hasConfig = rowHasConfig(row);
@@ -462,7 +462,7 @@ export function InvoiceConfigManager({
                 key={row.mccId}
                 className={cn(
                   'px-1 py-3',
-                  isOpen && 'rounded-lg bg-white/[0.02] px-3',
+                  isOpen && 'rounded-lg bg-foreground/[0.02] px-3',
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -475,7 +475,7 @@ export function InvoiceConfigManager({
                         </span>
                       )}
                       {row.config?.hasTopRightLogo && (
-                        <span className="ml-1 rounded-full bg-white/10 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <span className="ml-1 rounded-full bg-foreground/10 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                           Logo
                         </span>
                       )}

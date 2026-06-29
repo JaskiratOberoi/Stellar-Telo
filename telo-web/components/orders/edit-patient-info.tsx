@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 const initial: PatientEditState = { ok: false, error: null };
 
 const SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
+  'flex h-9 w-full rounded-md border border-foreground/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
 
 /**
  * Super-admin-only "Edit patient info" button + modal on the receipt page.
@@ -73,7 +73,7 @@ export function EditPatientInfo({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+        className="inline-flex items-center gap-1 rounded-md border border-foreground/10 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
         title="Correct patient details (super admin)"
       >
         <Pencil className="h-3 w-3" />
@@ -88,10 +88,10 @@ export function EditPatientInfo({
           aria-modal="true"
         >
           <div
-            className="mt-10 w-full max-w-md rounded-lg border border-white/10 bg-card shadow-2xl"
+            className="mt-10 w-full max-w-md rounded-lg border border-foreground/10 bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 p-3">
+            <div className="flex items-center justify-between gap-3 border-b border-foreground/10 p-3">
               <p className="text-sm font-medium">Edit patient info</p>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />

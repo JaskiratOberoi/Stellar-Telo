@@ -43,8 +43,9 @@ export function AmbientBackground({
           subtle ? 'bg-indigo-500/10' : 'bg-indigo-500/25',
         )}
       />
-      {/* Fine dotted grid, faded toward the edges */}
-      <div className="absolute inset-0 [background-image:radial-gradient(circle_at_center,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:26px_26px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_72%)]" />
+      {/* Fine dotted grid, faded toward the edges. Dots key off --foreground so
+          they're light-on-dark in dark mode and dark-on-light in light mode. */}
+      <div className="absolute inset-0 [background-image:radial-gradient(circle_at_center,hsl(var(--foreground)/0.05)_1px,transparent_1px)] [background-size:26px_26px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_72%)]" />
       {/* Vignette to anchor content */}
       <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/80" />
     </div>

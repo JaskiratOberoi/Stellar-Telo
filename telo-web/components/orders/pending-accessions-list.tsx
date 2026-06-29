@@ -83,7 +83,7 @@ export function PendingAccessionsList({
           unreadable on a phone. */}
       <div className="space-y-2 sm:hidden">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-white/5 bg-card p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-foreground/5 bg-card p-4 text-sm text-muted-foreground">
             {feed.orders.length === 0
               ? 'No orders awaiting Sample IDs.'
               : 'No match.'}
@@ -97,7 +97,7 @@ export function PendingAccessionsList({
               <div
                 key={o.billId}
                 className={cn(
-                  'rounded-lg border border-white/5 bg-card p-3',
+                  'rounded-lg border border-foreground/5 bg-card p-3',
                   highlightBillId === o.billId &&
                     'bg-secondary/10 ring-1 ring-secondary/40',
                 )}
@@ -136,7 +136,7 @@ export function PendingAccessionsList({
                     )}
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-foreground/5 pt-2">
                   <Button
                     asChild
                     size="sm"

@@ -78,7 +78,7 @@ export function SidField({
     !locked && (status === 'taken' || status === 'error' || clientDup || formatError);
   const ok = locked || (status === 'available' && !clientDup && !formatError);
   return (
-    <div className="space-y-1 rounded-lg border border-white/5 bg-card p-3">
+    <div className="space-y-1 rounded-lg border border-foreground/5 bg-card p-3">
       <div className="flex items-baseline justify-between gap-2">
         <Label className="text-sm font-medium">
           {group.sampleTypeName}

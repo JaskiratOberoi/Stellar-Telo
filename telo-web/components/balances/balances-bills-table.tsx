@@ -169,14 +169,14 @@ export function BalancesBillsTable({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search bill #, name, PID, SID, mobile, amount, discount…"
             aria-label="Search bills"
-            className="h-9 w-full rounded-md border border-white/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
+            className="h-9 w-full rounded-md border border-foreground/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
           />
           {isSearching && (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -231,7 +231,7 @@ export function BalancesBillsTable({
                 key={b.billId}
                 className={cn(
                   negative && 'bg-destructive/10 hover:bg-destructive/20',
-                  firstUnpinned && 'border-t-2 border-white/10',
+                  firstUnpinned && 'border-t-2 border-foreground/10',
                 )}
               >
                 <TableCell>
@@ -295,7 +295,7 @@ export function BalancesBillsTable({
                           'inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs transition-all duration-150',
                           pinned
                             ? 'border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
-                            : 'border-white/10 text-muted-foreground hover:bg-white/5 hover:text-foreground',
+                            : 'border-foreground/10 text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
                           pending && 'cursor-wait opacity-60',
                         )}
                       >
@@ -308,7 +308,7 @@ export function BalancesBillsTable({
                     )}
                     <Link
                       href={detailHref}
-                      className="inline-flex items-center justify-center rounded-md border border-white/10 px-2.5 py-1 text-xs text-muted-foreground transition-all duration-150 hover:bg-white/5 hover:text-foreground hover:border-white/20"
+                      className="inline-flex items-center justify-center rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-muted-foreground transition-all duration-150 hover:bg-foreground/5 hover:text-foreground hover:border-foreground/20"
                     >
                       View →
                     </Link>

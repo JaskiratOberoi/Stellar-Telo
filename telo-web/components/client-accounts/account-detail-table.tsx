@@ -35,7 +35,7 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
       {/* Mobile (<sm): one card per transaction. */}
       <div className="space-y-2 sm:hidden">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-white/5 bg-card p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-foreground/5 bg-card p-4 text-sm text-muted-foreground">
             No transactions in this range.
           </div>
         ) : (
@@ -43,7 +43,7 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
             <div
               key={r.id}
               className={cn(
-                'rounded-lg border border-white/5 bg-card p-3',
+                'rounded-lg border border-foreground/5 bg-card p-3',
                 r.inactive && 'opacity-50',
               )}
             >
@@ -61,7 +61,7 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
                 </p>
               </div>
               {(r.chequeNo || r.reason) && (
-                <dl className="mt-2 space-y-1 border-t border-white/5 pt-2 text-xs">
+                <dl className="mt-2 space-y-1 border-t border-foreground/5 pt-2 text-xs">
                   {r.chequeNo && (
                     <div className="flex justify-between gap-3">
                       <dt className="text-muted-foreground">Cheque / Txn No</dt>

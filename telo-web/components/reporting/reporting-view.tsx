@@ -41,7 +41,7 @@ const MAX_BULK = 25;
 
 /** Shared <select> styling (matches the Input control). */
 const SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-white/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
+  'flex h-9 w-full rounded-md border border-foreground/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
 
 export function ReportingView({
   businessUnits,
@@ -179,7 +179,7 @@ export function ReportingView({
     <div className="space-y-5">
       {/* ── Filters ─────────────────────────────────────────────────────── */}
       <form
-        className="grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-3 rounded-lg border border-foreground/10 bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
         onSubmit={(e) => {
           e.preventDefault();
           runSearch();
@@ -272,12 +272,12 @@ export function ReportingView({
 
       {/* ── Results ─────────────────────────────────────────────────────── */}
       {pending && rows == null && (
-        <p className="rounded-lg border border-white/10 p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-lg border border-foreground/10 p-6 text-center text-sm text-muted-foreground">
           Loading samples…
         </p>
       )}
       {rows != null && (
-        <div className="rounded-lg border border-white/10">
+        <div className="rounded-lg border border-foreground/10">
           {rows.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
               No results found for these filters.
@@ -386,7 +386,7 @@ export function ReportingView({
 
       {/* ── Bulk selection bar ──────────────────────────────────────────── */}
       {selectedCount > 0 && (
-        <div className="sticky bottom-0 z-40 -mx-4 mt-2 border-t border-white/10 bg-card/80 px-4 py-3 backdrop-blur-sm">
+        <div className="sticky bottom-0 z-40 -mx-4 mt-2 border-t border-foreground/10 bg-card/80 px-4 py-3 backdrop-blur-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 text-sm">
               <span className="font-medium">

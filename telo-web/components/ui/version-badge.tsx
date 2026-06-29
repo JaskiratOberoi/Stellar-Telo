@@ -10,7 +10,7 @@ export function VersionBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground',
+        'inline-flex items-center rounded-full border border-foreground/10 bg-foreground/5 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground',
         className,
       )}
     >

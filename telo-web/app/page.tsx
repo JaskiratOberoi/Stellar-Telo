@@ -24,7 +24,7 @@ export default function HomePage() {
 
       <div className="relative z-10 flex w-full max-w-xl flex-col items-center gap-7">
         {/* Network badge */}
-        <span className="animate-fade-in-up inline-flex items-center gap-2 rounded-full border border-white/10 bg-card/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm">
+        <span className="animate-fade-in-up inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-card/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm">
           <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
           Noble Laboratory Network
         </span>
@@ -32,7 +32,7 @@ export default function HomePage() {
         {/* Wordmark + tagline */}
         <div className="animate-fade-in-up space-y-3 [animation-delay:60ms]">
           <div className="flex items-start justify-center gap-2">
-            <h1 className="bg-gradient-to-br from-white to-white/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
+            <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
               Telo
             </h1>
             <VersionBadge className="mt-2 sm:mt-3" />
@@ -60,7 +60,7 @@ export default function HomePage() {
           {FEATURES.map(({ icon: Icon, label }) => (
             <span
               key={label}
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/5 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full border border-foreground/5 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground"
             >
               <Icon className="h-3.5 w-3.5 text-primary" />
               {label}

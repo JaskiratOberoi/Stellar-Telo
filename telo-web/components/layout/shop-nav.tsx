@@ -7,6 +7,7 @@ import { Menu, X } from 'lucide-react';
 import { signOutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { VersionBadge } from '@/components/ui/version-badge';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { cn } from '@/lib/utils';
 
 interface NavLink {
@@ -70,7 +71,7 @@ export function ShopNav({
           variant === 'bar' ? 'px-3 py-1.5' : 'px-3 py-2.5 text-[15px]',
           isActive(n.href)
             ? 'bg-primary/15 text-foreground font-medium'
-            : 'text-muted-foreground hover:text-foreground hover:bg-white/5',
+            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
         )}
       >
         {n.label}
@@ -91,7 +92,7 @@ export function ShopNav({
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/5 bg-card/80 backdrop-blur-sm print:hidden">
+    <header className="sticky top-0 z-40 border-b border-foreground/5 bg-card/80 backdrop-blur-sm print:hidden">
       <div className="container flex h-14 items-center justify-between gap-2">
         {/* Brand + desktop links */}
         <div className="flex min-w-0 items-center gap-1">
@@ -110,7 +111,7 @@ export function ShopNav({
             </span>
           </Link>
 
-          <span className="mx-1 hidden h-4 w-px bg-white/10 md:inline-block" />
+          <span className="mx-1 hidden h-4 w-px bg-foreground/10 md:inline-block" />
 
           <nav className="hidden items-center gap-1 text-sm font-medium md:flex">
             {links.map((n) => renderLink(n, 'bar'))}
@@ -122,11 +123,14 @@ export function ShopNav({
           <span className="hidden items-center gap-1.5 text-muted-foreground lg:flex">
             <span className="max-w-[12rem] truncate">{userName}</span>
             {roleName && (
-              <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="rounded border border-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                 {roleName}
               </span>
             )}
           </span>
+          {/* Light/dark toggle — visible on every screen size. */}
+          <ThemeToggle />
+
           <form action={signOutAction} className="hidden md:block">
             <Button variant="outline" size="sm" type="submit">
               Sign out
@@ -138,7 +142,7 @@ export function ShopNav({
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground md:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -147,15 +151,15 @@ export function ShopNav({
 
       {/* Mobile drawer */}
       {open && (
-        <div className="border-t border-white/5 bg-card/95 backdrop-blur-sm md:hidden">
+        <div className="border-t border-foreground/5 bg-card/95 backdrop-blur-sm md:hidden">
           <nav className="container flex flex-col gap-0.5 py-2 text-sm font-medium">
             {links.map((n) => renderLink(n, 'drawer'))}
           </nav>
-          <div className="container flex items-center justify-between border-t border-white/5 py-3">
+          <div className="container flex items-center justify-between border-t border-foreground/5 py-3">
             <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
               <span className="max-w-[55vw] truncate">{userName}</span>
               {roleName && (
-                <span className="shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="shrink-0 rounded border border-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                   {roleName}
                 </span>
               )}

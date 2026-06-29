@@ -138,7 +138,7 @@ async function ReceiptBody({
                     ? `Registered by ${order.preparedByUser} (${order.registeredByUsername})`
                     : `Registered by ${order.registeredByUsername}`
                 }
-                className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
               >
                 <span className="text-[9px] uppercase tracking-wide text-muted-foreground/70">
                   Registered by
@@ -259,7 +259,7 @@ async function ReceiptBody({
                         {s.sampleTypeName}
                       </p>
                       {s.status && (
-                        <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                           {s.status}
                         </span>
                       )}
@@ -322,7 +322,7 @@ async function ReceiptBody({
                           {l.testName}
                         </span>
                         {l.cancelled && (
-                          <span className="ml-1.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                          <span className="ml-1.5 rounded bg-foreground/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
                             cancelled
                           </span>
                         )}

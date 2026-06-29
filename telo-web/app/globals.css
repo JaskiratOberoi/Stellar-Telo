@@ -3,11 +3,42 @@
 @tailwind utilities;
 
 @layer base {
-  /* Dark palette is the only theme — no light/dark toggle exists in the
-     app. We declare the same custom-property block under both `:root` and
-     `.dark` via a single selector so a future next-themes integration keeps
-     working without duplicating the values. */
-  :root,
+  /* ── Light theme (DEFAULT) ───────────────────────────────────────────────
+     Noble purple on a cool, faintly violet-tinted neutral. `next-themes`
+     (attribute="class", defaultTheme="light") leaves :root in force when the
+     user picks light and adds `.dark` for dark — so :root holds the light
+     palette and `.dark` overrides below. Keep the variable NAMES identical to
+     the dark block so every Tailwind colour token (bg, text, border, …) flips
+     for free. */
+  :root {
+    --background: 240 33% 98%; /* #F7F7FB cool off-white */
+    --foreground: 240 14% 12%; /* #1B1B22 near-black, faint violet */
+    --card: 0 0% 100%; /* white cards lift off the bg */
+    --card-foreground: 240 14% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 14% 12%;
+    /* Noble purple — slightly deeper + more saturated than the dark value so
+       white text stays legible on it against a light page. */
+    --primary: 238 33% 44%;
+    --primary-foreground: 0 0% 100%;
+    /* Success green — darkened from the dark theme so "Paid"/"Available" read
+       clearly as white-on-green against light surfaces. */
+    --secondary: 142 58% 38%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 24% 95%; /* #EEEEF4 chips, subtle fills */
+    --muted-foreground: 240 7% 42%; /* #66666F secondary text */
+    --accent: 238 33% 44%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 358 70% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 18% 89%; /* #DEDEE7 hairlines */
+    --input: 240 24% 96%;
+    --ring: 238 33% 44%;
+    --radius: 0.875rem;
+  }
+
+  /* ── Dark theme (opt-in via the top-right toggle) ────────────────────────
+     The app's original palette, unchanged. */
   .dark {
     --background: 0 0% 6%;
     --foreground: 0 0% 100%;
@@ -44,11 +75,19 @@
 }
 
 @layer utilities {
-  /* White highlight card — KPI tiles, selected-row states */
+  /* White highlight card — KPI tiles, selected-row states. Stays white in
+     both themes (it's a "light card" by definition); in light mode a hairline
+     border + soft violet shadow makes it read as elevated against the already
+     pale page, while dark mode keeps the dramatic black drop shadow. */
   .card-light {
     background-color: #ffffff;
     color: #0f0f0f;
     border-radius: 1rem;
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 10px 30px -14px rgba(79, 70, 140, 0.25);
+  }
+  .dark .card-light {
+    border-color: transparent;
     box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
   }
 

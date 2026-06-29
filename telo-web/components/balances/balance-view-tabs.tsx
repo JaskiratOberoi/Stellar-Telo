@@ -23,7 +23,7 @@ export function BalanceViewTabs({
     { key: 'bills', label: 'Bills', href: `/balances/${mccId}?${qs}` },
   ];
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-card/60 p-1">
+    <div className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-card/60 p-1">
       {tabs.map((t) => {
         const on = t.key === active;
         return (
@@ -34,7 +34,7 @@ export function BalanceViewTabs({
               'rounded-full px-4 py-1 text-xs font-medium transition-all duration-150',
               on
                 ? 'bg-primary/25 text-foreground'
-                : 'text-muted-foreground hover:bg-white/5 hover:text-foreground',
+                : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
             )}
           >
             {t.label}

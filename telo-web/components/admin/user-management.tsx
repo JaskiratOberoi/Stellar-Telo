@@ -35,7 +35,7 @@ import type { ScopedMcc } from '@/db/read/mccUnits';
 
 const initial: AdminFormState = { error: null, ok: false };
 const sel =
-  'h-9 w-full rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
 
 const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
@@ -110,7 +110,7 @@ export function UserManagement({
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   if (!mounted) {
-    return <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />;
+    return <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />;
   }
 
   return (
@@ -428,7 +428,7 @@ function UserRow({
       </TableRow>
       {openRow === 'edit' && user.createdByTelo && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-foreground/[0.03]">
             <EditUserForm
               user={user}
               onDone={() => setOpenRow(null)}
@@ -438,7 +438,7 @@ function UserRow({
       )}
       {openRow === 'preparedBy' && user.hasTeloAccount && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-foreground/[0.03]">
             <SetPreparedByForm
               userId={user.id}
               username={user.username}
@@ -450,7 +450,7 @@ function UserRow({
       )}
       {openRow === 'role' && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-foreground/[0.03]">
             <SetRoleForm
               userId={user.id}
               current={user.teloRole}
@@ -461,7 +461,7 @@ function UserRow({
       )}
       {openRow === 'password' && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-white/[0.03]">
+          <TableCell colSpan={7} className="bg-foreground/[0.03]">
             <ResetPasswordForm
               userId={user.id}
               username={user.username}
@@ -665,7 +665,7 @@ function EditUserForm({
       <div className="space-y-1">
         <Label>Client codes (MCC scope)</Label>
         {scopeIsUnrestricted ? (
-          <p className="rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground">
+          <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
             {labelFor(effectiveRole)} accounts have{' '}
             <span className="font-medium text-foreground">unrestricted</span>{' '}
             MCC scope — assignments here only matter if the role is downgraded
@@ -1033,7 +1033,7 @@ function CreateUserPanel({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <form
         action={action}
-        className="w-full max-w-md space-y-2.5 rounded-2xl border border-white/5 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        className="w-full max-w-md space-y-2.5 rounded-2xl border border-foreground/5 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200"
       >
         <input type="hidden" name="mccIdsCsv" value={pickedMccIds.join(',')} />
         <div className="flex items-baseline justify-between">
@@ -1121,7 +1121,7 @@ function CreateUserPanel({
         <div className="space-y-1 pt-1">
           <Label>Client codes (MCC scope)</Label>
           {scopeIsUnrestricted ? (
-            <p className="rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground">
+            <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
               {ROLES.find((r) => r.value === teloRole)?.label} accounts have{' '}
               <span className="font-medium text-foreground">unrestricted</span>{' '}
               MCC scope — no selection needed.

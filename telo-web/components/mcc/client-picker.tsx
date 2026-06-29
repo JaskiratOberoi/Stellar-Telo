@@ -39,7 +39,7 @@ export function ClientPicker({
             if (e.target.value) go(Number(e.target.value));
           }}
           suppressHydrationWarning
-          className="h-8 w-full sm:w-72 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+          className="h-8 w-full sm:w-72 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
         >
           <option value="">Select a client…</option>
           {options.map((m) => (
@@ -87,10 +87,10 @@ function ClientSearch({ onPick }: { onPick: (id: number) => void }) {
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search code or name…"
           suppressHydrationWarning
-          className="h-8 w-full sm:w-72 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+          className="h-8 w-full sm:w-72 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
         />
         {q.trim() && (
-          <div className="absolute z-20 mt-1 max-h-72 w-full sm:w-72 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-white/10 bg-card shadow-lg">
+          <div className="absolute z-20 mt-1 max-h-72 w-full sm:w-72 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-foreground/10 bg-card shadow-lg">
             {pending && results.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">Searching…</p>
             ) : results.length === 0 ? (
@@ -101,7 +101,7 @@ function ClientSearch({ onPick }: { onPick: (id: number) => void }) {
                   key={m.id}
                   type="button"
                   onClick={() => onPick(m.id)}
-                  className="block w-full px-3 py-1.5 text-left text-sm hover:bg-white/5"
+                  className="block w-full px-3 py-1.5 text-left text-sm hover:bg-foreground/5"
                 >
                   <span className="font-mono">{m.code}</span>
                   {m.name && (

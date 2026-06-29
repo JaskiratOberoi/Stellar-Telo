@@ -149,7 +149,7 @@ function PaymentStatusPill({
       ? 'border-secondary/40 bg-secondary/15 text-secondary'
       : status === 'pending'
         ? 'border-destructive/40 bg-destructive/15 text-destructive'
-        : 'border-white/15 bg-white/5 text-muted-foreground';
+        : 'border-foreground/15 bg-foreground/5 text-muted-foreground';
   const label =
     status === 'paid'
       ? '✓ Paid'

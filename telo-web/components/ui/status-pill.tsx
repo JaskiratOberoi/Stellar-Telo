@@ -16,11 +16,11 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 };
 
 const STATUS_CLASSES: Record<OrderStatus, string> = {
-  pending: 'bg-white/10 text-foreground',
+  pending: 'bg-foreground/10 text-foreground',
   in_progress: 'bg-primary/20 text-primary',
   delivered: 'bg-secondary/20 text-secondary',
   canceled: 'bg-destructive/20 text-destructive',
-  done: 'bg-white/10 text-muted-foreground',
+  done: 'bg-foreground/10 text-muted-foreground',
 };
 
 interface StatusPillProps {

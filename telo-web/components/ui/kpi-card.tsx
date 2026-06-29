@@ -14,7 +14,7 @@ interface KpiCardProps {
 }
 
 const variantClasses: Record<KpiVariant, string> = {
-  plain: 'bg-card border border-white/5 text-foreground',
+  plain: 'bg-card border border-foreground/5 text-foreground',
   light: 'card-light',
   accent: 'card-accent',
 };

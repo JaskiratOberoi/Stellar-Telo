@@ -33,8 +33,9 @@ const C = {
   pink: 'hsl(330, 70%, 64%)',
 };
 const DONUT = [C.primary, C.green, C.amber, C.cyan, C.purple, C.pink, C.red];
-const GRID = 'rgba(255,255,255,0.06)';
-const TICK = { fill: 'rgba(255,255,255,0.45)', fontSize: 11 };
+// Theme-aware so axes/gridlines stay legible in both light and dark.
+const GRID = 'hsl(var(--foreground) / 0.10)';
+const TICK = { fill: 'hsl(var(--muted-foreground))', fontSize: 11 };
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 const inrCompact = (n: number) => {
@@ -48,13 +49,13 @@ const mmdd = (day: string) => (day.length >= 10 ? day.slice(5) : day);
 
 const tooltipStyle = {
   contentStyle: {
-    background: 'hsl(0 0% 9%)',
-    border: '1px solid rgba(255,255,255,0.12)',
+    background: 'hsl(var(--popover))',
+    border: '1px solid hsl(var(--border))',
     borderRadius: 10,
     fontSize: 12,
   },
-  labelStyle: { color: 'rgba(255,255,255,0.6)' },
-  itemStyle: { color: '#fff' },
+  labelStyle: { color: 'hsl(var(--muted-foreground))' },
+  itemStyle: { color: 'hsl(var(--foreground))' },
 };
 
 function ChartCard({
@@ -67,7 +68,7 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-white/5 bg-card p-4">
+    <div className="rounded-xl border border-foreground/5 bg-card p-4">
       <div className="mb-3">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {title}

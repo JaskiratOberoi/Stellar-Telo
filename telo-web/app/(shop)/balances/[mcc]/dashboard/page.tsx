@@ -144,7 +144,7 @@ export default async function ClientDashboardPage({
 
       {/* Day-wise revenue table */}
       <Section title="Day-wise revenue" hint="Charges by bill date · Collected by receipt date">
-        <div className="max-h-[28rem] overflow-auto rounded-lg border border-white/5">
+        <div className="max-h-[28rem] overflow-auto rounded-lg border border-foreground/5">
           <Table>
             <TableHeader>
               <TableRow>
@@ -167,7 +167,7 @@ export default async function ClientDashboardPage({
                 </TableRow>
               ) : (
                 <>
-                  <TableRow className="bg-white/[0.03] font-medium">
+                  <TableRow className="bg-foreground/[0.03] font-medium">
                     <TableCell>Total</TableCell>
                     <TableCell className="text-right">{t.bills}</TableCell>
                     <TableCell className="text-right">{inr(t.charges)}</TableCell>
@@ -262,7 +262,7 @@ function StatCard({
           ? 'text-muted-foreground'
           : 'text-foreground';
   return (
-    <div className="rounded-xl border border-white/5 bg-card p-4">
+    <div className="rounded-xl border border-foreground/5 bg-card p-4">
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={cn('mt-1 text-2xl font-bold tracking-tight', valueColor)}>{value}</p>
       {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
@@ -303,7 +303,7 @@ function SimpleTable({
   empty?: string;
 }) {
   return (
-    <div className="rounded-lg border border-white/5">
+    <div className="rounded-lg border border-foreground/5">
       <Table>
         <TableHeader>
           <TableRow>

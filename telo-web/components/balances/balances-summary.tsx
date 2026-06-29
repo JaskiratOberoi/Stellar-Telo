@@ -167,7 +167,7 @@ export function AccountsSummaryView({
               className="h-8 w-full sm:w-40"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/5 bg-card p-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-foreground/5 bg-card p-1">
             {presets().map((p) => (
               <button
                 key={p.id}
@@ -178,7 +178,7 @@ export function AccountsSummaryView({
                   'rounded px-2.5 py-1 text-xs font-medium transition-all duration-150 ' +
                   (activePresetId === p.id
                     ? 'bg-primary/20 text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-white/5')
+                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5')
                 }
               >
                 {p.label}
@@ -194,7 +194,7 @@ export function AccountsSummaryView({
               }
               disabled={pending || mccs.length === 0}
               suppressHydrationWarning
-              className="h-8 w-full sm:w-44 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 w-full sm:w-44 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">All centers</option>
               {mccs.map((m) => (
@@ -212,7 +212,7 @@ export function AccountsSummaryView({
               onChange={(e) => applyPay(e.target.value as PaymentModeFilter)}
               disabled={pending}
               suppressHydrationWarning
-              className="h-8 w-full sm:w-32 rounded-md border border-white/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+              className="h-8 w-full sm:w-32 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
             >
               <option value="all">All</option>
               <option value="cash">Cash / Paying</option>
@@ -357,7 +357,7 @@ export function AccountsSummaryView({
         </TableBody>
         {rows.length > 0 && (
           <tfoot>
-            <tr className="border-t-2 border-white/5 bg-secondary/10 font-semibold text-secondary">
+            <tr className="border-t-2 border-foreground/5 bg-secondary/10 font-semibold text-secondary">
               <td className="px-2 py-2 text-sm">Total</td>
               <td className="px-2 py-2 text-right text-xs">{totals.bills}</td>
               <td className="px-2 py-2 text-right">{inr(totals.charges)}</td>

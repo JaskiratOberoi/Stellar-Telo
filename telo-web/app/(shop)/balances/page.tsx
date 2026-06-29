@@ -66,7 +66,7 @@ export default async function BalancesPage({
        *  reserves table height so the layout doesn't jump on stream-in.   */}
       <Suspense
         fallback={
-          <div className="rounded-lg border border-white/5 bg-card/50 p-6 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-foreground/5 bg-card/50 p-6 text-sm text-muted-foreground">
             Loading accounts…
           </div>
         }

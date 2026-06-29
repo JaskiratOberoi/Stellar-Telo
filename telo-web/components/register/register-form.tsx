@@ -47,7 +47,7 @@ import {
 const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr'];
 const initial: RegisterState = { error: null };
 const sel =
-  'h-9 w-full rounded-md border border-white/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
 
 type Picked = { id: number; kind: 'test' | 'profile' | 'master'; code: string; name: string };
 
@@ -376,8 +376,8 @@ export function RegisterForm({
   if (!pageMounted) {
     return (
       <div className="grid gap-4 text-sm lg:grid-cols-2">
-        <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />
-        <div className="h-96 animate-pulse rounded-xl border border-white/5 bg-white/[0.04]" />
+        <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />
+        <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />
       </div>
     );
   }
@@ -650,7 +650,7 @@ export function RegisterForm({
               onChange={(e) =>
                 setClinicalFileName(e.target.files?.[0]?.name ?? null)
               }
-              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded file:border file:border-white/10 file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground hover:file:bg-white/10"
+              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded file:border file:border-foreground/10 file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground hover:file:bg-foreground/10"
             />
             {clinicalFileName && (
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -694,7 +694,7 @@ export function RegisterForm({
               return (
                 <div
                   key={idx}
-                  className="space-y-1.5 rounded-md border border-white/10 bg-white/[0.02] p-2"
+                  className="space-y-1.5 rounded-md border border-foreground/10 bg-foreground/[0.02] p-2"
                 >
                   <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
                     <div className="space-y-0.5">
@@ -950,13 +950,13 @@ export function RegisterForm({
             onChange={(e) => setQ(e.target.value)}
           />
           {results.length > 0 && (
-            <div className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-card">
+            <div className="max-h-48 overflow-auto rounded-lg border border-foreground/10 bg-card">
               {results.map((r) => (
                 <button
                   type="button"
                   key={`${r.kind}-${r.id}`}
                   onClick={() => add(r)}
-                  className="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-white/5"
+                  className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5"
                 >
                   <span>
                     <span className="font-mono text-xs">{r.code}</span>{' '}
@@ -978,13 +978,13 @@ export function RegisterForm({
             </div>
           )}
 
-          <div className="rounded-lg border border-white/5 bg-card">
-            <div className="border-b border-white/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+          <div className="rounded-lg border border-foreground/5 bg-card">
+            <div className="border-b border-foreground/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
               Selected ({picked.length})
             </div>
             {isB2b && picked.length > 0 && (
               // Header only on sm+ — on mobile each row carries its own labels.
-              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
+              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
                 <span>Test</span>
                 <span className="text-right">MRP</span>
                 <span className="text-right">Client rate</span>
@@ -1010,7 +1010,7 @@ export function RegisterForm({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="border-b border-white/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
+                    className="border-b border-foreground/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
                   >
                     <span className="block min-w-0">
                       <span className="font-mono text-xs">{it.code}</span>{' '}
@@ -1050,7 +1050,7 @@ export function RegisterForm({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="flex items-center justify-between border-b border-white/5 px-3 py-2 text-sm last:border-0"
+                    className="flex items-center justify-between border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
                   >
                     <span>
                       <span className="font-mono text-xs">{it.code}</span>{' '}
@@ -1070,7 +1070,7 @@ export function RegisterForm({
                 );
               })
             )}
-            <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-sm font-semibold">
+            <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
               <span>
                 Total
                 {isB2b
@@ -1113,7 +1113,7 @@ export function RegisterForm({
             );
             const enteredCount = trimmed.filter((v) => v.length > 0).length;
             return (
-              <div className="rounded-md border border-white/10 bg-white/[0.02]">
+              <div className="rounded-md border border-foreground/10 bg-foreground/[0.02]">
                 <button
                   type="button"
                   onClick={() => setSidsOpen((o) => !o)}
