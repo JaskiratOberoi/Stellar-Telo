@@ -146,15 +146,19 @@ export function ReportPreview({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <label
-              className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-foreground/10 bg-input px-2 text-xs text-foreground"
+              className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-foreground/10 bg-input px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
               title="Hide the Noble letterhead but keep all spacing/margins, so the PDF can be printed onto pre-printed letterhead paper."
             >
-              <input
-                type="checkbox"
-                checked={headless}
-                onChange={(e) => setHeadless(e.target.checked)}
-                className="h-3.5 w-3.5"
-              />
+              <span className="relative inline-flex h-4 w-7 shrink-0 items-center">
+                <input
+                  type="checkbox"
+                  checked={headless}
+                  onChange={(e) => setHeadless(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <span className="absolute inset-0 rounded-full bg-foreground/20 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-input" />
+                <span className="absolute left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-3" />
+              </span>
               Letterhead paper
             </label>
             <select
