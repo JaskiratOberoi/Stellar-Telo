@@ -31,8 +31,9 @@ export async function POST(req: Request) {
   let patientName: unknown;
   let split: unknown;
   let exclude: unknown;
+  let headless: unknown;
   try {
-    ({ sid, panel, date, patientName, split, exclude } = await req.json());
+    ({ sid, panel, date, patientName, split, exclude, headless } = await req.json());
   } catch {
     return new NextResponse('Bad request', { status: 400 });
   }
@@ -42,6 +43,8 @@ export async function POST(req: Request) {
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';
   const splitParam = split === true || split === '1' || split === 'true' ? '&split=1' : '';
+  // Headless = no Noble letterhead background; for printing onto pre-printed paper.
+  const headlessReport = headless === true || headless === '1' || headless === 'true';
   // Tests/parameters the user unticked in the preview — dropped from the PDF.
   const excludeList = Array.isArray(exclude)
     ? exclude.filter(
@@ -68,7 +71,7 @@ export async function POST(req: Request) {
       fragmentPath,
       req.headers.get('cookie'),
     );
-    const merged = await mergeOntoLetterhead(content);
+    const merged = await mergeOntoLetterhead(content, { headless: headlessReport });
 
     return new NextResponse(new Uint8Array(merged), {
       status: 200,

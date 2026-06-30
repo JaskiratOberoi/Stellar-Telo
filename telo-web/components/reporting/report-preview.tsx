@@ -27,6 +27,9 @@ export function ReportPreview({
   const dateParam = date ? `&date=${encodeURIComponent(date)}` : '';
   // Split-by-department is the default layout (one department per page).
   const [split, setSplit] = useState(true);
+  // Headless: drop the Noble letterhead from the PDF but keep the same margins,
+  // so it can be printed onto physical pre-printed letterhead paper.
+  const [headless, setHeadless] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Item keys the user unticked in the preview iframe (reported via postMessage).
@@ -95,7 +98,7 @@ export function ReportPreview({
       const res = await fetch('/api/reporting/pdf', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sid, panel, date, patientName, split, exclude: excluded }),
+        body: JSON.stringify({ sid, panel, date, patientName, split, headless, exclude: excluded }),
       });
       if (!res.ok) {
         throw new Error(`Could not generate PDF (HTTP ${res.status}).`);
@@ -142,6 +145,18 @@ export function ReportPreview({
             {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <label
+              className="flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-foreground/10 bg-input px-2 text-xs text-foreground"
+              title="Hide the Noble letterhead but keep all spacing/margins, so the PDF can be printed onto pre-printed letterhead paper."
+            >
+              <input
+                type="checkbox"
+                checked={headless}
+                onChange={(e) => setHeadless(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Letterhead paper
+            </label>
             <select
               value={split ? 'split' : 'continuous'}
               onChange={(e) => setSplit(e.target.value === 'split')}

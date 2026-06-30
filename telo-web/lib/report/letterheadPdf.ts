@@ -28,20 +28,30 @@ async function loadLetterhead(): Promise<Buffer> {
 
 export async function mergeOntoLetterhead(
   contentPdf: Uint8Array,
+  // Headless mode: skip the Noble letterhead background entirely, leaving the
+  // header/footer bands blank so the PDF can be printed onto physical pre-printed
+  // letterhead paper. The content keeps its full margins (26mm top / 34mm bottom)
+  // so it still lines up under the printed letterhead, and page numbering stays.
+  options: { headless?: boolean } = {},
 ): Promise<Uint8Array> {
-  const letterheadBytes = await loadLetterhead();
+  const headless = options.headless === true;
 
   const out = await PDFDocument.create();
   const content = await PDFDocument.load(contentPdf);
-  const letterhead = await PDFDocument.load(letterheadBytes, {
-    ignoreEncryption: true,
-  });
 
-  const lhCount = letterhead.getPageCount();
-  // Embed each letterhead page once; reuse across content pages.
-  const lhEmbedded = await Promise.all(
-    letterhead.getPages().map((p) => out.embedPage(p)),
-  );
+  let lhCount = 0;
+  let lhEmbedded: Awaited<ReturnType<PDFDocument['embedPage']>>[] = [];
+  if (!headless) {
+    const letterheadBytes = await loadLetterhead();
+    const letterhead = await PDFDocument.load(letterheadBytes, {
+      ignoreEncryption: true,
+    });
+    lhCount = letterhead.getPageCount();
+    // Embed each letterhead page once; reuse across content pages.
+    lhEmbedded = await Promise.all(
+      letterhead.getPages().map((p) => out.embedPage(p)),
+    );
+  }
 
   // Font for the "Page X of Y" stamp (NABL requirement — every page numbered).
   const font = await out.embedFont(StandardFonts.Helvetica);
@@ -54,8 +64,9 @@ export async function mergeOntoLetterhead(
     const page = out.addPage([width, height]);
 
     // Background: primary letterhead for page 0, continuation for the rest.
+    // Skipped entirely in headless mode (pre-printed letterhead paper).
     const lhIndex = i === 0 ? 0 : Math.min(1, lhCount - 1);
-    const bg = lhEmbedded[lhIndex];
+    const bg = headless ? undefined : lhEmbedded[lhIndex];
     if (bg) {
       page.drawPage(bg, {
         x: 0,
