@@ -22,6 +22,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'order:create',
     'order:accession',
     'order:view',
+    'order:b2c',
+    'order:b2b',
     'order:discount',
     'patient:create',
     'patient:view',
@@ -44,6 +46,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'order:create',
     'order:accession',
     'order:view',
+    'order:b2c',
+    'order:b2b',
     'order:discount',
     'patient:create',
     'patient:view',
@@ -60,6 +64,8 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'order:create',
     'order:accession',
     'order:view',
+    'order:b2c',
+    'order:b2b',
     'order:discount',
     'patient:create',
     'patient:view',
@@ -72,14 +78,41 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     // /dashboard on direct URL access.
     'dashboard:view',
   ],
-  client: [
-    // B2B clients logging in with their LIS credentials. Same as billing, but
-    // WITH Sales (sales:view) + Client Accounts (account:view) so a client can
-    // see their own sales and account. Both pages scope a single-MCC user to
-    // their own client code, so there is no cross-client visibility.
+  // ⚠️ DO NOT REMOVE the `b2c_billing` / `b2b_billing` roles below. They are a
+  // deliberate, in-use split of the billing/client channels (B2C "New order" vs
+  // B2B "Patient Orders") and are referenced across the app (nav gating,
+  // /home landing, LIS_TO_TELO_ROLE_MAP, the Admin picker, and the
+  // usp_telo_admin_set_role SP). If a future change or merge appears to drop
+  // them, RE-INCORPORATE them — and make sure they ship to production
+  // (deploy db/sql/98_usp_telo_admin_set_role.sql). Note for AI agents: keep
+  // these; don't "simplify" them away.
+  //
+  // Billing, restricted to the B2C channel: the "New order" tab only, no B2B
+  // "Patient Orders" tab. For internal counters that never raise B2B orders
+  // and for MRP-only clients like MEDICARE / MDCARE. Same caps as `billing`
+  // minus `order:b2b`.
+  b2c_billing: [
     'order:create',
     'order:accession',
     'order:view',
+    'order:b2c',
+    'order:discount',
+    'patient:create',
+    'patient:view',
+    'bill:view',
+    'payment:capture',
+    'rate:view',
+    'balance:view',
+    'dashboard:view',
+  ],
+  // Client, restricted to the B2B channel: the "Patient Orders" tab only, no
+  // B2C "New order" tab. The default for LIS client accounts (DL0002 etc.) via
+  // LIS_TO_TELO_ROLE_MAP below. Same caps as `client` minus `order:b2c`.
+  b2b_billing: [
+    'order:create',
+    'order:accession',
+    'order:view',
+    'order:b2b',
     'order:discount',
     'patient:create',
     'patient:view',
@@ -91,16 +124,45 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
     'sales:view',
     'dashboard:view',
   ],
+  client: [
+    // B2B clients logging in with their LIS credentials. Same as billing, but
+    // WITH Sales (sales:view) + Client Accounts (account:view) so a client can
+    // see their own sales and account. Both pages scope a single-MCC user to
+    // their own client code, so there is no cross-client visibility.
+    'order:create',
+    'order:accession',
+    'order:view',
+    'order:b2c',
+    'order:b2b',
+    'order:discount',
+    'patient:create',
+    'patient:view',
+    'bill:view',
+    'payment:capture',
+    'rate:view',
+    'balance:view',
+    'account:view',
+    'sales:view',
+    'dashboard:view',
+  ],
+  // Client-facing reporting operator: ONLY the animated client home dashboard
+  // (/home) + the Reporting tab (view/print). No orders, billing, balances,
+  // sales or dashboard. `report:view` is scoped to the user's own client
+  // code(s) for every non-admin role (see lib/reportScope.ts) — so a client's
+  // reporting staff can only see/print their OWN centre's reports.
+  client_reporting: ['report:view'],
   technician: [
     // Strictly the New Order worklist — open existing orders to add SIDs.
     // No dashboard:view → revenue KPIs are hidden and / lands on /orders/new.
     'order:accession',
     'order:view',
+    'order:b2c',
     'patient:view',
   ],
   viewer: [
     // Read-only across Dashboard / Orders / Balances / Rate lists.
     'order:view',
+    'order:b2c',
     'patient:view',
     'bill:view',
     'rate:view',
@@ -123,9 +185,13 @@ export const LIS_TO_TELO_ROLE_MAP: Record<number, TeloRole> = {
   26: 'admin', // Director
   28: 'admin', // BAS ADMIN
   32: 'admin', // SALES ADMIN
-  2: 'client', // Client
-  7: 'client', // Sub Client
-  12: 'client', // CLIENT INVOICE
+  // LIS client accounts (DL0002 etc.) default to B2B billing — the B2B
+  // "Patient Orders" tab only, no B2C "New order" tab. Assign the full `client`
+  // role (or `b2c_billing` for MRP-only clients like MEDICARE / MDCARE) per
+  // account from the Admin panel to override.
+  2: 'b2b_billing', // Client
+  7: 'b2b_billing', // Sub Client
+  12: 'b2b_billing', // CLIENT INVOICE
   29: 'billing', // WALKIN CODES — internal counter/entry staff (no Sales/Accounts)
   33: 'billing', // ENTRY — internal counter/entry staff (no Sales/Accounts)
   4: 'technician', // Technician

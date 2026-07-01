@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
+import { canAccessSidReport, reportClientCodeScope } from '@/lib/reportScope';
 import { renderFragmentsToPdfs } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { concatPdfs } from '@/lib/report/mergePdfs';
@@ -39,7 +40,8 @@ function fragmentPath(item: BulkItem): string {
 /**
  * Bulk variant of /api/reporting/pdf: renders several reports and returns ONE
  * merged PDF (each report on its own Noble letterhead pages). Gated to
- * `report:view` (super admin only today), same as the single route.
+ * `report:view` (client-scoped roles are restricted to their own SIDs), same
+ * as the single route.
  */
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
   }
 
   // Keep only well-formed entries with a non-empty SID, preserving order.
-  const items: BulkItem[] = rawItems
+  const parsedItems: BulkItem[] = rawItems
     .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
     .map((x) => ({
       sid: typeof x.sid === 'string' ? x.sid.trim() : '',
@@ -70,6 +72,18 @@ export async function POST(req: Request) {
       patientName: typeof x.patientName === 'string' ? x.patientName : undefined,
     }))
     .filter((x) => x.sid.length > 0);
+
+  // Client-facing reporters: drop any SID outside their own client scope so a
+  // bulk request can never bundle another client's reports. Unrestricted roles
+  // (super_admin/admin) keep every requested SID.
+  const scopeCodes = await reportClientCodeScope(user);
+  let items = parsedItems;
+  if (scopeCodes !== null) {
+    const inScope = await Promise.all(
+      parsedItems.map((it) => canAccessSidReport(user, it.sid)),
+    );
+    items = parsedItems.filter((_, i) => inScope[i]);
+  }
 
   if (items.length === 0) {
     return new NextResponse('No valid reports selected', { status: 400 });

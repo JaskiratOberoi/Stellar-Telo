@@ -12,6 +12,7 @@ import { getReferringDoctor } from '@/db/read/refDoctor';
 import { getMccCentreByCode } from '@/db/read/mccUnits';
 import { getProfileInterpretations } from '@/db/read/profileInterpretations';
 import { reportQrDataUrl, verifyReportToken } from '@/lib/report/reportLink';
+import { canAccessSidReport } from '@/lib/reportScope';
 import { getSampleReport } from '@/db/read/sampleReport';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
@@ -67,6 +68,10 @@ export default async function ReportingPrintFragment({
   if (!tokenOk) {
     const user = await requireSession();
     if (!hasCapability(user.caps, 'report:view')) notFound();
+    // Client-facing reporters (client_reporting) may only open their own
+    // client's reports. Unrestricted roles pass through. (The token path is
+    // pre-scoped: tokens are only minted by the PDF route for in-scope SIDs.)
+    if (!(await canAccessSidReport(user, decodedSid))) notFound();
   }
 
   // Tight worksheet window around the sample's date when known (the SP crawls

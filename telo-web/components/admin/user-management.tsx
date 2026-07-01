@@ -41,7 +41,10 @@ const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
   { value: 'admin', label: 'Admin', hint: 'Everything except user mgmt' },
   { value: 'billing', label: 'Billing', hint: 'Register + accession + payments' },
+  { value: 'b2c_billing', label: 'B2C Billing', hint: 'Billing — B2C "New order" tab only' },
+  { value: 'b2b_billing', label: 'B2B Billing', hint: 'Client — B2B "Patient Orders" tab only' },
   { value: 'client', label: 'Client', hint: 'Billing + own Sales & Accounts' },
+  { value: 'client_reporting', label: 'Client Reporting', hint: 'Client home + Reporting (own reports, view/print)' },
   { value: 'technician', label: 'Technician', hint: 'Accession SIDs only' },
   { value: 'viewer', label: 'Viewer', hint: 'Read-only' },
 ];

@@ -7,7 +7,10 @@ export type TeloRole =
   | 'super_admin'
   | 'admin'
   | 'billing'
+  | 'b2c_billing' // Billing, but only the B2C "New order" tab (e.g. MEDICARE / MDCARE)
+  | 'b2b_billing' // Client, but only the B2B "Patient Orders" tab (LIS clients, e.g. DL0002)
   | 'client'
+  | 'client_reporting' // Client home dashboard + Reporting (view/print own-client reports) only
   | 'technician'
   | 'viewer';
 
@@ -16,6 +19,8 @@ export type Capability =
   | 'order:create'       // register a new order (FAB / /orders/new/create)
   | 'order:accession'    // add SIDs to an existing order (/orders/new/[id])
   | 'order:view'         // see the worklist + Orders feed tab
+  | 'order:b2c'          // access the B2C channel — "New order" tab + /orders/new(/create)
+  | 'order:b2b'          // access the B2B channel — "Patient Orders" tab + /orders/b2b(/create)
   | 'order:discount'
   | 'patient:create'
   | 'patient:view'

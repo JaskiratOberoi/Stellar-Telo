@@ -5,6 +5,10 @@ import { hasCapability } from '@/auth/rbac';
 import { getWorksheetReports } from '@/lib/listec';
 import type { WorksheetReportRow } from '@/lib/listec.types';
 import { loadCatalog, filterCatalog } from '@/db/read/catalog';
+import {
+  reportClientCodeScope,
+  filterRowsByReportScope,
+} from '@/lib/reportScope';
 
 export interface ReportSearchFilters {
   from: string; // YYYY-MM-DD
@@ -173,6 +177,11 @@ export async function searchReports(
   const isReleasable = (r: WorksheetReportRow) =>
     /(authoriz|authoris|print)/i.test(r.status ?? '');
 
+  // Per-client report scope: null = unrestricted (super_admin/admin); otherwise
+  // only the user's own client code(s). Applied to every fetched row so a
+  // client-facing role (client_reporting) never sees another client's reports.
+  const scopeCodes = await reportClientCodeScope(user);
+
   // Shared scope filters applied to every fetch.
   const base = {
     fromDate: filters.from,
@@ -184,7 +193,10 @@ export async function searchReports(
 
   // No universal query → plain date-range list (today's behaviour).
   if (!q) {
-    const rows = await getWorksheetReports({ ...base, pageSize: 500 });
+    const rows = filterRowsByReportScope(
+      await getWorksheetReports({ ...base, pageSize: 500 }),
+      scopeCodes,
+    );
     return rows
       .filter(isReleasable)
       .map((r) => mapRow(r, anchor))
@@ -204,7 +216,12 @@ export async function searchReports(
   //     name / code / PID also match (bounded to this window).
   const windowPromise = getWorksheetReports({ ...base, pageSize: 1000 });
 
-  const [routed, windowRows] = await Promise.all([routedPromise, windowPromise]);
+  const [routedRaw, windowRaw] = await Promise.all([
+    routedPromise,
+    windowPromise,
+  ]);
+  const routed = filterRowsByReportScope(routedRaw, scopeCodes);
+  const windowRows = filterRowsByReportScope(windowRaw, scopeCodes);
 
   // Union by sid; routed (precise) first, then window cross-field matches.
   const bySid = new Map<string, ReportSearchRow>();
@@ -223,8 +240,9 @@ export async function searchReports(
 
 /**
  * Type-ahead over the test + profile catalog for the Reporting test filter.
- * Gated to `report:view` (Reporting is super-admin today). Returns up to 30
- * matches; profiles/masters are suffixed so they read distinctly in the list.
+ * Gated to `report:view` (the catalog isn't client data, so it needs no
+ * per-client scoping). Returns up to 30 matches; profiles/masters are suffixed
+ * so they read distinctly in the list.
  */
 export async function searchReportTests(q: string): Promise<ReportTestOption[]> {
   const user = await requireSession();

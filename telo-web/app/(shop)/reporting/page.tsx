@@ -7,10 +7,10 @@ import { ReportingView } from '@/components/reporting/reporting-view';
 export const dynamic = 'force-dynamic';
 
 /**
- * Reporting tab — customer-facing TSH (BI221) reports. Super-admin only for
- * now (gated by `report:view`, which `auth/rbac.ts` grants to super_admin
- * alone). Users filter for results, preview the formatted report, and download
- * it as a PDF on the Noble letterhead.
+ * Reporting tab — customer-facing result reports. Gated by `report:view`
+ * (super_admin / admin see all; `client_reporting` is scoped to their own
+ * client code(s) via `lib/reportScope.ts`). Users filter for results, preview
+ * the formatted report, and download it as a PDF on the Noble letterhead.
  */
 export default async function ReportingPage() {
   const user = await requireSession();

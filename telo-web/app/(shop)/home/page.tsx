@@ -40,7 +40,12 @@ export default async function ClientHomePage({
   // teloRole (explicit override only) is null for them.
   {
     const role = user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId);
-    if (role !== 'client' && role !== 'billing') redirect('/dashboard');
+    if (
+      role !== 'client' &&
+      role !== 'b2b_billing' &&
+      role !== 'client_reporting'
+    )
+      redirect('/dashboard');
   }
 
   const sp = await searchParams;

@@ -22,9 +22,15 @@ import { Plus } from 'lucide-react';
  */
 export function NewOrderFab({
   canCreate,
+  canB2c = true,
+  canB2b = true,
   cartCount = 0,
 }: {
   canCreate: boolean;
+  /** Whether the user can use the B2C channel (order:b2c). */
+  canB2c?: boolean;
+  /** Whether the user can use the B2B channel (order:b2b). */
+  canB2b?: boolean;
   /** Items currently in the order cart (added from the Catalog). Renders as a
    *  badge, like the navbar "New order" tab. */
   cartCount?: number;
@@ -41,9 +47,14 @@ export function NewOrderFab({
     return null;
   }
 
-  const isB2b = pathname.startsWith('/orders/b2b');
-  const href = isB2b ? '/orders/b2b/create' : '/orders/new/create';
-  const label = isB2b ? 'New B2B Order' : 'New Order';
+  // Pick the channel: honour the section the user is in if they're allowed
+  // there, otherwise fall back to whichever channel their role permits.
+  // Single-channel roles (b2c_billing / b2b_billing) always land on theirs.
+  const onB2bSection = pathname.startsWith('/orders/b2b');
+  const useB2b = (onB2bSection && canB2b) || (!canB2c && canB2b);
+  if (!useB2b && !canB2c) return null; // no channel available
+  const href = useB2b ? '/orders/b2b/create' : '/orders/new/create';
+  const label = useB2b ? 'New B2B Order' : 'New Order';
 
   return (
     <Link

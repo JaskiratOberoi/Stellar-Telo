@@ -18,7 +18,12 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'client',
+    -- NOTE: keep b2c_billing / b2b_billing / client_reporting in this list.
+    -- They are live Telo roles (see auth/rbac.ts). Do NOT drop them, and DO
+    -- deploy this SP to production whenever the set changes, else the Admin
+    -- panel rejects those roles with "Unknown Telo role".
+    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
+                         N'b2b_billing', N'client', N'client_reporting',
                          N'technician', N'viewer')
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',

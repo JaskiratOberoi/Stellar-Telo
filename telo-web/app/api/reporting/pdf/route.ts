@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
+import { canAccessSidReport } from '@/lib/reportScope';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 
@@ -14,7 +15,8 @@ export const maxDuration = 60;
  * Generates the TSH report PDF for a SID on the Noble letterhead:
  *   1. headless Chromium renders /print/reporting/[sid]?pdf=1 (content only),
  *   2. pdf-lib stamps it onto the letterhead.
- * Gated to `report:view` (super admin only today).
+ * Gated to `report:view`; a client-scoped role (client_reporting) can only
+ * render its own client's SIDs — see canAccessSidReport below.
  */
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -39,6 +41,12 @@ export async function POST(req: Request) {
   }
   if (typeof sid !== 'string' || !sid.trim()) {
     return new NextResponse('Missing sid', { status: 400 });
+  }
+  // Client-facing reporters may only render their own client's reports. This
+  // also guards the token minted below (fragmentPath) — an out-of-scope SID
+  // never gets a valid per-report token.
+  if (!(await canAccessSidReport(user, sid.trim()))) {
+    return new NextResponse('Forbidden', { status: 403 });
   }
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';

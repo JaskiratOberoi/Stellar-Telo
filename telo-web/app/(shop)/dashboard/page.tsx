@@ -14,8 +14,15 @@ export default async function DashboardPage() {
   // any deep-link (URL bar, bookmark, brand mark) lands them home too. Use the
   // EFFECTIVE role — most clients are implicit (LIS-derived), so teloRole is
   // null for them.
-  if ((user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId)) === 'client')
-    redirect('/home');
+  {
+    const role = user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId);
+    if (
+      role === 'client' ||
+      role === 'b2b_billing' ||
+      role === 'client_reporting'
+    )
+      redirect('/home');
+  }
   // Technicians don't see revenue KPIs — their home is the New Order
   // worklist. The login flow points everyone at /dashboard; we bounce them
   // here so any deep-link (URL bar, bookmark, "Back to home") also works.

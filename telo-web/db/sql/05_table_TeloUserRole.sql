@@ -1,8 +1,9 @@
 /*
  * 05_table_TeloUserRole.sql
  *
- * Telo-only mapping: LIS user_id -> one of the 6 Telo roles
- *   ('super_admin', 'admin', 'billing', 'client', 'technician', 'viewer').
+ * Telo-only mapping: LIS user_id -> one of the Telo roles
+ *   ('super_admin', 'admin', 'billing', 'b2c_billing', 'b2b_billing',
+ *    'client', 'client_reporting', 'technician', 'viewer').
  *
  * One row per user (UNIQUE on user_id). Authentication still flows through
  * tbl_med_user_master via usp_telo_authenticate; this table only assigns the
