@@ -132,14 +132,27 @@ async function assignMccScope(
   }
 }
 
+// Keep this in sync with the TeloRole union (types/auth.ts) AND the SP's
+// allow-list (db/sql/98_usp_telo_admin_set_role.sql). The `_RolesInSync` guard
+// below fails to compile if a TeloRole is added to the type but missed here —
+// which is exactly the bug that made b2c_billing / b2b_billing / client_reporting
+// unsavable ("Invalid role change") after they were added everywhere else.
 const teloRoleSchema = z.enum([
   'super_admin',
   'admin',
   'billing',
+  'b2c_billing',
+  'b2b_billing',
   'client',
+  'client_reporting',
   'technician',
   'viewer',
 ]);
+// Compile-time exhaustiveness: every TeloRole must appear in the enum above.
+type _RolesInSync =
+  [TeloRole] extends [z.infer<typeof teloRoleSchema>] ? true : never;
+const _rolesInSync: _RolesInSync = true;
+void _rolesInSync;
 
 export type AdminFormState = { error: string | null; ok: boolean };
 const ok = (): AdminFormState => ({ error: null, ok: true });
