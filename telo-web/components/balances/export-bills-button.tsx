@@ -107,21 +107,29 @@ export function ExportBillsButton({
           .filter((t) => t.reference)
           .map((t) => (t.kind === 'refund' ? `${t.reference} (refund)` : t.reference))
           .join(', ');
+        // Row shading by balance: negative (refund due) → light red,
+        // positive (payment due) → light yellow, settled (0) → no fill.
+        const rowFill =
+          b.balance < 0
+            ? { backgroundColor: '#FFD6D6' as const }
+            : b.balance > 0
+              ? { backgroundColor: '#FFF3C4' as const }
+              : {};
         return [
-          { type: Number, value: b.billNumber ?? b.billId },
-          { type: String, value: b.billDate ? fmtIST(b.billDate, 'date') : '' },
-          { type: String, value: b.patientName ?? '' },
-          { type: Number, value: b.patientId ?? null },
-          { type: String, value: b.doctorName ?? '' },
-          { type: String, value: b.customerName ?? '' },
-          { type: String, value: b.paymentType ?? '' },
-          { type: String, value: ageLabel(b.age, b.ageType) },
-          { type: Number, value: b.amount },
-          { type: Number, value: b.discount },
-          { type: Number, value: b.amountPaid },
-          { type: Number, value: b.balance },
-          { type: String, value: txnIds },
-          { type: String, value: paymentRefs },
+          { type: Number, value: b.billNumber ?? b.billId, ...rowFill },
+          { type: String, value: b.billDate ? fmtIST(b.billDate, 'date') : '', ...rowFill },
+          { type: String, value: b.patientName ?? '', ...rowFill },
+          { type: Number, value: b.patientId ?? null, ...rowFill },
+          { type: String, value: b.doctorName ?? '', ...rowFill },
+          { type: String, value: b.customerName ?? '', ...rowFill },
+          { type: String, value: b.paymentType ?? '', ...rowFill },
+          { type: String, value: ageLabel(b.age, b.ageType), ...rowFill },
+          { type: Number, value: b.amount, ...rowFill },
+          { type: Number, value: b.discount, ...rowFill },
+          { type: Number, value: b.amountPaid, ...rowFill },
+          { type: Number, value: b.balance, ...rowFill },
+          { type: String, value: txnIds, ...rowFill },
+          { type: String, value: paymentRefs, ...rowFill },
         ];
       });
 
