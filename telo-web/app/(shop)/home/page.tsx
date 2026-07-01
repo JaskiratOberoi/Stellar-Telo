@@ -38,8 +38,10 @@ export default async function ClientHomePage({
   // This animated home is the B2B client landing. Staff have the full /dashboard.
   // Use the EFFECTIVE role — most clients are implicit (LIS-derived), so
   // teloRole (explicit override only) is null for them.
-  if ((user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId)) !== 'client')
-    redirect('/dashboard');
+  {
+    const role = user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId);
+    if (role !== 'client' && role !== 'b2b_billing') redirect('/dashboard');
+  }
 
   const sp = await searchParams;
 
@@ -72,14 +74,19 @@ export default async function ClientHomePage({
           {/* Logo + greeting: stacked on mobile, side-by-side (with a divider)
               from sm up. */}
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5">
-            {/* Light (transparent) recolour of the brand mark so it sits on the
-                dark hero without a white box. The original stays for print/report
-                headers (light backgrounds). */}
+            {/* Theme-aware brand mark: navy on the light hero, white on the
+                dark hero (both transparent, so no white box either way). */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/branding/noble-logo-light.png"
+              src="/branding/noble-logo-onlight.png"
               alt="Noble Diagnostics"
-              className="h-12 w-auto shrink-0"
+              className="h-12 w-auto shrink-0 dark:hidden"
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/branding/noble-logo-ondark.png"
+              alt="Noble Diagnostics"
+              className="hidden h-12 w-auto shrink-0 dark:block"
             />
             <div className="sm:border-l sm:border-foreground/15 sm:pl-5">
               <h1 className="text-2xl font-bold tracking-tight">
