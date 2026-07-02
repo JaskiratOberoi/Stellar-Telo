@@ -36,8 +36,9 @@ export default function HomePage() {
       <LoginBackdrop className="fixed" />
 
       <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-8">
-        {/* Noble brand mark — navy lockup on light, white on dark */}
-        <div className="animate-pop motion-reduce:animate-none">
+        {/* Brand row — Noble lockup (theme-aware) beside the Telo wordmark on
+            desktop, stacked on mobile */}
+        <div className="flex animate-pop flex-col items-center gap-5 motion-reduce:animate-none lg:flex-row lg:gap-7">
           <img
             src="/branding/noble-logo-onlight.png"
             alt="Noble Diagnostics"
@@ -48,6 +49,16 @@ export default function HomePage() {
             alt="Noble Diagnostics"
             className="hidden h-16 w-auto dark:block sm:h-20"
           />
+          <span
+            aria-hidden
+            className="hidden h-14 w-px bg-foreground/15 lg:block"
+          />
+          <span className="flex items-start gap-2">
+            <h1 className="text-brand-gradient animate-shimmer pb-1 text-6xl font-bold tracking-tight sm:text-7xl motion-reduce:animate-none">
+              Telo
+            </h1>
+            <VersionBadge className="mt-2 sm:mt-3" />
+          </span>
         </div>
 
         {/* Network badge */}
@@ -59,19 +70,11 @@ export default function HomePage() {
           Noble Laboratory Network
         </span>
 
-        {/* Wordmark + tagline */}
-        <div className="animate-fade-in-up space-y-4 [animation-delay:120ms] motion-reduce:animate-none">
-          <div className="flex items-start justify-center gap-2">
-            <h1 className="text-brand-gradient animate-shimmer pb-1 text-6xl font-bold tracking-tight sm:text-7xl motion-reduce:animate-none">
-              Telo
-            </h1>
-            <VersionBadge className="mt-2 sm:mt-3" />
-          </div>
-          <p className="mx-auto max-w-xl text-balance text-base text-muted-foreground sm:text-lg">
-            Billing for the Noble laboratory network — orders, reports and
-            accounts in one place.
-          </p>
-        </div>
+        {/* Tagline */}
+        <p className="mx-auto max-w-xl animate-fade-in-up text-balance text-base text-muted-foreground [animation-delay:120ms] sm:text-lg motion-reduce:animate-none">
+          Billing for the Noble laboratory network — orders, reports and
+          accounts in one place.
+        </p>
 
         {/* CTA */}
         <Link

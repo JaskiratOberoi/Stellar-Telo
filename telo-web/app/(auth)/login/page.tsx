@@ -86,17 +86,24 @@ export default function LoginPage() {
 
           <div className="relative max-w-md space-y-8">
             <div className="animate-card-in [animation-delay:100ms] motion-reduce:animate-none">
-              {/* Noble brand lockup — white variant on the navy panel */}
-              <img
-                src="/branding/noble-logo-ondark.png"
-                alt="Noble Diagnostics"
-                className="mb-5 h-16 w-auto"
-              />
-              <span className="inline-flex items-start gap-2">
-                <span className="animate-shimmer bg-gradient-to-r from-sidebar-active via-chart-5 to-sidebar-active bg-[length:200%_auto] bg-clip-text text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
-                  Telo
+              {/* Noble brand lockup — white variant on the navy panel,
+                  side by side with the Telo wordmark */}
+              <span className="flex items-center gap-5">
+                <img
+                  src="/branding/noble-logo-ondark.png"
+                  alt="Noble Diagnostics"
+                  className="h-14 w-auto"
+                />
+                <span
+                  aria-hidden
+                  className="h-12 w-px bg-sidebar-border"
+                />
+                <span className="inline-flex items-start gap-2">
+                  <span className="animate-shimmer bg-gradient-to-r from-sidebar-active via-chart-5 to-sidebar-active bg-[length:200%_auto] bg-clip-text text-5xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
+                    Telo
+                  </span>
+                  <VersionBadge className="mt-1.5 border-sidebar-border bg-sidebar-foreground/10 text-sidebar-muted" />
                 </span>
-                <VersionBadge className="mt-1.5 border-sidebar-border bg-sidebar-foreground/10 text-sidebar-muted" />
               </span>
               <p className="mt-4 text-lg leading-relaxed text-sidebar-foreground/85">
                 Billing for the Noble laboratory network — orders, reports and
