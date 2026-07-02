@@ -18,7 +18,11 @@ export const dynamic = 'force-dynamic';
  */
 export default async function B2bOrderCreatePage() {
   const user = await requireSession();
-  if (!hasCapability(user.caps, 'order:create')) redirect('/dashboard');
+  if (
+    !hasCapability(user.caps, 'order:create') ||
+    !hasCapability(user.caps, 'order:b2b')
+  )
+    redirect('/dashboard');
   if (await fetchMrpOnly(user.uid)) redirect('/dashboard');
 
   const scope = await getMccScope(user.uid);

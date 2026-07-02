@@ -38,6 +38,26 @@ export interface SampleReportRow {
   comments: string | null;
 }
 
+/**
+ * A Culture & Sensitivity microbiology result, reconstructed from the LIS's
+ * fixed parameter template (Gram stained smear / Organism Isolated / Colony
+ * count / Sensitive to / Intermediate to / Resistant to / Remarks). The three
+ * "… to" parameters store their antibiotic lists as newline-separated text in a
+ * single value, which we split into one entry per drug so the report can print
+ * the ANTIBIOGRAM as a Sensitive / Intermediate / Resistant table. A "no growth"
+ * report stores the token "NOT APPLICABLE" in each field, which survives as a
+ * one-element list and prints as-is.
+ */
+export interface CultureReport {
+  gramStain: string | null;
+  organism: string | null;
+  colonyCount: string | null;
+  remarks: string | null;
+  sensitive: string[];
+  intermediate: string[];
+  resistant: string[];
+}
+
 export interface SampleReportGroup {
   /** Multi-parameter test title (e.g. "BILIRUBIN (TOTAL, DIRECT & INDIRECT)"). */
   title: string | null;
@@ -50,6 +70,9 @@ export interface SampleReportGroup {
    *  interpretation text (some tests carry ONLY an image and no text). */
   interpretationImageDataUrl?: string | null;
   rows: SampleReportRow[];
+  /** Set when this group is a Culture & Sensitivity result (any specimen). When
+   *  present the report renders the structured antibiogram instead of `rows`. */
+  culture?: CultureReport;
 }
 
 /** A leaf block — a multi-parameter Head test, or a single standalone Test. It
@@ -142,6 +165,99 @@ const cleanMultiline = (s: string | null | undefined): string | null => {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   return t || null;
+};
+
+/** Split a Culture & Sensitivity antibiotic-list value (the LIS stores
+ *  Sensitive/Intermediate/Resistant as newline- and tab-separated drug names,
+ *  some with a potency suffix like "Amikacin(++)") into trimmed, non-empty
+ *  entries — one per drug. */
+const splitAbxList = (s: string | null | undefined): string[] =>
+  (s ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((t) => t.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+
+const emptyCulture = (): CultureReport => ({
+  gramStain: null,
+  organism: null,
+  colonyCount: null,
+  remarks: null,
+  sensitive: [],
+  intermediate: [],
+  resistant: [],
+});
+
+/** If this Param row is part of the C&S template, route its value into the
+ *  group's structured `culture` slot (creating it on first match). Antibiotic
+ *  lists keep their per-drug line breaks; the scalar fields are collapsed. */
+const applyCultureField = (group: SampleReportGroup, x: RawRow): void => {
+  const key = (x.testname ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  switch (key) {
+    case 'gram stained smear':
+    case 'gram stain':
+      (group.culture ??= emptyCulture()).gramStain = clean(x.value);
+      break;
+    case 'organism isolated':
+      (group.culture ??= emptyCulture()).organism = clean(x.value);
+      break;
+    case 'colony count':
+      (group.culture ??= emptyCulture()).colonyCount = clean(x.value);
+      break;
+    case 'remarks':
+      (group.culture ??= emptyCulture()).remarks = clean(x.value);
+      break;
+    case 'sensitive to':
+      (group.culture ??= emptyCulture()).sensitive = splitAbxList(x.value);
+      break;
+    case 'intermediate to':
+      (group.culture ??= emptyCulture()).intermediate = splitAbxList(x.value);
+      break;
+    case 'resistant to':
+      (group.culture ??= emptyCulture()).resistant = splitAbxList(x.value);
+      break;
+    default:
+      break;
+  }
+};
+
+/** A group is a real C&S report only if it carries the antibiogram signature —
+ *  an isolated organism or at least one sensitivity list. This guards against a
+ *  non-culture multi-parameter test that merely has a "Remarks" parameter. */
+const hasAntibiogram = (c: CultureReport): boolean =>
+  c.organism != null ||
+  c.sensitive.length > 0 ||
+  c.intermediate.length > 0 ||
+  c.resistant.length > 0;
+
+/** Normalise an antibiotic entry for duplicate detection: drop the potency
+ *  suffix ("(++)") and all whitespace, then lowercase — so "Piperacillin
+ *  /Tazobactam" and "Piperacillin/ Tazobactam(++)" collapse to one key. */
+const abxKey = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/\(\s*\++\s*\)/g, '')
+    .replace(/\s+/g, '');
+
+/** Remove an antibiotic that appears in more than one antibiogram column (or
+ *  twice in the same one) — a drug can't be simultaneously sensitive and
+ *  resistant. The first occurrence in Sensitive → Intermediate → Resistant
+ *  order is kept; later duplicates are dropped. "NOT APPLICABLE" placeholders
+ *  are left in every column. */
+const dedupeAntibiogram = (c: CultureReport): void => {
+  const seen = new Set<string>();
+  const prune = (list: string[]): string[] =>
+    list.filter((item) => {
+      if (/^\s*not applicable\s*$/i.test(item)) return true;
+      const key = abxKey(item);
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  c.sensitive = prune(c.sensitive);
+  c.intermediate = prune(c.intermediate);
+  c.resistant = prune(c.resistant);
 };
 
 // TODO(pre-prod, ~next week): partial-report authorisation gating.
@@ -260,6 +376,8 @@ export async function getSampleReport(
   const deptItems = new Map<string, SampleReportItem[]>();
   const codes = new Set<string>();
   const specimens = new Set<string>();
+  // Groups that picked up a C&S field — validated (and pruned) after the walk.
+  const cultureGroups: SampleReportGroup[] = [];
 
   const pushItem = (dept: string, item: SampleReportItem) => {
     if (!deptItems.has(dept)) {
@@ -362,6 +480,9 @@ export async function getSampleReport(
     if (type === 'Param' && head) {
       head.group.rows.push(toRow(x));
       addInterp(head.group, cleanMultiline(x.interpretation));
+      const hadCulture = head.group.culture != null;
+      applyCultureField(head.group, x);
+      if (!hadCulture && head.group.culture) cultureGroups.push(head.group);
       continue;
     }
 
@@ -408,6 +529,18 @@ export async function getSampleReport(
       testId: x.testid,
       interpretation: cleanMultiline(x.interpretation),
     });
+  }
+
+  // Drop the structured antibiogram from any group that matched a C&S field
+  // (e.g. "Remarks") but lacks the real signature, so it falls back to the
+  // normal parameter-row rendering.
+  for (const g of cultureGroups) {
+    if (!g.culture) continue;
+    if (!hasAntibiogram(g.culture)) {
+      delete g.culture;
+      continue;
+    }
+    dedupeAntibiogram(g.culture);
   }
 
   // Fetch interpretation image attachments for the (few) tests in this report

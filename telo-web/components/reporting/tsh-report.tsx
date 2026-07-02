@@ -25,6 +25,7 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { fmtIST, fmtListec } from '@/lib/datetime';
 import { STATIC_NOTES_BY_CODE } from '@/lib/report/panels';
 import type {
+  CultureReport,
   SampleReportBlock,
   SampleReportDepartment,
   SampleReportGroup,
@@ -259,10 +260,16 @@ export function LabReport({ data }: { data: LabReportData }) {
           }
         });
       } else if (item.kind === 'group' && item.group) {
-        item.group.rows.forEach((_, ri) => {
+        if (item.group.culture) {
+          // A Culture & Sensitivity report is one selectable unit, not per-row.
           totalLeaves += 1;
-          if (!excluded.has(key) && !excluded.has(rowKey(key, ri))) remainingLeaves += 1;
-        });
+          if (!excluded.has(key)) remainingLeaves += 1;
+        } else {
+          item.group.rows.forEach((_, ri) => {
+            totalLeaves += 1;
+            if (!excluded.has(key) && !excluded.has(rowKey(key, ri))) remainingLeaves += 1;
+          });
+        }
       } else {
         totalLeaves += 1;
         if (!excluded.has(key)) remainingLeaves += 1;
@@ -334,6 +341,7 @@ export function LabReport({ data }: { data: LabReportData }) {
           });
         }
         if (item.kind === 'group' && item.group) {
+          if (item.group.culture) return !excluded.has(key);
           return item.group.rows.some((_, ri) => !excluded.has(rowKey(key, ri)));
         }
         return true;
@@ -979,6 +987,34 @@ function GroupBlock({
    *  profile (by PanelBlock) instead of after this group's rows. */
   hideInterpretation?: boolean;
 }) {
+  // Culture & Sensitivity: render the structured antibiogram (own header lines +
+  // Sensitive/Intermediate/Resistant table) under a single group-level tick box,
+  // rather than the generic parameter rows. In PDF mode the whole block drops
+  // when the group is unticked.
+  if (group.culture) {
+    if (pdf && groupOff) return null;
+    return (
+      <>
+        <tr className={`[break-inside:avoid] ${groupOff ? 'opacity-40' : ''}`}>
+          <td colSpan={5} className={`pt-0.5 align-top ${indent ? 'pl-4' : ''}`}>
+            <span className="flex items-start gap-1.5">
+              {interactive && (
+                <IncludeToggle
+                  label={group.title ?? 'test'}
+                  excluded={groupOff}
+                  onToggle={() => onToggle(groupKey)}
+                  disabled={disabled}
+                />
+              )}
+              <span className="font-bold uppercase tracking-wide">{group.title ?? ''}</span>
+            </span>
+          </td>
+        </tr>
+        <CultureBlock culture={group.culture} dim={groupOff} indent={indent} />
+      </>
+    );
+  }
+
   const rowOff = (ri: number) => groupOff || excludedSet.has(rowKey(groupKey, ri));
   const rows = group.rows.map((row, ri) => ({ row, ri }));
   const visibleRows = pdf ? rows.filter(({ ri }) => !rowOff(ri)) : rows;
@@ -1029,6 +1065,151 @@ function GroupBlock({
       )}
       {!hideInterpretation && <NoteRow notes={notesForCodes(includedCodes)} dim={groupOff} />}
     </>
+  );
+}
+
+/** Renders a Culture & Sensitivity microbiology result: the gram-stain /
+ *  organism / colony-count header lines, optional remarks, and the ANTIBIOGRAM —
+ *  a three-column Sensitive / Intermediate / Resistant table. The LIS stores the
+ *  antibiotic lists as newline-separated text in three "… to" parameters; the
+ *  read layer splits them into one entry per drug. A "no growth" report shows
+ *  "NOT APPLICABLE" in every field. Rendered inside the report's results table,
+ *  so the outer cell spans all five columns. */
+function CultureBlock({
+  culture,
+  dim,
+  indent,
+}: {
+  culture: CultureReport;
+  dim?: boolean;
+  indent?: boolean;
+}) {
+  const header: Array<[string, string | null]> = [
+    ['Gram Stained Smear', culture.gramStain],
+    ['Organism Isolated', culture.organism],
+    ['Colony Count', culture.colonyCount],
+  ];
+  const cols = [
+    {
+      title: 'Sensitive',
+      items: culture.sensitive,
+      head: '#f7dcdc',
+      body: '#fdf5f5',
+      border: '#edc6c6',
+      text: '#9f1239',
+      dot: '#e11d48',
+    },
+    {
+      title: 'Intermediate',
+      items: culture.intermediate,
+      head: '#e9ecf1',
+      body: '#fafbfc',
+      border: '#d6dbe3',
+      text: '#475569',
+      dot: '#94a3b8',
+    },
+    {
+      title: 'Resistant',
+      items: culture.resistant,
+      head: '#d7ecda',
+      body: '#f5faf5',
+      border: '#bfe0c5',
+      text: '#15803d',
+      dot: '#16a34a',
+    },
+  ];
+  const isNA = (s: string) => /^\s*not applicable\s*$/i.test(s);
+  const hasAbx = cols.some((c) => c.items.length > 0);
+  return (
+    <tr className={dim ? 'opacity-40' : ''}>
+      <td colSpan={5} className={`pb-2 pt-0.5 ${indent ? 'pl-4' : ''}`}>
+        <div className="[break-inside:avoid] text-[12px]">
+          <table className="mb-2">
+            <tbody>
+              {header.map(([label, value]) =>
+                value ? (
+                  <tr key={label} className="align-top">
+                    <td className="py-0.5 pr-3 font-medium">{label}</td>
+                    <td className="py-0.5 pr-2 text-gray-500">:</td>
+                    <td className="py-0.5">{value}</td>
+                  </tr>
+                ) : null,
+              )}
+              {culture.remarks && (
+                <tr className="align-top">
+                  <td className="pt-1.5 pr-3 font-medium">Remarks</td>
+                  <td className="pt-1.5 pr-2 text-gray-500">:</td>
+                  <td className="pt-1.5">{culture.remarks}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {hasAbx && (
+            <div className="mt-3">
+              <div className="mb-2 flex items-center justify-center gap-2.5">
+                <span className="h-px w-8 bg-gray-300" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#2b2b6b]">
+                  Antibiogram
+                </span>
+                <span className="h-px w-8 bg-gray-300" />
+              </div>
+              <div className="grid grid-cols-3 gap-2.5">
+                {cols.map((c) => {
+                  const drugs = c.items.filter((it) => !isNA(it));
+                  return (
+                    <div
+                      key={c.title}
+                      className="flex flex-col overflow-hidden rounded-lg border"
+                      style={{ borderColor: c.border }}
+                    >
+                      <div
+                        className="flex items-center justify-center gap-1.5 px-3 py-1.5"
+                        style={{ backgroundColor: c.head }}
+                      >
+                        <span
+                          className="text-[11px] font-semibold uppercase tracking-wide"
+                          style={{ color: c.text }}
+                        >
+                          {c.title}
+                        </span>
+                        {drugs.length > 0 && (
+                          <span
+                            className="rounded-full px-1.5 text-[9px] font-bold leading-[1.4]"
+                            style={{ backgroundColor: 'rgba(255,255,255,0.65)', color: c.text }}
+                          >
+                            {drugs.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 px-3 py-2" style={{ backgroundColor: c.body }}>
+                        {drugs.length > 0 ? (
+                          <ul className="space-y-1">
+                            {drugs.map((it, i) => (
+                              <li key={i} className="flex items-start gap-1.5 leading-snug">
+                                <span
+                                  className="mt-[5px] h-1 w-1 shrink-0 rounded-full"
+                                  style={{ backgroundColor: c.dot }}
+                                />
+                                <span>{it}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="py-0.5 text-center text-[11px] italic text-gray-400">
+                            Not applicable
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 

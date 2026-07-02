@@ -5,9 +5,11 @@ import { revalidatePath } from 'next/cache';
 import { requireCapability, throttleAdminAction } from '@/auth/guards';
 import { getMccScope } from '@/auth/scope';
 import { getPool, sql, withRetry } from '@/db/pool';
+import { getOrder } from '@/db/read/orders';
 import { setBillDiscount } from '@/db/sp/setBillDiscount';
 import { voidReceipt } from '@/db/sp/voidReceipt';
 import { cancelTest } from '@/db/sp/cancelTest';
+import { recordRefund } from '@/db/sp/recordRefund';
 import { recordMccPayment } from '@/db/sp/recordMccPayment';
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
@@ -183,6 +185,113 @@ export async function cancelTestAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong cancelling the test.');
+  }
+}
+
+const cancelBookingSchema = z.object({
+  billId: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Reverses an ENTIRE booking in one step. SUPER-ADMIN ONLY. Cancels every
+ * still-active test on the bill (reusing usp_telo_cancel_test per line — same
+ * negative-offset + SID-pull + audit trail as the per-test Cancel control),
+ * clears any discount, then refunds whatever the patient has paid — leaving a
+ * zero-balance, fully-cancelled bill.
+ *
+ * Safety:
+ *  - If any test can't be cancelled (accessioned sample / master / split — the
+ *    SP refuses these), we STOP before touching money: the bill can't reach a
+ *    clean zero, so no discount/refund is posted. The cancellations that did
+ *    succeed stand, and a retry is safe — already-cancelled lines are skipped.
+ *  - Idempotent on retry/double-submit: a second run finds every line already
+ *    cancelled and the money already refunded, so it posts no extra refund.
+ */
+export async function cancelBookingAction(
+  _prev: BillingAdminState,
+  formData: FormData,
+): Promise<BillingAdminState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'booking_cancel');
+
+    const parsed = cancelBookingSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) return err('A reason is required to cancel the booking.');
+    const { billId, reason } = parsed.data;
+
+    const mcc = await billMcc(billId);
+    if (mcc == null) return err('Bill not found.');
+    const scope = await getMccScope(actor.uid);
+    if (!inScope(scope, mcc)) {
+      return err('This bill is not in your assigned collection centres.');
+    }
+
+    const order = await getOrder(billId, scope);
+    if (!order) return err('Bill not found.');
+
+    // Active lines = positive amount, not yet cancelled (the negative
+    // "(Cancelled)" offsets have amount < 0; the cancelled originals are flagged).
+    const active = order.lines.filter((l) => l.amount > 0 && !l.cancelled);
+
+    // Cancel each active test. ALREADY_CANCELLED (idempotent retry) counts as done.
+    let cancelled = 0;
+    const failures: string[] = [];
+    for (const line of active) {
+      const res = await cancelTest({ billId, lineId: line.lineId, actor: actor.uid, reason });
+      if (res.ok || res.errorCode === 'ALREADY_CANCELLED') {
+        cancelled++;
+      } else {
+        failures.push(line.testName ?? `line ${line.lineId}`);
+      }
+    }
+
+    if (failures.length > 0) {
+      audit({ kind: 'bill.booking.cancel.blocked', actor: actor.uid, billId, cancelled, blocked: failures.length });
+      revalidatePath(`/orders/${billId}`);
+      return err(
+        `Cancelled ${cancelled} of ${active.length} test(s). Couldn't cancel ${failures.join(', ')} — likely already accessioned, a master package or a split sample; resolve in the LIS, then try again. No refund was made.`,
+      );
+    }
+
+    // All tests cancelled → bill amount is now 0. Re-read for the fresh
+    // discount + net paid the cancellations recomputed.
+    const after = await getOrder(billId, scope);
+    if (!after) return err('Bill not found.');
+
+    // Clear any discount so the bill settles at exactly 0 — a lingering discount
+    // would leave a phantom negative balance once the tests are gone.
+    if (after.discount !== 0) {
+      const dres = await setBillDiscount({ billId, discount: 0, actor: actor.uid });
+      if (!dres.ok) {
+        revalidatePath(`/orders/${billId}`);
+        return err(dres.message ?? 'Tests cancelled, but the discount could not be cleared.');
+      }
+    }
+
+    // Refund everything paid so net paid → 0 and balance → 0.
+    let refunded = 0;
+    if (after.amountPaid > 0) {
+      const rres = await recordRefund({
+        billId,
+        amount: after.amountPaid,
+        payMode: 'Cash',
+        reference: null,
+        userId: actor.uid,
+      });
+      if (!rres.ok) {
+        revalidatePath(`/orders/${billId}`);
+        return err(rres.message ?? 'Tests cancelled, but the refund could not be recorded.');
+      }
+      refunded = after.amountPaid;
+    }
+
+    audit({ kind: 'bill.booking.cancelled', actor: actor.uid, billId, cancelled, refunded });
+    revalidatePath(`/orders/${billId}`);
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong cancelling the booking.');
   }
 }
 

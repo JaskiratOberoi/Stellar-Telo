@@ -19,7 +19,8 @@ export default async function B2bOrderWorklistPage({
   searchParams: Promise<{ created?: string }>;
 }) {
   const user = await requireSession();
-  if (!hasCapability(user.caps, 'order:view')) redirect('/dashboard');
+  // B2B worklist — B2C-only roles (b2c_billing) are redirected away.
+  if (!hasCapability(user.caps, 'order:b2b')) redirect('/dashboard');
   if (await fetchMrpOnly(user.uid)) redirect('/dashboard');
 
   const feed = await getPendingAccessions('b2b');
@@ -31,7 +32,7 @@ export default async function B2bOrderWorklistPage({
   return (
     <div className="space-y-3">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">B2B Orders</h1>
+        <h1 className="text-xl font-bold tracking-tight">Patient Orders</h1>
         <p className="text-sm text-muted-foreground">
           {canCreate
             ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the New B2B Order button to register one. The patient bill is at MRP; the client rate & margin are shown while registering.'

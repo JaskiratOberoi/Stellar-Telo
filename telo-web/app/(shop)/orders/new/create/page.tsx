@@ -11,7 +11,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewOrderCreatePage() {
   const user = await requireSession();
-  if (!hasCapability(user.caps, 'order:create')) redirect('/dashboard');
+  if (
+    !hasCapability(user.caps, 'order:create') ||
+    !hasCapability(user.caps, 'order:b2c')
+  )
+    redirect('/dashboard');
 
   const scope = await getMccScope(user.uid);
   const [units, cart] = await Promise.all([

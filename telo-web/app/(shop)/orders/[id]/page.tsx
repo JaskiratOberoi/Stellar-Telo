@@ -12,6 +12,7 @@ import { EditPatientInfo } from '@/components/orders/edit-patient-info';
 import { EditDiscount } from '@/components/orders/edit-discount';
 import { VoidReceiptButton } from '@/components/orders/void-receipt-button';
 import { CancelTestButton } from '@/components/orders/cancel-test-button';
+import { CancelBookingButton } from '@/components/orders/cancel-booking-button';
 import { fmtIST } from '@/lib/datetime';
 import type { Capability } from '@/types/auth';
 import {
@@ -109,6 +110,11 @@ async function ReceiptBody({
 
   const canCapture = hasCapability(caps, 'payment:capture');
   const canPay = canViewBill && order.balance > 0 && canCapture;
+  // Active (positive, not-cancelled) test lines — the "Cancel booking" shortcut
+  // only makes sense while the bill still has tests to reverse.
+  const activeLineCount = order.lines.filter(
+    (l) => l.amount > 0 && !l.cancelled,
+  ).length;
   const canRefund =
     canViewBill && order.amountPaid > 0 && hasCapability(caps, 'payment:refund');
 
@@ -157,6 +163,13 @@ async function ReceiptBody({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {isSuperAdmin && activeLineCount > 0 && (
+            <CancelBookingButton
+              billId={order.billId}
+              activeCount={activeLineCount}
+              amountPaid={order.amountPaid}
+            />
+          )}
           <PrintLabButton
             billId={order.billId}
             billNumber={order.billNumber ?? order.billId}

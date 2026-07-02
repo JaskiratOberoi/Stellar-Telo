@@ -12,8 +12,9 @@ export default async function NewOrderWorklistPage({
   searchParams: Promise<{ created?: string }>;
 }) {
   const user = await requireSession();
-  // Worklist visible to anyone who can view orders (Technician included).
-  if (!hasCapability(user.caps, 'order:view')) redirect('/dashboard');
+  // B2C worklist — anyone with the B2C channel (Technician included). B2B-only
+  // roles (b2b_billing) are redirected away.
+  if (!hasCapability(user.caps, 'order:b2c')) redirect('/dashboard');
 
   const feed = await getPendingAccessions();
   const canCreate = hasCapability(user.caps, 'order:create');

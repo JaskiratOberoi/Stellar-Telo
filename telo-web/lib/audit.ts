@@ -27,6 +27,8 @@ type AuditEvent =
   | { kind: 'bill.discount.set'; actor: number; billId: number; discount: number }
   | { kind: 'receipt.voided'; actor: number; billId: number; receiptId: number }
   | { kind: 'bill.test.cancelled'; actor: number; billId: number; lineId: number }
+  | { kind: 'bill.booking.cancelled'; actor: number; billId: number; cancelled: number; refunded: number }
+  | { kind: 'bill.booking.cancel.blocked'; actor: number; billId: number; cancelled: number; blocked: number }
   | { kind: 'mcc.payment.recorded'; actor: number; mcc: number; amount: number; mode: number }
   // CCAvenue online client payment: a client started a payment, and the gateway
   // callback outcome (status + whether a wallet credit was posted this call).
