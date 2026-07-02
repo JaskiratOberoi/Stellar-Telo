@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getLookups } from '@/lib/listec';
+import { reportClientCodeScope } from '@/lib/reportScope';
 import { ReportingView } from '@/components/reporting/reporting-view';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,13 @@ export default async function ReportingPage() {
     /(authoriz|authoris|print)/i.test(s),
   );
 
+  // Client-facing roles (client_reporting): lock the report scope to their own
+  // client code. A single-code scope pre-fills + disables the client-code and
+  // business-unit filters; super_admin/admin (null scope) keep the free filters.
+  const scope = await reportClientCodeScope(user);
+  const lockedClientCode =
+    scope && scope.size === 1 ? [...scope][0] : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -42,6 +50,7 @@ export default async function ReportingPage() {
       <ReportingView
         businessUnits={lookups.businessUnits ?? []}
         statuses={releasableStatuses}
+        lockedClientCode={lockedClientCode}
       />
     </div>
   );

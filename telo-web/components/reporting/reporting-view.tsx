@@ -46,13 +46,21 @@ const SELECT_CLASS =
 export function ReportingView({
   businessUnits,
   statuses,
+  lockedClientCode = null,
 }: {
   businessUnits: string[];
   statuses: string[];
+  /** When set (client-facing roles), the report scope is fixed to this client
+   *  code: the field is pre-filled and disabled, and the business-unit filter
+   *  is locked to "All" so the user sees ALL of their own reports (they span
+   *  BUs) and can't filter into an empty/foreign BU. Server-side scoping in
+   *  reporting.actions.ts enforces this regardless of the UI. */
+  lockedClientCode?: string | null;
 }) {
+  const locked = !!lockedClientCode;
   const [from, setFrom] = useState(today());
   const [to, setTo] = useState(today());
-  const [clientCode, setClientCode] = useState('');
+  const [clientCode, setClientCode] = useState(lockedClientCode ?? '');
   const [businessUnit, setBusinessUnit] = useState('');
   const [status, setStatus] = useState('');
   // Universal search box (patient, SID, PID, test name/code…).
@@ -240,13 +248,19 @@ export function ReportingView({
             value={clientCode}
             onChange={(e) => setClientCode(e.target.value)}
             placeholder="e.g. HLD0512"
+            disabled={locked}
+            readOnly={locked}
+            title={locked ? 'Locked to your client account' : undefined}
+            className={locked ? 'cursor-not-allowed opacity-70' : undefined}
           />
         </Field>
         <Field label="Business unit">
           <select
             value={businessUnit}
             onChange={(e) => setBusinessUnit(e.target.value)}
-            className={SELECT_CLASS}
+            className={`${SELECT_CLASS}${locked ? ' cursor-not-allowed opacity-70' : ''}`}
+            disabled={locked}
+            title={locked ? 'Showing all your business units' : undefined}
           >
             <option value="">All business units</option>
             {businessUnits.map((bu) => (
