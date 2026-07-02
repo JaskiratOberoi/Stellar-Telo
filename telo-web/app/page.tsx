@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
 
 /**
  * Signed-out landing page. Mirrors the portal's visual language: ambient blob
- * background, the gradient "T" logomark tile, a brand-gradient wordmark and a
- * trio of capability cards leading into the sign-in CTA.
+ * background, the Noble Diagnostics lockup (theme-aware), a brand-gradient
+ * wordmark and a trio of capability cards leading into the sign-in CTA.
  */
 const FEATURES = [
   {
@@ -36,12 +36,18 @@ export default function HomePage() {
       <LoginBackdrop className="fixed" />
 
       <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-8">
-        {/* Gradient logomark — same motif as the shell's brand tile */}
-        <div
-          aria-hidden
-          className="flex h-14 w-14 animate-pop items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-2xl font-black text-white shadow-elevation-3 motion-reduce:animate-none"
-        >
-          T
+        {/* Noble brand mark — navy lockup on light, white on dark */}
+        <div className="animate-pop motion-reduce:animate-none">
+          <img
+            src="/branding/noble-logo-onlight.png"
+            alt="Noble Diagnostics"
+            className="h-16 w-auto dark:hidden sm:h-20"
+          />
+          <img
+            src="/branding/noble-logo-ondark.png"
+            alt="Noble Diagnostics"
+            className="hidden h-16 w-auto dark:block sm:h-20"
+          />
         </div>
 
         {/* Network badge */}

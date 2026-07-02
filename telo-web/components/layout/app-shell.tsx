@@ -175,15 +175,21 @@ export function AppShell({
             className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-active"
             aria-label="Telo home"
           >
-            <span
-              aria-hidden
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-[15px] font-black text-white shadow-elevation-2"
-            >
-              T
-            </span>
-            {!collapsed && (
-              <span className="flex items-center gap-1.5">
-                <span className="text-lg font-bold tracking-tight">Telo</span>
+            {collapsed ? (
+              /* Icon rail: compact gradient tile (the full lockup can't fit). */
+              <span
+                aria-hidden
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-[15px] font-black text-white shadow-elevation-2"
+              >
+                T
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <img
+                  src="/branding/noble-logo-ondark.png"
+                  alt="Noble Diagnostics"
+                  className="h-11 w-auto"
+                />
                 <VersionBadge className="border-white/15 bg-white/10 text-sidebar-muted" />
               </span>
             )}
