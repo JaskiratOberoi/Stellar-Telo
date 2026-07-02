@@ -40,7 +40,7 @@ export function AmbientBackground({
       <div
         className={cn(
           'absolute -bottom-48 left-1/3 h-[36rem] w-[36rem] animate-blob rounded-full blur-[140px] [animation-delay:-12s] motion-reduce:animate-none',
-          subtle ? 'bg-indigo-500/10' : 'bg-indigo-500/25',
+          subtle ? 'bg-chart-5/10' : 'bg-chart-5/25',
         )}
       />
       {/* Fine dotted grid, faded toward the edges. Dots key off --foreground so

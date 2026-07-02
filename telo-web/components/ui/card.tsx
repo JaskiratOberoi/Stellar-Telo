@@ -2,19 +2,18 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-const cardVariants = cva(
-  'rounded-xl border text-card-foreground shadow',
-  {
-    variants: {
-      variant: {
-        default: 'bg-card border-foreground/5',
-        light: 'card-light border-transparent',
-        accent: 'card-accent border-transparent',
-      },
+const cardVariants = cva('rounded-xl border text-card-foreground', {
+  variants: {
+    variant: {
+      default: 'bg-card border-border/70 shadow-elevation-2',
+      light: 'card-light border-transparent',
+      accent: 'card-accent border-transparent shadow-elevation-3',
+      /** Frosted panel for overlays / sticky summaries. */
+      glass: 'glass border-border/50 shadow-elevation-3',
     },
-    defaultVariants: { variant: 'default' },
   },
-);
+  defaultVariants: { variant: 'default' },
+});
 
 export interface CardProps
   extends React.HTMLAttributes<HTMLDivElement>,

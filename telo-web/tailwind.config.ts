@@ -18,13 +18,21 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
+        // Loaded via next/font in app/layout.tsx; system stack as fallback.
         sans: [
-          '"Helvetica Neue"',
-          'Helvetica',
-          'Arial',
+          'var(--font-sans)',
           'ui-sans-serif',
           'system-ui',
+          '-apple-system',
+          'Segoe UI',
           'sans-serif',
+        ],
+        mono: [
+          'var(--font-mono)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'monospace',
         ],
       },
       colors: {
@@ -61,13 +69,57 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // Extended semantics (revamp)
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+        'brand-deep': 'hsl(var(--brand-deep))',
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          deep: 'hsl(var(--sidebar-background-deep))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          muted: 'hsl(var(--sidebar-muted))',
+          active: 'hsl(var(--sidebar-active))',
+          border: 'hsl(var(--sidebar-border))',
+        },
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+          '6': 'hsl(var(--chart-6))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },
+      boxShadow: {
+        // Soft brand-tinted elevation ramp for cards/menus/FABs.
+        'elevation-1': '0 1px 2px 0 hsl(var(--brand-deep) / 0.06)',
+        'elevation-2':
+          '0 2px 8px -2px hsl(var(--brand-deep) / 0.1), 0 1px 2px 0 hsl(var(--brand-deep) / 0.06)',
+        'elevation-3':
+          '0 10px 30px -12px hsl(var(--brand-deep) / 0.25), 0 2px 8px -4px hsl(var(--brand-deep) / 0.1)',
+        'elevation-4':
+          '0 24px 48px -16px hsl(var(--brand-deep) / 0.35), 0 8px 16px -8px hsl(var(--brand-deep) / 0.15)',
+      },
       keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
         'fade-in-up': {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
@@ -76,6 +128,20 @@ const config: Config = {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '60%': { transform: 'scale(1.02)' },
           '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        // Menus/popovers: scale from origin with a whisper of movement.
+        'scale-in': {
+          '0%': { opacity: '0', transform: 'scale(0.96) translateY(-2px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
+        // Mobile bottom sheet / drawer entrances.
+        'slide-up': {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+        'slide-in-left': {
+          '0%': { opacity: '0', transform: 'translateX(-12px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
         },
         // Slow, organic drift for the ambient background blobs.
         blob: {
@@ -102,6 +168,11 @@ const config: Config = {
           '0%': { backgroundPosition: '200% center' },
           '100%': { backgroundPosition: '-200% center' },
         },
+        // Skeleton loading sweep (used with a translucent gradient overlay).
+        'shimmer-sweep': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
         // Horizontal error nudge.
         shake: {
           '0%, 100%': { transform: 'translateX(0)' },
@@ -112,11 +183,16 @@ const config: Config = {
         },
       },
       animation: {
+        'fade-in': 'fade-in 0.25s ease-out both',
         'fade-in-up': 'fade-in-up 0.3s ease-out both',
         pop: 'pop 0.2s ease-out both',
+        'scale-in': 'scale-in 0.16s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'slide-up': 'slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both',
+        'slide-in-left': 'slide-in-left 0.25s ease-out both',
         blob: 'blob 18s ease-in-out infinite',
         'card-in': 'card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both',
         shimmer: 'shimmer 5s linear infinite',
+        'shimmer-sweep': 'shimmer-sweep 1.6s ease-in-out infinite',
         shake: 'shake 0.4s ease-in-out',
       },
     },

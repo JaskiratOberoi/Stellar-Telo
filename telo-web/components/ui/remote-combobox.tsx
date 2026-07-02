@@ -95,7 +95,7 @@ export function RemoteCombobox({
         autoComplete="off"
         disabled={disabled}
         className={cn(
-          'flex h-9 w-full rounded-md border border-foreground/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60',
+          'flex h-9 w-full rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-ring/15',
           disabled && 'cursor-not-allowed opacity-50 text-muted-foreground',
         )}
         placeholder={placeholder}
@@ -133,7 +133,7 @@ export function RemoteCombobox({
         }}
       />
       {open && (items.length > 0 || loading) && (
-        <ul className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-foreground/10 bg-card shadow-xl">
+        <ul className="absolute z-50 mt-1 max-h-64 w-full origin-top animate-scale-in overflow-auto rounded-lg border border-border bg-popover shadow-elevation-3">
           {loading && items.length === 0 && (
             <li className="px-3 py-2 text-xs text-muted-foreground">
               Searching…
@@ -150,7 +150,7 @@ export function RemoteCombobox({
                 }}
                 className={cn(
                   'flex w-full items-center justify-between px-3 py-2 text-left text-sm',
-                  idx === hi ? 'bg-foreground/10' : 'hover:bg-foreground/5',
+                  idx === hi ? 'bg-primary/10' : 'hover:bg-muted',
                 )}
               >
                 <span>{i.name ?? i.code}</span>
@@ -163,7 +163,7 @@ export function RemoteCombobox({
         </ul>
       )}
       {open && !loading && query.trim() && items.length === 0 && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-foreground/10 bg-card px-3 py-2 text-sm text-muted-foreground shadow-xl">
+        <div className="absolute z-50 mt-1 w-full origin-top animate-scale-in rounded-lg border border-border bg-popover px-3 py-2 text-sm text-muted-foreground shadow-elevation-3">
           No match
         </div>
       )}

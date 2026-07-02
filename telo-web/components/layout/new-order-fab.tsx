@@ -66,7 +66,7 @@ export function NewOrderFab({
           : `Register a ${label.toLowerCase()}`
       }
       data-cart-fab=""
-      className="fixed bottom-5 right-5 z-40 flex h-12 items-center gap-2 rounded-full bg-primary pl-4 pr-5 text-sm font-semibold text-primary-foreground shadow-xl shadow-primary/30 transition-all duration-200 hover:scale-105 active:scale-95 sm:bottom-8 sm:right-8 print:hidden"
+      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-40 flex h-12 items-center gap-2 rounded-full bg-primary pl-4 pr-5 text-sm font-semibold text-primary-foreground shadow-elevation-4 transition-all duration-200 hover:scale-105 hover:bg-primary/90 active:scale-95 lg:bottom-8 lg:right-8 print:hidden"
     >
       <Plus className="h-5 w-5" strokeWidth={2.5} />
       {label}

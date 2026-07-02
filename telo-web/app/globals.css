@@ -3,65 +3,115 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── Light theme (DEFAULT) ───────────────────────────────────────────────
-     Noble purple on a cool, faintly violet-tinted neutral. `next-themes`
-     (attribute="class", defaultTheme="light") leaves :root in force when the
-     user picks light and adds `.dark` for dark — so :root holds the light
-     palette and `.dark` overrides below. Keep the variable NAMES identical to
-     the dark block so every Tailwind colour token (bg, text, border, …) flips
-     for free. */
+  /* ── "Evolved Noble Indigo" — light theme (DEFAULT) ──────────────────────
+     The 2026 Noble "blue star" navy (#2B246A) rebuilt into a full system:
+     electric-indigo primary, violet-tinted neutrals, emerald money accents.
+     `next-themes` (attribute="class", defaultTheme="light") leaves :root in
+     force for light and adds `.dark` for dark — keep variable NAMES identical
+     across both blocks so every Tailwind colour token flips for free.
+
+     NOTE: `--secondary` is the app-wide SUCCESS/money colour by convention
+     ("Paid" badges, collections, credit balances) — keep it green. */
   :root {
-    --background: 240 33% 98%; /* #F7F7FB cool off-white */
-    --foreground: 240 14% 12%; /* #1B1B22 near-black, faint violet */
+    --background: 250 45% 98%; /* #F8F8FD violet-tinted off-white */
+    --foreground: 247 30% 11%; /* #131024 deep indigo-black */
     --card: 0 0% 100%; /* white cards lift off the bg */
-    --card-foreground: 240 14% 12%;
+    --card-foreground: 247 30% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 14% 12%;
-    /* Noble purple — slightly deeper + more saturated than the dark value so
-       white text stays legible on it against a light page. */
-    --primary: 238 33% 44%;
+    --popover-foreground: 247 30% 11%;
+    /* Electric indigo — the Noble navy's vivid working shade. White text on
+       this passes AA for the UI sizes we use it at. */
+    --primary: 245 62% 50%;
     --primary-foreground: 0 0% 100%;
-    /* Success green — darkened from the dark theme so "Paid"/"Available" read
-       clearly as white-on-green against light surfaces. */
-    --secondary: 142 58% 38%;
+    /* Success emerald — darkened so white-on-green reads on light surfaces. */
+    --secondary: 152 58% 34%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 240 24% 95%; /* #EEEEF4 chips, subtle fills */
-    --muted-foreground: 240 7% 42%; /* #66666F secondary text */
-    --accent: 238 33% 44%;
+    --muted: 248 32% 95%; /* chips, subtle fills */
+    --muted-foreground: 247 10% 42%; /* secondary text */
+    --accent: 245 62% 50%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 70% 52%;
+    --destructive: 350 72% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 18% 89%; /* #DEDEE7 hairlines */
-    --input: 240 24% 96%;
-    --ring: 238 33% 44%;
+    --border: 247 26% 90%; /* violet hairlines */
+    --input: 248 32% 97%;
+    --ring: 245 62% 50%;
     --radius: 0.875rem;
+
+    /* Extended semantics (new in the revamp) */
+    --success: 152 58% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 36 92% 42%;
+    --warning-foreground: 0 0% 100%;
+    --info: 217 88% 52%;
+    --info-foreground: 0 0% 100%;
+    /* Noble brand navy — hero surfaces, gradients, the sidebar anchor. */
+    --brand-deep: 247 49% 28%; /* #2B246A */
+
+    /* Sidebar — deep navy in BOTH themes; it's the brand-anchored rail the
+       whole shell hangs off. Slightly lighter in light mode so it reads as
+       navy, near-black indigo in dark mode so it blends with the page. */
+    --sidebar-background: 247 42% 14%;
+    --sidebar-background-deep: 248 45% 9%;
+    --sidebar-foreground: 248 40% 97%;
+    --sidebar-muted: 246 16% 68%;
+    --sidebar-active: 245 62% 58%;
+    --sidebar-border: 247 28% 24%;
+
+    /* Charts — recharts palette, ordered by usage priority. */
+    --chart-1: 245 65% 58%; /* indigo */
+    --chart-2: 152 58% 42%; /* emerald */
+    --chart-3: 36 92% 50%; /* amber */
+    --chart-4: 199 89% 48%; /* sky */
+    --chart-5: 270 65% 60%; /* violet */
+    --chart-6: 340 72% 55%; /* rose */
   }
 
-  /* ── Dark theme (opt-in via the top-right toggle) ────────────────────────
-     The app's original palette, unchanged. */
+  /* ── Dark theme (opt-in via the toggle) ──────────────────────────────────
+     Indigo-tinted near-black, never pure #000 — surfaces keep a whisper of
+     the brand hue so the app feels designed rather than inverted. */
   .dark {
-    --background: 0 0% 6%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 238 25% 43%;
+    --background: 246 26% 7%; /* #0D0C17 */
+    --foreground: 248 40% 97%;
+    --card: 246 24% 10%;
+    --card-foreground: 248 40% 97%;
+    --popover: 246 24% 11%;
+    --popover-foreground: 248 40% 97%;
+    --primary: 244 78% 66%; /* luminous indigo */
     --primary-foreground: 0 0% 100%;
-    /* Success/secondary — vivid green so "Paid", "Available", etc. read as
-       success rather than warning (mustard was being misread as caution). */
-    --secondary: 142 60% 48%;
-    --secondary-foreground: 0 0% 6%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 218 11% 65%;
-    --accent: 238 25% 43%;
+    --secondary: 152 58% 45%;
+    --secondary-foreground: 246 26% 7%;
+    --muted: 246 20% 14%;
+    --muted-foreground: 246 12% 66%;
+    --accent: 244 78% 66%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 75% 59%;
+    --destructive: 350 80% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 16%;
-    --input: 0 0% 10%;
-    --ring: 238 25% 43%;
+    --border: 246 18% 17%;
+    --input: 246 22% 12%;
+    --ring: 244 78% 66%;
     --radius: 0.875rem;
+
+    --success: 152 58% 45%;
+    --success-foreground: 246 26% 7%;
+    --warning: 40 95% 56%;
+    --warning-foreground: 246 26% 7%;
+    --info: 212 92% 64%;
+    --info-foreground: 246 26% 7%;
+    --brand-deep: 247 49% 28%;
+
+    --sidebar-background: 246 28% 9%;
+    --sidebar-background-deep: 247 32% 6%;
+    --sidebar-foreground: 248 40% 97%;
+    --sidebar-muted: 246 14% 62%;
+    --sidebar-active: 244 78% 68%;
+    --sidebar-border: 246 20% 16%;
+
+    --chart-1: 244 78% 68%;
+    --chart-2: 152 58% 50%;
+    --chart-3: 40 95% 58%;
+    --chart-4: 199 89% 58%;
+    --chart-5: 270 70% 68%;
+    --chart-6: 340 78% 62%;
   }
 }
 
@@ -69,31 +119,93 @@
   * {
     @apply border-border;
   }
+  html {
+    /* Inter's opsz/features: slightly tighter UI look, real ligatures off for
+       codes. Money/ID columns opt into tabular figures via `tabular-nums`. */
+    font-feature-settings: 'cv11', 'ss01';
+    text-rendering: optimizeLegibility;
+  }
   body {
     @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.22);
+  }
+  /* Themed thin scrollbars (WebKit + Firefox) — subtle, never branded. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.18);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
 @layer utilities {
   /* White highlight card — KPI tiles, selected-row states. Stays white in
      both themes (it's a "light card" by definition); in light mode a hairline
-     border + soft violet shadow makes it read as elevated against the already
+     border + soft indigo shadow makes it read as elevated against the already
      pale page, while dark mode keeps the dramatic black drop shadow. */
   .card-light {
     background-color: #ffffff;
     color: #0f0f0f;
     border-radius: 1rem;
     border: 1px solid hsl(var(--border));
-    box-shadow: 0 10px 30px -14px rgba(79, 70, 140, 0.25);
+    box-shadow: 0 10px 30px -14px hsl(var(--brand-deep) / 0.28);
   }
   .dark .card-light {
     border-color: transparent;
     box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
   }
 
-  /* Tan accent card — single emphasised KPI per page */
+  /* Emerald accent card — single emphasised KPI per page */
   .card-accent {
     @apply bg-secondary text-secondary-foreground rounded-2xl;
+  }
+
+  /* Frosted surface — sticky bars, sheets, menus. */
+  .glass {
+    background-color: hsl(var(--card) / 0.78);
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  }
+
+  /* Brand gradient text — hero moments only. */
+  .text-brand-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--primary)),
+      hsl(270 65% 60%),
+      hsl(var(--primary))
+    );
+    background-size: 200% auto;
+  }
+
+  /* Elevated hover lift for interactive cards/rows. */
+  .hover-lift {
+    transition:
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px -16px hsl(var(--brand-deep) / 0.35);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hover-lift,
+    .hover-lift:hover {
+      transform: none;
+      transition: none;
+    }
   }
 }
 
