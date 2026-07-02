@@ -4,6 +4,7 @@ import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { ClientPicker } from '@/components/mcc/client-picker';
+import { PageHeader } from '@/components/ui/page-header';
 import { todayIST, firstOfMonthIST } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
@@ -37,13 +38,11 @@ export default async function ClientAccountsIndexPage({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Client Accounts</h1>
-        <p className="text-sm text-muted-foreground">
-          Franchise wallet ledger — current balance, deposits, test charges and
-          every payment/credit/debit. Pick a client to view its account.
-        </p>
-      </div>
+      <PageHeader
+        title="Client Accounts"
+        description="Franchise wallet ledger — current balance, deposits, test charges and every payment/credit/debit. Pick a client to view its account."
+        className="mb-0"
+      />
       <ClientPicker basePath="/client-accounts" from={from} to={to} options={options} />
     </div>
   );

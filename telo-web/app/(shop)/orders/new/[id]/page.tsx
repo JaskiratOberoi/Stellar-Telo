@@ -1,11 +1,12 @@
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { CheckCircle2 } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getAccessionView } from '@/actions/accession.actions';
 import { AccessionForm } from '@/components/register/accession-form';
 import { fmtIST } from '@/lib/datetime';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
 import {
   Table,
   TableBody,
@@ -54,21 +55,24 @@ export default async function AccessionPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="text-xl font-bold tracking-tight">
-            Accession · Bill #{order.billNumber ?? order.billId}
-          </h1>
-          <PaymentStatusPill status={paymentStatus} />
-        </div>
-        <Link href={worklistHref} className="text-sm underline">
-          ← Worklist
-        </Link>
-      </div>
-      <p className="-mt-2 text-xs text-muted-foreground">
-        {order.patientName ?? 'Patient'} · {fmtIST(order.billDate)} · MCC{' '}
-        <span className="font-mono">{order.mccCode ?? '—'}</span>
-      </p>
+      <PageHeader
+        className="mb-0"
+        backHref={worklistHref}
+        backLabel="Worklist"
+        title={
+          <>
+            Accession · Bill{' '}
+            <span className="font-mono">#{order.billNumber ?? order.billId}</span>
+          </>
+        }
+        description={
+          <>
+            {order.patientName ?? 'Patient'} · {fmtIST(order.billDate)} · MCC{' '}
+            <span className="font-mono">{order.mccCode ?? '—'}</span>
+          </>
+        }
+        actions={<PaymentStatusPill status={paymentStatus} />}
+      />
 
       <div className="grid gap-4 lg:grid-cols-12">
         {/* Patient — read-only; Telo never edits patient details */}
@@ -127,7 +131,8 @@ export default async function AccessionPage({
         </CardHeader>
         <CardContent className="p-4 pt-0">
           {complete ? (
-            <p className="rounded-md border border-secondary/30 bg-secondary/10 px-3 py-2 text-sm text-secondary">
+            <p className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-sm font-medium text-success">
+              <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
               All sample types are accessioned for this order.
             </p>
           ) : (
@@ -146,10 +151,10 @@ function PaymentStatusPill({
 }) {
   const styles =
     status === 'paid'
-      ? 'border-secondary/40 bg-secondary/15 text-secondary'
+      ? 'border-success/40 bg-success/15 text-success'
       : status === 'pending'
         ? 'border-destructive/40 bg-destructive/15 text-destructive'
-        : 'border-foreground/15 bg-foreground/5 text-muted-foreground';
+        : 'border-border bg-muted text-muted-foreground';
   const label =
     status === 'paid'
       ? '✓ Paid'
@@ -158,7 +163,7 @@ function PaymentStatusPill({
         : 'No Charge';
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${styles}`}
     >
       {label}
     </span>

@@ -4,6 +4,7 @@ import { hasCapability } from '@/auth/rbac';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
 import { getPendingAccessions } from '@/actions/orders.actions';
 import { PendingAccessionsList } from '@/components/orders/pending-accessions-list';
+import { PageHeader } from '@/components/ui/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,15 +31,16 @@ export default async function B2bOrderWorklistPage({
   const highlightBillId = Number.isInteger(createdId) ? createdId : undefined;
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Patient Orders</h1>
-        <p className="text-sm text-muted-foreground">
-          {canCreate
+    <div>
+      <PageHeader
+        title="Patient Orders"
+        description={
+          canCreate
             ? 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes, or use the New B2B Order button to register one. The patient bill is at MRP; the client rate & margin are shown while registering.'
-            : 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes.'}
-        </p>
-      </div>
+            : 'Registered B2B orders still awaiting Sample IDs. Open one to accession its barcodes.'
+        }
+        className="mb-4"
+      />
       <PendingAccessionsList
         initial={feed}
         highlightBillId={highlightBillId}

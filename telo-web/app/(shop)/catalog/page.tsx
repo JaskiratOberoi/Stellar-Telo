@@ -5,6 +5,7 @@ import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { loadCatalogPricedForMcc } from '@/db/read/catalog';
 import { getCart } from '@/db/cartStore';
 import { CatalogBrowser } from '@/components/catalog/catalog-browser';
+import { PageHeader } from '@/components/ui/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,15 +46,18 @@ export default async function CatalogPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Catalog</h1>
-        <p className="text-muted-foreground">
-          {items.length.toLocaleString('en-IN')} active tests &amp; profiles ·{' '}
-          {selectedUnit
-            ? `${selectedUnit.name ?? selectedUnit.code} (${selectedUnit.code}) rates`
-            : 'MRP pricing'}
-        </p>
-      </div>
+      <PageHeader
+        title="Catalog"
+        description={
+          <>
+            {items.length.toLocaleString('en-IN')} active tests &amp; profiles ·{' '}
+            {selectedUnit
+              ? `${selectedUnit.name ?? selectedUnit.code} (${selectedUnit.code}) rates`
+              : 'MRP pricing'}
+          </>
+        }
+        className="mb-0"
+      />
       <CatalogBrowser
         items={items}
         canOrder={canOrder}

@@ -3,6 +3,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability, lisUsertypeToTeloRole } from '@/auth/rbac';
 import { getDashboardStats } from '@/actions/stats.actions';
 import { DashboardLive } from '@/components/dashboard/dashboard-live';
+import { PageHeader } from '@/components/ui/page-header';
 import { getMccScope } from '@/auth/scope';
 
 export const dynamic = 'force-dynamic';
@@ -34,20 +35,18 @@ export default async function DashboardPage() {
   ]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">
-            Welcome, {user.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            <code>{user.username}</code>
+    <div>
+      <PageHeader
+        title={<>Welcome, {user.name}</>}
+        description={
+          <>
+            <code className="font-mono">{user.username}</code>
             {user.usertypeName ? ` · ${user.usertypeName}` : ''} ·{' '}
             {scope.length.toLocaleString('en-IN')} collection centre
             {scope.length === 1 ? '' : 's'} in scope
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <DashboardLive initial={stats} />
     </div>

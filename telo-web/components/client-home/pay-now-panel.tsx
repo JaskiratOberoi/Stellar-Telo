@@ -31,10 +31,13 @@ export function PayNowPanel({
   const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
   return (
-    <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/[0.07] to-card shadow-sm [animation-delay:120ms]">
+    <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-b from-primary/[0.07] to-card shadow-elevation-3 motion-reduce:animate-none [animation-delay:120ms]">
       <div className="border-b border-primary/10 px-5 py-4">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <span
+            aria-hidden
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15 text-primary"
+          >
             <IndianRupee className="h-4 w-4" />
           </span>
           <div>
@@ -86,7 +89,7 @@ export function PayNowPanel({
               <button
                 type="button"
                 onClick={() => setAmount(String(due))}
-                className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 Pay full due · {inr(due)}
               </button>
@@ -94,7 +97,7 @@ export function PayNowPanel({
                 <button
                   type="button"
                   onClick={() => setAmount('')}
-                  className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   Clear
                 </button>
@@ -129,13 +132,13 @@ export function PayNowPanel({
         </Button>
 
         {!configured && (
-          <p className="text-center text-[11px] text-amber-500">
+          <p className="text-center text-[11px] text-warning">
             Online payments are being set up — please check back shortly.
           </p>
         )}
 
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-          <ShieldCheck className="h-3.5 w-3.5 text-secondary" />
+          <ShieldCheck aria-hidden className="h-3.5 w-3.5 text-success" />
           Secured by CCAvenue · Cards, Net Banking, UPI &amp; Wallets
         </div>
       </form>

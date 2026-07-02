@@ -127,16 +127,16 @@ export function ReportPreview({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm animate-fade-in motion-reduce:animate-none sm:p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-foreground/10 bg-card shadow-2xl"
+        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-elevation-4 animate-scale-in motion-reduce:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-foreground/10 p-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 p-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">
               {patientName ?? 'Report'}{' '}
@@ -146,7 +146,7 @@ export function ReportPreview({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <label
-              className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-foreground/10 bg-input px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
+              className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-input px-2.5 text-xs font-medium text-foreground shadow-elevation-1 transition-colors hover:bg-muted"
               title="Hide the Noble letterhead but keep all spacing/margins, so the PDF can be printed onto pre-printed letterhead paper."
             >
               <span className="relative inline-flex h-4 w-7 shrink-0 items-center">
@@ -156,7 +156,7 @@ export function ReportPreview({
                   onChange={(e) => setHeadless(e.target.checked)}
                   className="peer sr-only"
                 />
-                <span className="absolute inset-0 rounded-full bg-foreground/20 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-input" />
+                <span className="absolute inset-0 rounded-full bg-foreground/20 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-input" />
                 <span className="absolute left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-3" />
               </span>
               Letterhead paper
@@ -165,7 +165,8 @@ export function ReportPreview({
               value={split ? 'split' : 'continuous'}
               onChange={(e) => setSplit(e.target.value === 'split')}
               title="Report layout"
-              className="h-9 rounded-md border border-foreground/10 bg-input px-2 text-xs text-foreground focus-visible:outline-none focus-visible:border-primary"
+              aria-label="Report layout"
+              className="h-9 rounded-md border border-border bg-input px-2 text-xs text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-ring/15"
             >
               <option value="continuous">Continuous</option>
               <option value="split">Split by department</option>
@@ -185,7 +186,7 @@ export function ReportPreview({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-neutral-200 p-3">
+        <div className="min-h-0 flex-1 overflow-auto bg-muted p-3">
           <iframe
             title={`Report ${sid}`}
             src={`/print/reporting/${encodeURIComponent(sid)}?panel=${encodeURIComponent(panel)}${dateParam}${

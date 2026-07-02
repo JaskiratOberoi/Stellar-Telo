@@ -18,7 +18,8 @@ export function MccSelector({
   return (
     <select
       suppressHydrationWarning
-      className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+      aria-label="Collection centre"
+      className="h-9 max-w-[18rem] rounded-md border border-border bg-input px-3 text-sm text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50"
       defaultValue={selected ?? ''}
       disabled={pending}
       onChange={(e) => {

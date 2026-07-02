@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getProfileInterpretationsOverview } from '@/actions/admin.actions';
+import { PageHeader } from '@/components/ui/page-header';
 import { InterpretationManagement } from '@/components/admin/interpretation-management';
 
 export const dynamic = 'force-dynamic';
@@ -14,22 +15,13 @@ export default async function AdminInterpretationsPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Profile interpretations</h1>
-          <p className="text-sm text-muted-foreground">
-            Clinical-significance text shown once at the end of each profile on
-            the report (the LIS only stores per-test notes). Edit a profile and
-            Save; leave blank to show none.
-          </p>
-        </div>
-        <a
-          href="/admin/users"
-          className="shrink-0 text-sm text-muted-foreground underline hover:text-foreground"
-        >
-          ← User accounts
-        </a>
-      </div>
+      <PageHeader
+        title="Profile interpretations"
+        description="Clinical-significance text shown once at the end of each profile on the report (the LIS only stores per-test notes). Edit a profile and Save; leave blank to show none."
+        backHref="/admin/users"
+        backLabel="User accounts"
+        className="mb-0"
+      />
       <InterpretationManagement initial={profiles} />
     </div>
   );

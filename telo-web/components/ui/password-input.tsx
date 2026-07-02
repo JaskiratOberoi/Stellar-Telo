@@ -62,7 +62,7 @@ const PasswordInput = React.forwardRef<
         </button>
       </div>
       {caps && (
-        <p className="flex items-center gap-1.5 text-xs text-amber-400">
+        <p className="flex items-center gap-1.5 text-xs text-warning">
           <TriangleAlert className="h-3.5 w-3.5" />
           Caps Lock is on
         </p>

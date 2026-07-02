@@ -67,7 +67,9 @@ export function RecordClientPayment({
           Record payment
         </Button>
         {state.ok && (
-          <span className="text-sm text-secondary">✓ Payment recorded.</span>
+          <span className="text-sm font-medium text-success animate-fade-in motion-reduce:animate-none">
+            ✓ Payment recorded.
+          </span>
         )}
       </div>
     );
@@ -76,14 +78,16 @@ export function RecordClientPayment({
   return (
     <form
       action={action}
-      className="space-y-3 rounded-lg border border-border bg-card p-4"
+      className="space-y-3 rounded-xl border border-border/70 bg-card p-4 shadow-elevation-2 animate-scale-in motion-reduce:animate-none"
     >
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">Record manual client payment</p>
+        <p className="text-sm font-semibold tracking-tight">
+          Record manual client payment
+        </p>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-sm text-muted-foreground underline"
+          className="rounded-md text-sm text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         >
           Cancel
         </button>
@@ -99,7 +103,7 @@ export function RecordClientPayment({
             name="mode"
             value={mode}
             onChange={(e) => setMode(Number(e.target.value))}
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="h-9 w-full rounded-lg border border-border bg-input px-2 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
           >
             {MODES.map((m) => (
               <option key={m.value} value={m.value}>

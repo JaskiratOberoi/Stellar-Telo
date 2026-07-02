@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import type { MccAccountDetailRow } from '@/db/read/mccLedger';
@@ -14,9 +15,28 @@ const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
 function OnlineBadge() {
   return (
-    <span className="rounded-full bg-secondary/15 px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+    <Badge variant="info" className="px-1.5 py-0.5 text-[10px]">
       Online
-    </span>
+    </Badge>
+  );
+}
+
+/** Transaction-type badge: payment = money in (success), credit = info,
+ *  debit = warning, anything else (e.g. charges) = muted. */
+function TypeBadge({ type }: { type: string }) {
+  const t = type.toLowerCase();
+  const variant =
+    t === 'payment'
+      ? ('success' as const)
+      : t === 'credit'
+        ? ('info' as const)
+        : t === 'debit'
+          ? ('warning' as const)
+          : ('muted' as const);
+  return (
+    <Badge variant={variant} className="px-1.5 py-0.5 text-[10px]">
+      {type}
+    </Badge>
   );
 }
 
@@ -35,7 +55,7 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
       {/* Mobile (<sm): one card per transaction. */}
       <div className="space-y-2 sm:hidden">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-foreground/5 bg-card p-4 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-border/70 bg-card p-4 text-sm text-muted-foreground shadow-elevation-1">
             No transactions in this range.
           </div>
         ) : (
@@ -43,16 +63,16 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
             <div
               key={r.id}
               className={cn(
-                'rounded-lg border border-foreground/5 bg-card p-3',
+                'rounded-xl border border-border/70 bg-card p-3 shadow-elevation-1',
                 r.inactive && 'opacity-50',
               )}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{fmtIST(r.date, 'date')}</p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{r.type}</span>
-                    {r.mode && <span>· {r.mode}</span>}
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <TypeBadge type={r.type} />
+                    {r.mode && <span>{r.mode}</span>}
                     {r.isOnline && <OnlineBadge />}
                   </p>
                 </div>
@@ -61,7 +81,7 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
                 </p>
               </div>
               {(r.chequeNo || r.reason) && (
-                <dl className="mt-2 space-y-1 border-t border-foreground/5 pt-2 text-xs">
+                <dl className="mt-2 space-y-1 border-t border-border/60 pt-2 text-xs">
                   {r.chequeNo && (
                     <div className="flex justify-between gap-3">
                       <dt className="text-muted-foreground">Cheque / Txn No</dt>
@@ -109,7 +129,9 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
                   <TableCell className="text-xs">
                     {fmtIST(r.date, 'date')}
                   </TableCell>
-                  <TableCell className="text-xs">{r.type}</TableCell>
+                  <TableCell className="text-xs">
+                    <TypeBadge type={r.type} />
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {r.chequeNo ?? '—'}
                   </TableCell>
@@ -119,7 +141,9 @@ export function AccountDetailTable({ rows }: { rows: MccAccountDetailRow[] }) {
                       {r.isOnline && <OnlineBadge />}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">{inr(r.amount)}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
+                    {inr(r.amount)}
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.reason ?? '—'}
                   </TableCell>

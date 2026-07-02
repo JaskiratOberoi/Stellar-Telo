@@ -2,7 +2,7 @@
 
 import { useTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { addToCart, removeFromCart } from '@/actions/cart.actions';
 import { Button } from '@/components/ui/button';
 import type { CartItem } from '@/domain/cart/cart.types';
@@ -20,8 +20,17 @@ function flyToCart(source: HTMLElement, label: string) {
     document.querySelector<HTMLElement>('[data-cart-target]');
   if (!target) return;
 
+  // Respect the user's reduced-motion preference — skip the flight entirely.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
   const start = source.getBoundingClientRect();
   const end = target.getBoundingClientRect();
+
+  // Pull the live theme tokens (HSL triplets) so the chip matches the current
+  // light/dark palette instead of a hardcoded hex.
+  const rootStyle = getComputedStyle(document.documentElement);
+  const primary = rootStyle.getPropertyValue('--primary').trim();
+  const primaryFg = rootStyle.getPropertyValue('--primary-foreground').trim();
 
   const chip = document.createElement('div');
   chip.textContent = label;
@@ -34,14 +43,16 @@ function flyToCart(source: HTMLElement, label: string) {
     transform: 'translate(-50%, -50%) scale(1)',
     padding: '4px 10px',
     borderRadius: '9999px',
-    background: '#C69E6A', // secondary (tan)
-    color: '#0F0F0F',
+    background: primary ? `hsl(${primary})` : 'hsl(245 62% 50%)',
+    color: primaryFg ? `hsl(${primaryFg})` : 'hsl(0 0% 100%)',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     fontSize: '11px',
     fontWeight: '700',
     pointerEvents: 'none',
     zIndex: '1000',
-    boxShadow: '0 8px 24px -8px rgba(198, 158, 106, 0.5)',
+    boxShadow: primary
+      ? `0 8px 24px -8px hsl(${primary} / 0.55)`
+      : '0 8px 24px -8px rgba(0, 0, 0, 0.35)',
     transition:
       'left 700ms cubic-bezier(0.4, 0, 0.2, 1),' +
       'top 700ms cubic-bezier(0.4, 0, 0.2, 1),' +
@@ -93,8 +104,8 @@ export function AddToCartButton({
   if (added) {
     return (
       <div className="flex items-center justify-end gap-2">
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-secondary">
-          <Check className="h-3.5 w-3.5" />
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-success animate-pop motion-reduce:animate-none">
+          <Check className="h-3.5 w-3.5" aria-hidden />
           Added
         </span>
         <Button
@@ -138,7 +149,8 @@ export function AddToCartButton({
         });
       }}
     >
-      {pending ? '…' : 'Add'}
+      <Plus className="h-3.5 w-3.5" aria-hidden />
+      {pending ? 'Adding…' : 'Add'}
     </Button>
   );
 }

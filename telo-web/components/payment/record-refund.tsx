@@ -9,6 +9,7 @@ import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ChevronDown, Undo2 } from 'lucide-react';
 
 const initial: RecordPaymentState = { error: null, ok: false };
 
@@ -52,10 +53,35 @@ export function RecordRefundForm({
     Number.isFinite(amountNum) && amountNum >= 1 && amountNum <= amountPaid;
   const exceedsCap = Number.isFinite(amountNum) && amountNum > amountPaid;
 
+  // Collapsible section — closed by default (refunds are the exception, not
+  // the rule) so the Summary card stays focused on the balance + payment.
+  const [open, setOpen] = useState(false);
+
   return (
-    <form action={action} className="space-y-3">
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md text-left text-sm font-medium text-zinc-900 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <span className="flex items-center gap-1.5">
+          <Undo2 aria-hidden className="h-4 w-4" />
+          Record refund
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={`h-4 w-4 text-zinc-400 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {open && (
+    <form
+      action={action}
+      className="mt-2 animate-scale-in space-y-3 motion-reduce:animate-none"
+    >
       <input type="hidden" name="billId" value={billId} />
-      <p className="text-sm font-medium text-zinc-900">Record refund</p>
       <div className="flex items-end gap-2">
         <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
           <div className="space-y-1 min-w-0">
@@ -98,7 +124,7 @@ export function RecordRefundForm({
                 setAmountInput(n > amountPaid ? String(amountPaid) : raw);
               }}
               aria-invalid={!isAmountValid}
-              className="w-full border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:border-primary"
+              className="w-full border-zinc-200 bg-white tabular-nums text-zinc-900 placeholder:text-zinc-400 focus-visible:border-primary"
             />
           </div>
         </div>
@@ -112,7 +138,7 @@ export function RecordRefundForm({
         </Button>
       </div>
       {exceedsCap && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Refund cannot exceed the amount already received (₹
           {amountPaid.toLocaleString('en-IN')}).
         </p>
@@ -145,11 +171,17 @@ export function RecordRefundForm({
         already received on this bill).
       </p>
       {state.error && (
-        <p className="text-sm text-destructive">{state.error}</p>
+        <p className="animate-shake text-sm text-destructive motion-reduce:animate-none">
+          {state.error}
+        </p>
       )}
       {state.ok && (
-        <p className="text-sm text-secondary">Refund recorded.</p>
+        <p className="animate-fade-in text-sm font-medium text-secondary motion-reduce:animate-none">
+          ✓ Refund recorded.
+        </p>
       )}
     </form>
+      )}
+    </div>
   );
 }

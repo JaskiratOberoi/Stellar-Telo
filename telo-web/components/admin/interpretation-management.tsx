@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import { Search } from 'lucide-react';
 import { saveProfileInterpretationAction } from '@/actions/admin.actions';
 import type { ProfileInterpRow } from '@/db/read/profileInterpretations';
 import { Button } from '@/components/ui/button';
@@ -30,13 +31,20 @@ export function InterpretationManagement({ initial }: { initial: ProfileInterpRo
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search profiles by name or code…"
-          className="max-w-xs"
-        />
-        <span className="text-xs text-muted-foreground">
+        <div className="relative w-full max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search profiles by name or code…"
+            aria-label="Search profiles"
+            className="pl-9"
+          />
+        </div>
+        <span className="text-xs tabular-nums text-muted-foreground">
           {withText} of {rows.length} profiles have an interpretation
         </span>
       </div>
@@ -99,21 +107,21 @@ function ProfileRow({
   }
 
   return (
-    <div className="rounded-lg border border-foreground/5 bg-card/50 p-3">
+    <div className="rounded-xl border border-border/70 bg-card p-3 shadow-elevation-1 transition-shadow focus-within:shadow-elevation-2">
       <div className="mb-1.5 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              hasText ? 'bg-secondary' : 'bg-foreground/20'
+              hasText ? 'bg-success' : 'bg-foreground/20'
             }`}
             title={hasText ? 'Has interpretation' : 'No interpretation yet'}
           />
-          <span className="text-sm font-medium">{row.name}</span>
+          <span className="truncate text-sm font-medium">{row.name}</span>
           <span className="font-mono text-xs text-muted-foreground">{row.code}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {status === 'saved' && !dirty && (
-            <span className="text-xs text-secondary">Saved</span>
+            <span className="text-xs font-medium text-success">Saved</span>
           )}
           {status === 'error' && <span className="text-xs text-destructive">{error}</span>}
           <Button size="sm" onClick={save} disabled={pending || !dirty}>
@@ -129,7 +137,7 @@ function ProfileRow({
         }}
         rows={3}
         placeholder="Clinical significance for this profile…"
-        className="w-full resize-y rounded-md border border-foreground/10 bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        className="w-full resize-y rounded-md border border-border bg-input px-3 py-2 text-sm text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/15"
       />
     </div>
   );

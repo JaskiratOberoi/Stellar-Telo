@@ -167,18 +167,19 @@ export function AccountsSummaryView({
               className="h-8 w-full sm:w-40"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-foreground/5 bg-card p-1">
+          <div className="flex flex-wrap items-center gap-1 rounded-full border border-border/70 bg-card p-1 shadow-elevation-1">
             {presets().map((p) => (
               <button
                 key={p.id}
                 type="button"
                 onClick={() => applyDates(p.from, p.to)}
                 disabled={pending}
+                aria-pressed={activePresetId === p.id}
                 className={
-                  'rounded px-2.5 py-1 text-xs font-medium transition-all duration-150 ' +
+                  'rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ' +
                   (activePresetId === p.id
-                    ? 'bg-primary/20 text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5')
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground')
                 }
               >
                 {p.label}
@@ -194,7 +195,7 @@ export function AccountsSummaryView({
               }
               disabled={pending || mccs.length === 0}
               suppressHydrationWarning
-              className="h-8 w-full sm:w-44 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 w-full sm:w-44 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">All centers</option>
               {mccs.map((m) => (
@@ -212,7 +213,7 @@ export function AccountsSummaryView({
               onChange={(e) => applyPay(e.target.value as PaymentModeFilter)}
               disabled={pending}
               suppressHydrationWarning
-              className="h-8 w-full sm:w-32 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+              className="h-8 w-full sm:w-32 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
             >
               <option value="all">All</option>
               <option value="cash">Cash / Paying</option>
@@ -280,8 +281,13 @@ export function AccountsSummaryView({
                       {[b.doctorName, b.customerName].filter(Boolean).join(' · ') || '—'}
                     </TableCell>
                     <TableCell className="text-xs">{b.paymentType ?? '—'}</TableCell>
-                    <TableCell className="text-right">{inr(b.amount)}</TableCell>
-                    <TableCell className="text-right font-semibold">
+                    <TableCell className="text-right tabular-nums">{inr(b.amount)}</TableCell>
+                    <TableCell
+                      className={
+                        'text-right font-semibold tabular-nums' +
+                        (b.balance < 0 ? ' text-destructive' : '')
+                      }
+                    >
                       {inr(b.balance)}
                     </TableCell>
                   </TableRow>
@@ -332,23 +338,28 @@ export function AccountsSummaryView({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-right text-xs text-muted-foreground">
+                <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
                   {r.bills}
                 </TableCell>
-                <TableCell className="text-right">{inr(r.charges)}</TableCell>
-                <TableCell className="text-right">{inr(r.discount)}</TableCell>
-                <TableCell className="text-right">{inr(r.net)}</TableCell>
-                <TableCell className="text-right">{inr(r.received)}</TableCell>
-                <TableCell className="text-right text-muted-foreground">
+                <TableCell className="text-right tabular-nums">{inr(r.charges)}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(r.discount)}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(r.net)}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(r.received)}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
                   {inr(r.refund)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {inr(r.payingBalance)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   {inr(r.creditBalance)}
                 </TableCell>
-                <TableCell className="text-right font-semibold">
+                <TableCell
+                  className={
+                    'text-right font-semibold tabular-nums' +
+                    (r.balance < 0 ? ' text-destructive' : '')
+                  }
+                >
                   {inr(r.balance)}
                 </TableCell>
               </TableRow>
@@ -357,7 +368,7 @@ export function AccountsSummaryView({
         </TableBody>
         {rows.length > 0 && (
           <tfoot>
-            <tr className="border-t-2 border-foreground/5 bg-secondary/10 font-semibold text-secondary">
+            <tr className="border-t-2 border-border/70 bg-success/10 font-semibold tabular-nums text-success">
               <td className="px-2 py-2 text-sm">Total</td>
               <td className="px-2 py-2 text-right text-xs">{totals.bills}</td>
               <td className="px-2 py-2 text-right">{inr(totals.charges)}</td>

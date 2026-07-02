@@ -9,6 +9,7 @@ import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ChevronDown, Wallet } from 'lucide-react';
 
 const initial: RecordPaymentState = { error: null, ok: false };
 
@@ -56,10 +57,36 @@ export function RecordPaymentForm({
     Number.isFinite(amountNum) && amountNum >= 1 && amountNum <= balance;
   const exceedsBalance = Number.isFinite(amountNum) && amountNum > balance;
 
+  // Collapsible section — open by default (recording a payment is the most
+  // common action on a bill with a balance). The header stays as a toggle so
+  // the Summary card can be tidied away when the operator is only reading.
+  const [open, setOpen] = useState(true);
+
   return (
-    <form action={action} className="space-y-3">
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md text-left text-sm font-medium text-zinc-900 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <span className="flex items-center gap-1.5">
+          <Wallet aria-hidden className="h-4 w-4" />
+          Record offline payment
+        </span>
+        <ChevronDown
+          aria-hidden
+          className={`h-4 w-4 text-zinc-400 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {open && (
+    <form
+      action={action}
+      className="mt-2 animate-scale-in space-y-3 motion-reduce:animate-none"
+    >
       <input type="hidden" name="billId" value={billId} />
-      <p className="text-sm font-medium text-zinc-900">Record offline payment</p>
       <div className="flex items-end gap-2">
         <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
           <div className="space-y-1 min-w-0">
@@ -102,7 +129,7 @@ export function RecordPaymentForm({
                 setAmountInput(n > balance ? String(balance) : raw);
               }}
               aria-invalid={!isAmountValid}
-              className="w-full border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:border-primary"
+              className="w-full border-zinc-200 bg-white tabular-nums text-zinc-900 placeholder:text-zinc-400 focus-visible:border-primary"
             />
           </div>
         </div>
@@ -115,7 +142,7 @@ export function RecordPaymentForm({
         </Button>
       </div>
       {exceedsBalance && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Amount cannot exceed the outstanding balance of ₹
           {balance.toLocaleString('en-IN')}.
         </p>
@@ -144,11 +171,17 @@ export function RecordPaymentForm({
         </div>
       )}
       {state.error && (
-        <p className="text-sm text-destructive">{state.error}</p>
+        <p className="animate-shake text-sm text-destructive motion-reduce:animate-none">
+          {state.error}
+        </p>
       )}
       {state.ok && (
-        <p className="text-sm text-secondary">Payment recorded.</p>
+        <p className="animate-fade-in text-sm font-medium text-secondary motion-reduce:animate-none">
+          ✓ Payment recorded.
+        </p>
       )}
     </form>
+      )}
+    </div>
   );
 }

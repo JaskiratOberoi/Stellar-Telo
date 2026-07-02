@@ -98,7 +98,7 @@ export function ClientAccountFilters({
             }
             disabled={navigating}
             suppressHydrationWarning
-            className="h-8 w-full sm:w-44 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+            className="h-8 w-full sm:w-44 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
           >
             <option value="">All units</option>
             {buOptions.map(([id, name]) => (
@@ -122,7 +122,7 @@ export function ClientAccountFilters({
               }}
               disabled={navigating}
               suppressHydrationWarning
-              className="h-8 w-full sm:w-64 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+              className="h-8 w-full sm:w-64 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
             >
               {clientSelectValue === '' && (
                 <option value="">Select a client…</option>
@@ -175,18 +175,19 @@ export function ClientAccountFilters({
           className="h-8 w-full sm:w-40"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-1 self-end rounded-lg border border-foreground/5 bg-card p-1">
+      <div className="flex flex-wrap items-center gap-1 self-end rounded-full border border-border/70 bg-card p-1 shadow-elevation-1">
         {periods.map((p) => (
           <button
             key={p.label}
             type="button"
             disabled={navigating}
             onClick={() => goto(href(mccId, p.from, p.to, typeValue))}
+            aria-pressed={p.label === activeLabel}
             className={cn(
-              'rounded px-2.5 py-1 text-xs font-medium transition-all duration-150',
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
               p.label === activeLabel
-                ? 'bg-primary/20 text-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               navigating && 'cursor-wait opacity-70',
             )}
           >
@@ -204,7 +205,7 @@ export function ClientAccountFilters({
           }
           disabled={navigating}
           suppressHydrationWarning
-          className="h-8 w-36 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+          className="h-8 w-36 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
         >
           {TYPE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -257,10 +258,10 @@ function ClientSearch({
           placeholder="Switch client…"
           disabled={disabled}
           suppressHydrationWarning
-          className="h-8 w-full sm:w-64 rounded-md border border-foreground/10 bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
+          className="h-8 w-full sm:w-64 rounded-lg border border-border bg-input px-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60"
         />
         {q.trim() && (
-          <div className="absolute z-20 mt-1 max-h-72 w-full sm:w-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-foreground/10 bg-card shadow-lg">
+          <div className="absolute z-20 mt-1 max-h-72 w-full sm:w-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-border bg-popover shadow-elevation-3 animate-scale-in motion-reduce:animate-none">
             {pending && results.length === 0 ? (
               <p className="px-3 py-2 text-xs text-muted-foreground">Searching…</p>
             ) : results.length === 0 ? (
@@ -271,7 +272,7 @@ function ClientSearch({
                   key={m.id}
                   type="button"
                   onClick={() => onPick(m.id)}
-                  className="block w-full px-3 py-1.5 text-left text-sm hover:bg-foreground/5"
+                  className="block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none"
                 >
                   <span className="font-mono">{m.code}</span>
                   {m.name && (

@@ -41,9 +41,9 @@ const MESSAGES: Record<string, { tone: Tone; title: string; body?: string }> = {
 };
 
 const TONE_STYLES: Record<Tone, string> = {
-  success: 'border-secondary/40 bg-secondary/10 text-secondary',
+  success: 'border-success/40 bg-success/10 text-success',
   error: 'border-destructive/40 bg-destructive/10 text-destructive',
-  warning: 'border-amber-500/40 bg-amber-500/10 text-amber-500',
+  warning: 'border-warning/40 bg-warning/10 text-warning',
 };
 
 /**
@@ -88,9 +88,9 @@ export function PayStatusToast({
   return (
     <div
       role="status"
-      className={`animate-pop flex items-start gap-3 rounded-xl border px-4 py-3 ${TONE_STYLES[cfg.tone]}`}
+      className={`animate-pop flex items-start gap-3 rounded-xl border px-4 py-3 shadow-elevation-2 motion-reduce:animate-none ${TONE_STYLES[cfg.tone]}`}
     >
-      <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+      <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">
           {cfg.title}
@@ -106,7 +106,7 @@ export function PayStatusToast({
         type="button"
         onClick={() => setOpen(false)}
         aria-label="Dismiss"
-        className="shrink-0 rounded-md p-0.5 opacity-70 transition-opacity hover:opacity-100"
+        className="shrink-0 rounded-md p-1 opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <X className="h-4 w-4" />
       </button>

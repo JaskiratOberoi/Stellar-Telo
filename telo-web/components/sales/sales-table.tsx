@@ -74,7 +74,9 @@ export function SalesTable({ rows }: { rows: SalesRow[] }) {
               <TableCell className="text-xs text-muted-foreground">
                 {[r.doctor, r.customer].filter(Boolean).join(' · ') || '—'}
               </TableCell>
-              <TableCell className="text-right">{inr(r.amount)}</TableCell>
+              <TableCell className="text-right font-medium tabular-nums">
+                {inr(r.amount)}
+              </TableCell>
             </TableRow>
           ))
         )}

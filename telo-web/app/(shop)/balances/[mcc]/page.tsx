@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft, Banknote, Hourglass, ReceiptText, Wallet } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getLedgerForMcc } from '@/actions/ledger.actions';
@@ -8,8 +9,8 @@ import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { getReceiptsInPeriod } from '@/db/read/receipts';
 import { getMccScope } from '@/auth/scope';
 import { fmtIST, todayIST, addDaysIST, firstOfMonthIST } from '@/lib/datetime';
-import { cn } from '@/lib/utils';
 import { getUnpinnedBillIds } from '@/db/pins';
+import { StatCard } from '@/components/ui/stat-card';
 import { AccountsReport } from '@/components/balances/accounts-report';
 import { MccBalanceFilters } from '@/components/balances/mcc-balance-filters';
 import { BalancesBillsTable } from '@/components/balances/balances-bills-table';
@@ -129,22 +130,32 @@ export default async function BalanceMccPage({
 
       {/* ── Screen view: interactive ledger ────────────────────────── */}
       <div className="space-y-4 print:hidden">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+        <div className="min-w-0 animate-fade-in-up motion-reduce:animate-none">
+          {showBackLink && (
+            <Link
+              href={backHref}
+              className="mb-1.5 inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              Accounts summary
+            </Link>
+          )}
+          <h1 className="text-2xl font-bold tracking-tight">
             {mccMeta?.name ?? `MCC ${mccId}`}{' '}
-            <span className="font-mono text-base text-muted-foreground">
+            <span className="font-mono text-base font-medium text-muted-foreground">
               {mccMeta?.code ?? mccId}
             </span>
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             {data.bills.length} Telo bill
             {data.bills.length === 1 ? '' : 's'}
-            {mine ? ' (yours)' : ''} · {inr(data.totalBalance)}{' '}
+            {mine ? ' (yours)' : ''} ·{' '}
+            <span className="tabular-nums">{inr(data.totalBalance)}</span>{' '}
             balance · {fmtIST(from, 'date')} → {fmtIST(to, 'date')}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {showBackLink && (
             <BalanceViewTabs mccId={mccId} from={from} to={to} active="bills" />
           )}
@@ -154,11 +165,6 @@ export default async function BalanceMccPage({
             fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.xlsx`}
           />
           <PrintReportButton />
-          {showBackLink && (
-            <Link href={backHref} className="text-sm underline">
-              ← Accounts summary
-            </Link>
-          )}
         </div>
       </div>
 
@@ -179,35 +185,47 @@ export default async function BalanceMccPage({
 
       {/* ── Summary cards ──────────────────────────────────────────── */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Total billed"
-          value={inr(totalAmount)}
-          hint={`${data.bills.length} bill${data.bills.length === 1 ? '' : 's'}`}
-        />
-        <StatCard
-          label="Collected in period"
-          value={inr(totalPaid)}
-          hint={`${receipts.receiptCount} payment${receipts.receiptCount === 1 ? '' : 's'} received · keyed by receipt date`}
-          variant="positive"
-          breakdown={[
-            { label: 'Cash', value: inr(cashPaid), sub: `${cashCount} payment${cashCount === 1 ? '' : 's'}` },
-            { label: 'Others', value: inr(otherPaid), sub: `${otherCount} payment${otherCount === 1 ? '' : 's'}` },
-            ...(receipts.refunded > 0
-              ? [{ label: 'Refunded', value: `− ${inr(receipts.refunded)}` }]
-              : []),
-          ]}
-        />
-        <StatCard
-          label="Balance due"
-          value={inr(data.totalBalance)}
-          hint={pendingBills === 0 ? 'All settled' : `${pendingBills} bill${pendingBills === 1 ? '' : 's'} pending`}
-          variant={data.totalBalance > 0 ? 'warning' : 'muted'}
-        />
-        <StatCard
-          label="Avg bill"
-          value={inr(data.bills.length > 0 ? Math.round(totalAmount / data.bills.length) : 0)}
-          hint={fmtIST(from, 'date') + ' → ' + fmtIST(to, 'date')}
-        />
+        <div className="animate-fade-in-up motion-reduce:animate-none">
+          <StatCard
+            label="Total billed"
+            value={inr(totalAmount)}
+            hint={`${data.bills.length} bill${data.bills.length === 1 ? '' : 's'}`}
+            icon={<ReceiptText />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:70ms]">
+          <StatCard
+            label="Collected in period"
+            value={inr(totalPaid)}
+            hint={`${receipts.receiptCount} payment${receipts.receiptCount === 1 ? '' : 's'} received · keyed by receipt date`}
+            variant="positive"
+            icon={<Wallet />}
+            breakdown={[
+              { label: 'Cash', value: inr(cashPaid), sub: `${cashCount} payment${cashCount === 1 ? '' : 's'}` },
+              { label: 'Others', value: inr(otherPaid), sub: `${otherCount} payment${otherCount === 1 ? '' : 's'}` },
+              ...(receipts.refunded > 0
+                ? [{ label: 'Refunded', value: `− ${inr(receipts.refunded)}` }]
+                : []),
+            ]}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:140ms]">
+          <StatCard
+            label="Balance due"
+            value={inr(data.totalBalance)}
+            hint={pendingBills === 0 ? 'All settled' : `${pendingBills} bill${pendingBills === 1 ? '' : 's'} pending`}
+            variant={data.totalBalance > 0 ? 'warning' : 'muted'}
+            icon={<Hourglass />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:210ms]">
+          <StatCard
+            label="Avg bill"
+            value={inr(data.bills.length > 0 ? Math.round(totalAmount / data.bills.length) : 0)}
+            hint={fmtIST(from, 'date') + ' → ' + fmtIST(to, 'date')}
+            icon={<Banknote />}
+          />
+        </div>
       </div>
 
       <BalancesBillsTable
@@ -236,62 +254,6 @@ export default async function BalanceMccPage({
         mine={mine}
       />
       </div>{/* end screen view */}
-    </div>
-  );
-}
-
-// ── Summary stat card ──────────────────────────────────────────────────────
-// Server-rendered, no client interactivity. `variant` shifts only the value's
-// colour so the visual hierarchy reads at a glance.
-function StatCard({
-  label,
-  value,
-  hint,
-  variant = 'default',
-  breakdown,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  variant?: 'default' | 'positive' | 'warning' | 'muted';
-  breakdown?: { label: string; value: string; sub?: string }[];
-}) {
-  const valueColor =
-    variant === 'positive'
-      ? 'text-secondary'
-      : variant === 'warning'
-        ? 'text-destructive'
-        : variant === 'muted'
-          ? 'text-muted-foreground'
-          : 'text-foreground';
-  return (
-    <div className="rounded-xl border border-foreground/5 bg-card p-4">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className={cn('mt-1 text-2xl font-bold tracking-tight', valueColor)}>
-        {value}
-      </p>
-      {hint && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
-      )}
-      {breakdown && breakdown.length > 0 && (
-        <div className="mt-3 space-y-1 border-t border-foreground/5 pt-2">
-          {breakdown.map((b) => (
-            <div key={b.label} className="flex items-baseline justify-between text-xs">
-              <span className="text-muted-foreground">{b.label}</span>
-              <span>
-                <span className="font-medium">{b.value}</span>
-                {b.sub && (
-                  <span className="ml-1.5 text-[10px] text-muted-foreground">
-                    · {b.sub}
-                  </span>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

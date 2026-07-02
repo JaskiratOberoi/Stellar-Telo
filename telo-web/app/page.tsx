@@ -8,12 +8,25 @@ import { cn } from '@/lib/utils';
 
 /**
  * Signed-out landing page. Mirrors the portal's visual language: ambient blob
- * background, gradient wordmark, branded CTA and a row of capability chips.
+ * background, the gradient "T" logomark tile, a brand-gradient wordmark and a
+ * trio of capability cards leading into the sign-in CTA.
  */
 const FEATURES = [
-  { icon: Receipt, label: 'Billing & orders' },
-  { icon: FileText, label: 'Lab reports' },
-  { icon: Wallet, label: 'Accounts' },
+  {
+    icon: Receipt,
+    title: 'Billing & orders',
+    desc: 'Raise orders and settle bills against live LIS data.',
+  },
+  {
+    icon: FileText,
+    title: 'Lab reports',
+    desc: 'Preview, customise and download branded PDF reports.',
+  },
+  {
+    icon: Wallet,
+    title: 'Accounts',
+    desc: 'Ledgers, receipts and balances for every client.',
+  },
 ] as const;
 
 export default function HomePage() {
@@ -22,23 +35,34 @@ export default function HomePage() {
       <AmbientBackground className="fixed" />
       <LoginBackdrop className="fixed" />
 
-      <div className="relative z-10 flex w-full max-w-xl flex-col items-center gap-7">
+      <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-8">
+        {/* Gradient logomark — same motif as the shell's brand tile */}
+        <div
+          aria-hidden
+          className="flex h-14 w-14 animate-pop items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-2xl font-black text-white shadow-elevation-3 motion-reduce:animate-none"
+        >
+          T
+        </div>
+
         {/* Network badge */}
-        <span className="animate-fade-in-up inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-card/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm">
-          <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
+        <span className="inline-flex animate-fade-in-up items-center gap-2 rounded-full border border-foreground/10 bg-card/60 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm [animation-delay:60ms] motion-reduce:animate-none">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-secondary/60 motion-reduce:animate-none" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-secondary" />
+          </span>
           Noble Laboratory Network
         </span>
 
         {/* Wordmark + tagline */}
-        <div className="animate-fade-in-up space-y-3 [animation-delay:60ms]">
+        <div className="animate-fade-in-up space-y-4 [animation-delay:120ms] motion-reduce:animate-none">
           <div className="flex items-start justify-center gap-2">
-            <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
+            <h1 className="text-brand-gradient animate-shimmer pb-1 text-6xl font-bold tracking-tight sm:text-7xl motion-reduce:animate-none">
               Telo
             </h1>
             <VersionBadge className="mt-2 sm:mt-3" />
           </div>
-          <p className="text-balance text-base text-muted-foreground sm:text-lg">
-            B2C billing for the Noble laboratory network — orders, reports and
+          <p className="mx-auto max-w-xl text-balance text-base text-muted-foreground sm:text-lg">
+            Billing for the Noble laboratory network — orders, reports and
             accounts in one place.
           </p>
         </div>
@@ -48,29 +72,33 @@ export default function HomePage() {
           href="/login"
           className={cn(
             buttonVariants({ variant: 'default', size: 'lg' }),
-            'animate-fade-in-up group gap-2 px-8 [animation-delay:120ms]',
+            'group animate-fade-in-up gap-2 px-8 shadow-lg shadow-primary/25 transition-shadow duration-300 [animation-delay:180ms] hover:shadow-primary/40 motion-reduce:animate-none',
           )}
         >
           Sign in
           <ArrowRight className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5" />
         </Link>
 
-        {/* Capability chips */}
-        <div className="animate-fade-in-up flex flex-wrap items-center justify-center gap-2 [animation-delay:180ms]">
-          {FEATURES.map(({ icon: Icon, label }) => (
-            <span
-              key={label}
-              className="inline-flex items-center gap-1.5 rounded-full border border-foreground/5 bg-card/50 px-3 py-1.5 text-xs text-muted-foreground"
+        {/* Capability cards */}
+        <div className="mt-2 grid w-full gap-3 text-left sm:grid-cols-3">
+          {FEATURES.map(({ icon: Icon, title, desc }, i) => (
+            <div
+              key={title}
+              className="hover-lift animate-fade-in-up rounded-xl border border-border/60 bg-card/70 p-4 shadow-elevation-1 backdrop-blur-sm motion-reduce:animate-none"
+              style={{ animationDelay: `${240 + i * 70}ms` }}
             >
-              <Icon className="h-3.5 w-3.5 text-primary" />
-              {label}
-            </span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Icon className="h-4 w-4" />
+              </span>
+              <h2 className="mt-3 text-sm font-semibold">{title}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+            </div>
           ))}
         </div>
       </div>
 
       {/* Footer note */}
-      <p className="animate-fade-in-up absolute bottom-6 z-10 text-xs text-muted-foreground/70 [animation-delay:240ms]">
+      <p className="absolute bottom-6 z-10 animate-fade-in-up text-xs text-muted-foreground/70 [animation-delay:480ms] motion-reduce:animate-none">
         Sign in with your LIS credentials
       </p>
     </main>

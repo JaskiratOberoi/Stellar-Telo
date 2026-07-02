@@ -169,14 +169,14 @@ export function BalancesBillsTable({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search bill #, name, PID, SID, mobile, amount, discount…"
             aria-label="Search bills"
-            className="h-9 w-full rounded-md border border-foreground/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
+            className="h-10 w-full rounded-lg border border-border bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
           />
           {isSearching && (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -231,7 +231,7 @@ export function BalancesBillsTable({
                 key={b.billId}
                 className={cn(
                   negative && 'bg-destructive/10 hover:bg-destructive/20',
-                  firstUnpinned && 'border-t-2 border-foreground/10',
+                  firstUnpinned && 'border-t-2 border-border',
                 )}
               >
                 <TableCell>
@@ -244,7 +244,7 @@ export function BalancesBillsTable({
                     )}
                     <Link
                       href={detailHref}
-                      className="font-mono text-xs underline"
+                      className="rounded font-mono text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                     >
                       {b.billNumber ?? b.billId}
                     </Link>
@@ -265,18 +265,18 @@ export function BalancesBillsTable({
                 <TableCell className="text-right text-xs text-muted-foreground">
                   {fmtPatientAge(b.age, b.ageType)}
                 </TableCell>
-                <TableCell className="text-right">{inr(b.amount)}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">{inr(b.amount)}</TableCell>
+                <TableCell className="text-right tabular-nums">
                   {b.discount > 0 ? (
                     `− ${inr(b.discount)}`
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right">{inr(b.amountPaid)}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(b.amountPaid)}</TableCell>
                 <TableCell
                   className={cn(
-                    'text-right font-medium',
+                    'text-right font-semibold tabular-nums',
                     negative && 'text-destructive',
                   )}
                 >
@@ -292,10 +292,10 @@ export function BalancesBillsTable({
                         title={pinned ? 'Unpin from top' : 'Pin to top'}
                         aria-pressed={pinned}
                         className={cn(
-                          'inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs transition-all duration-150',
+                          'inline-flex items-center justify-center rounded-md border px-2 py-1 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
                           pinned
                             ? 'border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
-                            : 'border-foreground/10 text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                            : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
                           pending && 'cursor-wait opacity-60',
                         )}
                       >
@@ -308,7 +308,7 @@ export function BalancesBillsTable({
                     )}
                     <Link
                       href={detailHref}
-                      className="inline-flex items-center justify-center rounded-md border border-foreground/10 px-2.5 py-1 text-xs text-muted-foreground transition-all duration-150 hover:bg-foreground/5 hover:text-foreground hover:border-foreground/20"
+                      className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                     >
                       View →
                     </Link>

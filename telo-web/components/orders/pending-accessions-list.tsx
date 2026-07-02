@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { PrintBillButton, PrintLabButton } from '@/components/orders/print-bill-button';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
+import { Inbox, RefreshCw, SearchX } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -65,15 +66,28 @@ export function PendingAccessionsList({
           placeholder="Filter by patient, bill # or MCC…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="h-8 max-w-sm"
+          className="max-w-sm"
           suppressHydrationWarning
         />
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span>
+          <span className="tabular-nums">
             {feed.orders.length} awaiting accessioning · updated{' '}
             {fmtIST(feed.fetchedAt, 'time')} IST
           </span>
-          <Button variant="outline" size="sm" onClick={refresh} disabled={busy}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refresh}
+            disabled={busy}
+            className="gap-1.5"
+          >
+            <RefreshCw
+              aria-hidden
+              className={cn(
+                'h-3.5 w-3.5',
+                busy && 'animate-spin motion-reduce:animate-none',
+              )}
+            />
             {busy ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
@@ -83,11 +97,7 @@ export function PendingAccessionsList({
           unreadable on a phone. */}
       <div className="space-y-2 sm:hidden">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-foreground/5 bg-card p-4 text-sm text-muted-foreground">
-            {feed.orders.length === 0
-              ? 'No orders awaiting Sample IDs.'
-              : 'No match.'}
-          </div>
+          <EmptyState allEmpty={feed.orders.length === 0} />
         ) : (
           rows.map((o) => {
             const complete = o.haveGroups >= o.requiredGroups;
@@ -97,9 +107,9 @@ export function PendingAccessionsList({
               <div
                 key={o.billId}
                 className={cn(
-                  'rounded-lg border border-foreground/5 bg-card p-3',
+                  'rounded-xl border border-border/70 bg-card p-3 shadow-elevation-1',
                   highlightBillId === o.billId &&
-                    'bg-secondary/10 ring-1 ring-secondary/40',
+                    'animate-fade-in bg-success/10 ring-1 ring-success/40 motion-reduce:animate-none',
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -121,10 +131,10 @@ export function PendingAccessionsList({
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span
                       className={cn(
-                        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        'rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
                         complete
-                          ? 'bg-secondary/15 text-secondary'
-                          : 'bg-amber-500/15 text-amber-400',
+                          ? 'bg-success/15 text-success'
+                          : 'bg-warning/15 text-warning',
                       )}
                     >
                       {o.haveGroups}/{o.requiredGroups} SIDs
@@ -136,7 +146,7 @@ export function PendingAccessionsList({
                     )}
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-foreground/5 pt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2">
                   <Button
                     asChild
                     size="sm"
@@ -177,14 +187,9 @@ export function PendingAccessionsList({
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={canViewBill ? 7 : 6}
-                className="text-muted-foreground"
-              >
-                {feed.orders.length === 0
-                  ? 'No orders awaiting Sample IDs.'
-                  : 'No match.'}
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={canViewBill ? 7 : 6} className="p-0">
+                <EmptyState allEmpty={feed.orders.length === 0} borderless />
               </TableCell>
             </TableRow>
           ) : (
@@ -196,9 +201,9 @@ export function PendingAccessionsList({
                 <TableRow
                   key={o.billId}
                   className={cn(
-                    'group transition-transform hover:-translate-y-px',
+                    'group',
                     highlightBillId === o.billId &&
-                      'bg-secondary/10 ring-1 ring-secondary/40',
+                      'bg-success/10 ring-1 ring-inset ring-success/40',
                   )}
                 >
                   <TableCell>
@@ -217,17 +222,17 @@ export function PendingAccessionsList({
                   <TableCell className="text-center">
                     <span
                       className={cn(
-                        'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                        'rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums',
                         complete
-                          ? 'bg-secondary/15 text-secondary'
-                          : 'bg-amber-500/15 text-amber-400',
+                          ? 'bg-success/15 text-success'
+                          : 'bg-warning/15 text-warning',
                       )}
                     >
                       {o.haveGroups}/{o.requiredGroups}
                     </span>
                   </TableCell>
                   {canViewBill && (
-                    <TableCell className="text-right font-medium">
+                    <TableCell className="text-right font-medium tabular-nums">
                       ₹{o.total}
                     </TableCell>
                   )}
@@ -264,6 +269,42 @@ export function PendingAccessionsList({
         </TableBody>
       </Table>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Friendly empty state shared by the mobile card list and the desktop table.
+ * `allEmpty` = the worklist is genuinely clear; otherwise the filter simply
+ * matched nothing. `borderless` when rendered inside the table (which already
+ * draws its own frame).
+ */
+function EmptyState({
+  allEmpty,
+  borderless = false,
+}: {
+  allEmpty: boolean;
+  borderless?: boolean;
+}) {
+  const Icon = allEmpty ? Inbox : SearchX;
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center gap-2 px-4 py-10 text-center',
+        !borderless && 'rounded-xl border border-border/70 bg-card shadow-elevation-1',
+      )}
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Icon aria-hidden className="h-5 w-5" />
+      </span>
+      <p className="text-sm font-medium">
+        {allEmpty ? 'All caught up' : 'No matching orders'}
+      </p>
+      <p className="max-w-xs text-xs text-muted-foreground">
+        {allEmpty
+          ? 'No orders are awaiting Sample IDs right now — new registrations will appear here.'
+          : 'Nothing matches that filter. Try a different patient name, bill # or MCC.'}
+      </p>
     </div>
   );
 }

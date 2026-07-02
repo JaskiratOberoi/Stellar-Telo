@@ -184,7 +184,7 @@ export function AppShell({
             {!collapsed && (
               <span className="flex items-center gap-1.5">
                 <span className="text-lg font-bold tracking-tight">Telo</span>
-                <VersionBadge />
+                <VersionBadge className="border-white/15 bg-white/10 text-sidebar-muted" />
               </span>
             )}
           </Link>

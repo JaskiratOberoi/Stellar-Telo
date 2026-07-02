@@ -38,7 +38,7 @@ import {
   MobileField,
   type MobileStatus,
 } from '@/components/register/mobile-field';
-import { ChevronDown, CreditCard } from 'lucide-react';
+import { ChevronDown, CreditCard, Info } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -407,8 +407,9 @@ export function RegisterForm({
   if (!pageMounted) {
     return (
       <div className="grid gap-4 text-sm lg:grid-cols-2">
-        <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />
-        <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />
+        <div className="h-96 animate-pulse rounded-xl border border-border/70 bg-muted/60" />
+        <div className="h-96 animate-pulse rounded-xl border border-border/70 bg-muted/60" />
+        <div className="h-48 animate-pulse rounded-xl border border-border/70 bg-muted/60 lg:col-span-2" />
       </div>
     );
   }
@@ -452,7 +453,7 @@ export function RegisterForm({
   }
 
   return (
-    <form action={action} className="grid gap-4 text-sm lg:grid-cols-2">
+    <form action={action} className="space-y-4 text-sm">
       <input type="hidden" name="mcc" value={mcc} />
       <input type="hidden" name="b2b" value={isB2b ? '1' : ''} />
       <input type="hidden" name="itemsJson" value={JSON.stringify(picked)} />
@@ -519,9 +520,10 @@ export function RegisterForm({
         )}
       />
 
+      <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-base">Patient &amp; sample</CardTitle>
+          <CardTitle className="text-base">Patient details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2.5 p-4 pt-0">
           <div className="space-y-0.5">
@@ -536,9 +538,9 @@ export function RegisterForm({
               disabled={units.length === 1}
             />
             {units.length === 1 && (
-              <p className="text-[11px] text-secondary/80">
+              <p className="text-[11px] text-info">
                 Locked to your Client code — you can only place orders for{' '}
-                <span className="font-semibold text-secondary">{units[0].code}</span>.
+                <span className="font-mono font-semibold">{units[0].code}</span>.
               </p>
             )}
           </div>
@@ -731,13 +733,372 @@ export function RegisterForm({
             )}
           </div>
 
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="text-base">Tests &amp; profiles</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2.5 p-4 pt-0">
+          {initialItems.length > 0 && picked.length > 0 && picked.every(p => initialItems.some(i => i.id === p.id && i.kind === p.kind)) && (
+            <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+              <span>
+                <span className="font-semibold">{initialItems.length} test{initialItems.length === 1 ? '' : 's'}</span> pre-loaded from Catalog
+              </span>
+              <button
+                type="button"
+                className="underline opacity-70 hover:opacity-100"
+                onClick={() => {
+                  setPicked([]);
+                  // Remove every pre-loaded item from the Redis cart and
+                  // refresh the nav badge.
+                  Promise.all(
+                    initialItems.map((i) =>
+                      removeFromCart(i.id, i.kind as Picked['kind']),
+                    ),
+                  ).then(() => router.refresh());
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
+          {mcc === '' && (
+            <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+              Select a Client code before registering — rates shown are MRP.
+            </p>
+          )}
+          <Input
+            placeholder="Search tests, profiles or packages…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {(results.length > 0 || customResults.length > 0) && (
+            <div className="max-h-48 overflow-auto rounded-lg border border-foreground/10 bg-card">
+              {/* Telo-only tests first, badged so they're distinguishable from
+                  LIS catalogue tests. */}
+              {customResults.map((r) => {
+                const already = customPicked.some((x) => x.id === r.id);
+                return (
+                  <button
+                    type="button"
+                    key={`custom-${r.id}`}
+                    onClick={() => addCustom(r)}
+                    disabled={already}
+                    className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5 disabled:opacity-50"
+                  >
+                    <span>
+                      <span className="font-mono text-xs">{r.code}</span>{' '}
+                      {r.name}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        ₹{r.mrp}
+                      </span>
+                    </span>
+                    <Badge variant="secondary">External</Badge>
+                  </button>
+                );
+              })}
+              {results.map((r) => (
+                <button
+                  type="button"
+                  key={`${r.kind}-${r.id}`}
+                  onClick={() => add(r)}
+                  className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5"
+                >
+                  <span>
+                    <span className="font-mono text-xs">{r.code}</span>{' '}
+                    {r.name}
+                  </span>
+                  <Badge
+                    variant={
+                      r.kind === 'master'
+                        ? 'default'
+                        : r.kind === 'profile'
+                          ? 'secondary'
+                          : 'outline'
+                    }
+                  >
+                    {r.kind === 'master' ? 'package' : r.kind}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-lg border border-foreground/5 bg-card">
+            <div className="border-b border-foreground/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+              Selected ({picked.length})
+            </div>
+            {isB2b && picked.length > 0 && (
+              // Header only on sm+ — on mobile each row carries its own labels.
+              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
+                <span>Test</span>
+                <span className="text-right">MRP</span>
+                <span className="text-right">Client rate</span>
+                <span className="text-right">Profit&nbsp;%</span>
+                <span className="text-right">&nbsp;</span>
+              </div>
+            )}
+            {picked.length === 0 ? (
+              customPicked.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  No tests added yet.
+                </p>
+              ) : null
+            ) : isB2b ? (
+              picked.map((it) => {
+                const pl = preview.lines.find(
+                  (l) => l.id === it.id && l.kind === it.kind,
+                );
+                const mrp = pl?.mrp ?? null;
+                const cr = pl?.clientRate ?? null;
+                const profitPct =
+                  mrp != null && mrp > 0 && cr != null
+                    ? Math.round(((mrp - cr) / mrp) * 100)
+                    : null;
+                return (
+                  <div
+                    key={`${it.kind}-${it.id}`}
+                    className="border-b border-foreground/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
+                  >
+                    <span className="block min-w-0">
+                      <span className="font-mono text-xs">{it.code}</span>{' '}
+                      {it.name}
+                    </span>
+                    {/* sm:contents lets these four become direct grid cells on
+                        desktop; on mobile they wrap into a labelled row below. */}
+                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs sm:mt-0 sm:contents">
+                      <span className="tabular-nums sm:text-right">
+                        <span className="text-muted-foreground sm:hidden">MRP </span>
+                        {mrp != null ? `₹${mrp}` : '…'}
+                      </span>
+                      <span className="tabular-nums text-muted-foreground sm:text-right">
+                        <span className="sm:hidden">Client </span>
+                        {cr != null ? `₹${cr}` : '…'}
+                      </span>
+                      <span className="tabular-nums text-success sm:text-right">
+                        <span className="sm:hidden">Profit </span>
+                        {profitPct != null ? `${profitPct}%` : '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => remove(it.id, it.kind)}
+                        className="ml-auto text-xs text-destructive hover:underline sm:ml-0 sm:text-right"
+                      >
+                        remove
+                      </button>
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              picked.map((it) => {
+                const pl = preview.lines.find(
+                  (l) => l.id === it.id && l.kind === it.kind,
+                );
+                return (
+                  <div
+                    key={`${it.kind}-${it.id}`}
+                    className="flex items-center justify-between border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
+                  >
+                    <span>
+                      <span className="font-mono text-xs">{it.code}</span>{' '}
+                      {it.name}
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span>{pl?.rate != null ? `₹${pl.rate}` : '…'}</span>
+                      <button
+                        type="button"
+                        onClick={() => remove(it.id, it.kind)}
+                        className="text-xs text-destructive hover:underline"
+                      >
+                        remove
+                      </button>
+                    </span>
+                  </div>
+                );
+              })
+            )}
+            {/* Telo-only custom lines (e.g. Glucose - External). Separate from
+                the LIS picks above; each can carry a quantity. */}
+            {customPicked.map((c) => (
+              <div
+                key={`custom-${c.id}`}
+                className="flex items-center justify-between gap-3 border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
+              >
+                <span className="min-w-0">
+                  <span className="font-mono text-xs">{c.code}</span> {c.name}
+                  <Badge variant="secondary" className="ml-2 align-middle">
+                    External
+                  </Badge>
+                </span>
+                <span className="flex items-center gap-3">
+                  {c.allowQty && (
+                    <span className="flex items-center rounded-md border border-foreground/10">
+                      <button
+                        type="button"
+                        onClick={() => setCustomQty(c.id, c.qty - 1)}
+                        disabled={c.qty <= 1}
+                        className="px-2 py-0.5 text-sm disabled:opacity-40"
+                        aria-label="Decrease quantity"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[1.5rem] text-center text-sm tabular-nums">
+                        {c.qty}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomQty(c.id, c.qty + 1)}
+                        disabled={c.qty >= 99}
+                        className="px-2 py-0.5 text-sm disabled:opacity-40"
+                        aria-label="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </span>
+                  )}
+                  <span className="tabular-nums">₹{c.mrp * c.qty}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeCustom(c.id)}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    remove
+                  </button>
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
+              <span>
+                Total
+                {isB2b
+                  ? ' (patient pays MRP)'
+                  : goldApplied
+                    ? ' (Gold Card · 50% off)'
+                    : ''}
+              </span>
+              <span className="flex items-center gap-3">
+                {goldApplied && preview.total !== effectiveTotal && (
+                  <span className="text-xs font-normal text-muted-foreground line-through tabular-nums">
+                    ₹{preview.total}
+                  </span>
+                )}
+                <span className={`tabular-nums ${goldApplied ? 'text-warning' : ''}`}>
+                  ₹{effectiveTotal}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* B2B margin preview — the client's take at a glance. Patient is
+              billed at MRP; the MRP − client-rate gap is the client's margin. */}
+          {isB2b && preview.lines.length > 0 && (() => {
+            const sumMrp = preview.lines.reduce((s, l) => s + (l.mrp ?? 0), 0);
+            const sumCr = preview.lines.reduce(
+              (s, l) => s + (l.clientRate ?? 0),
+              0,
+            );
+            const agg =
+              sumMrp > 0 ? Math.round(((sumMrp - sumCr) / sumMrp) * 100) : 0;
+            return (
+              <div className="flex items-start gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-xs text-info">
+                <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Client margin ≈{' '}
+                  <span className="font-semibold tabular-nums">{agg}%</span>
+                  <span className="tabular-nums">
+                    {' '}(₹{sumMrp - sumCr})
+                  </span>{' '}
+                  — patient pays MRP ₹<span className="tabular-nums">{sumMrp}</span>,
+                  client rate total ₹<span className="tabular-nums">{sumCr}</span>.
+                </span>
+              </div>
+            );
+          })()}
+
+          {groups.length > 0 && (() => {
+            const trimmed = groups.map(
+              (g) => (groupSids[g.sampleTypeId] ?? '').trim(),
+            );
+            const enteredCount = trimmed.filter((v) => v.length > 0).length;
+            return (
+              <div className="rounded-md border border-foreground/10 bg-foreground/[0.02]">
+                <button
+                  type="button"
+                  onClick={() => setSidsOpen((o) => !o)}
+                  aria-expanded={sidsOpen}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                >
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Sample IDs · {groups.length} barcode
+                    {groups.length === 1 ? '' : 's'} needed
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      {enteredCount > 0
+                        ? `${enteredCount} entered · optional`
+                        : 'Optional'}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        sidsOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </span>
+                </button>
+                <div className={sidsOpen ? 'space-y-2 px-3 pb-3' : 'hidden'}>
+                  <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
+                    Optional — leave blank and the lab technician adds them later
+                    from the New Order worklist.
+                  </p>
+                  {groups.map((g, idx) => {
+                    const me = trimmed[idx];
+                    const clientDup =
+                      !!me && trimmed.filter((v) => v === me).length > 1;
+                    return (
+                      <SidField
+                        key={g.sampleTypeId}
+                        group={g}
+                        value={groupSids[g.sampleTypeId] ?? ''}
+                        onChange={(next) =>
+                          setGroupSids((p) => ({
+                            ...p,
+                            [g.sampleTypeId]: next,
+                          }))
+                        }
+                        status={groupStatus[g.sampleTypeId] ?? 'idle'}
+                        onStatus={(s) =>
+                          setGroupStatus((p) => ({
+                            ...p,
+                            [g.sampleTypeId]: s,
+                          }))
+                        }
+                        clientDup={clientDup}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader className="p-4 pb-2">
+          <CardTitle className="text-base">Payment</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2.5 p-4 pt-0 lg:max-w-2xl">
           {/* Split payments — one line per method the patient pays with (e.g.
               part Cash + part UPI). Each becomes its own receipt. The first
               line auto-prefills to 50% of the total; the sum must meet the 50%
               floor. UPI lines need a transaction reference. */}
-          <div className="space-y-2 border-t pt-3">
+          <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
-              <Label>Payment</Label>
+              <Label>Collect now</Label>
               {effectiveTotal > 0 && (
                 <span
                   className={`text-[11px] tabular-nums ${
@@ -890,10 +1251,10 @@ export function RegisterForm({
                     if (next) setF((s) => ({ ...s, discountAmount: '0' }));
                     setReceiptTouched(false);
                   }}
-                  className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  className={`flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                     goldCard
-                      ? 'border-amber-400/60 bg-amber-500/15 text-amber-200'
-                      : 'border-amber-500/30 bg-amber-500/[0.05] text-amber-300 hover:bg-amber-500/10'
+                      ? 'border-warning/60 bg-warning/15 text-warning'
+                      : 'border-warning/30 bg-warning/[0.06] text-warning hover:bg-warning/10'
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -918,7 +1279,7 @@ export function RegisterForm({
                   }`}
                 >
                   <div className="overflow-hidden">
-                    <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-2.5">
+                    <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/[0.06] p-2.5">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-0.5">
                           <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -953,7 +1314,7 @@ export function RegisterForm({
                       </div>
                       <p
                         className={`text-[10px] ${
-                          goldMissing ? 'text-destructive' : 'text-amber-300/80'
+                          goldMissing ? 'text-destructive' : 'text-warning/80'
                         }`}
                       >
                         {goldMissing
@@ -972,346 +1333,11 @@ export function RegisterForm({
           </div>
         </CardContent>
       </Card>
+      </div>
 
-      <Card>
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-base">Tests &amp; profiles</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2.5 p-4 pt-0">
-          {initialItems.length > 0 && picked.length > 0 && picked.every(p => initialItems.some(i => i.id === p.id && i.kind === p.kind)) && (
-            <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
-              <span>
-                <span className="font-semibold">{initialItems.length} test{initialItems.length === 1 ? '' : 's'}</span> pre-loaded from Catalog
-              </span>
-              <button
-                type="button"
-                className="underline opacity-70 hover:opacity-100"
-                onClick={() => {
-                  setPicked([]);
-                  // Remove every pre-loaded item from the Redis cart and
-                  // refresh the nav badge.
-                  Promise.all(
-                    initialItems.map((i) =>
-                      removeFromCart(i.id, i.kind as Picked['kind']),
-                    ),
-                  ).then(() => router.refresh());
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          )}
-          {mcc === '' && (
-            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-              Select a Client code before registering — rates shown are MRP.
-            </p>
-          )}
-          <Input
-            placeholder="Search tests, profiles or packages…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          {(results.length > 0 || customResults.length > 0) && (
-            <div className="max-h-48 overflow-auto rounded-lg border border-foreground/10 bg-card">
-              {/* Telo-only tests first, badged so they're distinguishable from
-                  LIS catalogue tests. */}
-              {customResults.map((r) => {
-                const already = customPicked.some((x) => x.id === r.id);
-                return (
-                  <button
-                    type="button"
-                    key={`custom-${r.id}`}
-                    onClick={() => addCustom(r)}
-                    disabled={already}
-                    className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5 disabled:opacity-50"
-                  >
-                    <span>
-                      <span className="font-mono text-xs">{r.code}</span>{' '}
-                      {r.name}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        ₹{r.mrp}
-                      </span>
-                    </span>
-                    <Badge variant="secondary">External</Badge>
-                  </button>
-                );
-              })}
-              {results.map((r) => (
-                <button
-                  type="button"
-                  key={`${r.kind}-${r.id}`}
-                  onClick={() => add(r)}
-                  className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5"
-                >
-                  <span>
-                    <span className="font-mono text-xs">{r.code}</span>{' '}
-                    {r.name}
-                  </span>
-                  <Badge
-                    variant={
-                      r.kind === 'master'
-                        ? 'default'
-                        : r.kind === 'profile'
-                          ? 'secondary'
-                          : 'outline'
-                    }
-                  >
-                    {r.kind === 'master' ? 'package' : r.kind}
-                  </Badge>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="rounded-lg border border-foreground/5 bg-card">
-            <div className="border-b border-foreground/5 bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-              Selected ({picked.length})
-            </div>
-            {isB2b && picked.length > 0 && (
-              // Header only on sm+ — on mobile each row carries its own labels.
-              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
-                <span>Test</span>
-                <span className="text-right">MRP</span>
-                <span className="text-right">Client rate</span>
-                <span className="text-right">Profit&nbsp;%</span>
-                <span className="text-right">&nbsp;</span>
-              </div>
-            )}
-            {picked.length === 0 ? (
-              customPicked.length === 0 ? (
-                <p className="px-3 py-4 text-sm text-muted-foreground">
-                  No tests added yet.
-                </p>
-              ) : null
-            ) : isB2b ? (
-              picked.map((it) => {
-                const pl = preview.lines.find(
-                  (l) => l.id === it.id && l.kind === it.kind,
-                );
-                const mrp = pl?.mrp ?? null;
-                const cr = pl?.clientRate ?? null;
-                const profitPct =
-                  mrp != null && mrp > 0 && cr != null
-                    ? Math.round(((mrp - cr) / mrp) * 100)
-                    : null;
-                return (
-                  <div
-                    key={`${it.kind}-${it.id}`}
-                    className="border-b border-foreground/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
-                  >
-                    <span className="block min-w-0">
-                      <span className="font-mono text-xs">{it.code}</span>{' '}
-                      {it.name}
-                    </span>
-                    {/* sm:contents lets these four become direct grid cells on
-                        desktop; on mobile they wrap into a labelled row below. */}
-                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs sm:mt-0 sm:contents">
-                      <span className="tabular-nums sm:text-right">
-                        <span className="text-muted-foreground sm:hidden">MRP </span>
-                        {mrp != null ? `₹${mrp}` : '…'}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground sm:text-right">
-                        <span className="sm:hidden">Client </span>
-                        {cr != null ? `₹${cr}` : '…'}
-                      </span>
-                      <span className="tabular-nums text-emerald-400 sm:text-right">
-                        <span className="sm:hidden">Profit </span>
-                        {profitPct != null ? `${profitPct}%` : '—'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => remove(it.id, it.kind)}
-                        className="ml-auto text-xs text-destructive hover:underline sm:ml-0 sm:text-right"
-                      >
-                        remove
-                      </button>
-                    </span>
-                  </div>
-                );
-              })
-            ) : (
-              picked.map((it) => {
-                const pl = preview.lines.find(
-                  (l) => l.id === it.id && l.kind === it.kind,
-                );
-                return (
-                  <div
-                    key={`${it.kind}-${it.id}`}
-                    className="flex items-center justify-between border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
-                  >
-                    <span>
-                      <span className="font-mono text-xs">{it.code}</span>{' '}
-                      {it.name}
-                    </span>
-                    <span className="flex items-center gap-3">
-                      <span>{pl?.rate != null ? `₹${pl.rate}` : '…'}</span>
-                      <button
-                        type="button"
-                        onClick={() => remove(it.id, it.kind)}
-                        className="text-xs text-destructive hover:underline"
-                      >
-                        remove
-                      </button>
-                    </span>
-                  </div>
-                );
-              })
-            )}
-            {/* Telo-only custom lines (e.g. Glucose - External). Separate from
-                the LIS picks above; each can carry a quantity. */}
-            {customPicked.map((c) => (
-              <div
-                key={`custom-${c.id}`}
-                className="flex items-center justify-between gap-3 border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
-              >
-                <span className="min-w-0">
-                  <span className="font-mono text-xs">{c.code}</span> {c.name}
-                  <Badge variant="secondary" className="ml-2 align-middle">
-                    External
-                  </Badge>
-                </span>
-                <span className="flex items-center gap-3">
-                  {c.allowQty && (
-                    <span className="flex items-center rounded-md border border-foreground/10">
-                      <button
-                        type="button"
-                        onClick={() => setCustomQty(c.id, c.qty - 1)}
-                        disabled={c.qty <= 1}
-                        className="px-2 py-0.5 text-sm disabled:opacity-40"
-                        aria-label="Decrease quantity"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-[1.5rem] text-center text-sm tabular-nums">
-                        {c.qty}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setCustomQty(c.id, c.qty + 1)}
-                        disabled={c.qty >= 99}
-                        className="px-2 py-0.5 text-sm disabled:opacity-40"
-                        aria-label="Increase quantity"
-                      >
-                        +
-                      </button>
-                    </span>
-                  )}
-                  <span className="tabular-nums">₹{c.mrp * c.qty}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeCustom(c.id)}
-                    className="text-xs text-destructive hover:underline"
-                  >
-                    remove
-                  </button>
-                </span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
-              <span>
-                Total
-                {isB2b
-                  ? ' (patient pays MRP)'
-                  : goldApplied
-                    ? ' (Gold Card · 50% off)'
-                    : ''}
-              </span>
-              <span className="flex items-center gap-3">
-                {isB2b &&
-                  (() => {
-                    const sumMrp = preview.lines.reduce((s, l) => s + (l.mrp ?? 0), 0);
-                    const sumCr = preview.lines.reduce(
-                      (s, l) => s + (l.clientRate ?? 0),
-                      0,
-                    );
-                    const agg =
-                      sumMrp > 0 ? Math.round(((sumMrp - sumCr) / sumMrp) * 100) : 0;
-                    return (
-                      <span className="text-xs font-normal text-emerald-400">
-                        {agg}% profit
-                      </span>
-                    );
-                  })()}
-                {goldApplied && preview.total !== effectiveTotal && (
-                  <span className="text-xs font-normal text-muted-foreground line-through">
-                    ₹{preview.total}
-                  </span>
-                )}
-                <span className={goldApplied ? 'text-amber-300' : undefined}>
-                  ₹{effectiveTotal}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          {groups.length > 0 && (() => {
-            const trimmed = groups.map(
-              (g) => (groupSids[g.sampleTypeId] ?? '').trim(),
-            );
-            const enteredCount = trimmed.filter((v) => v.length > 0).length;
-            return (
-              <div className="rounded-md border border-foreground/10 bg-foreground/[0.02]">
-                <button
-                  type="button"
-                  onClick={() => setSidsOpen((o) => !o)}
-                  aria-expanded={sidsOpen}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-                >
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Sample IDs · {groups.length} barcode
-                    {groups.length === 1 ? '' : 's'} needed
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {enteredCount > 0
-                        ? `${enteredCount} entered · optional`
-                        : 'Optional'}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-muted-foreground transition-transform ${
-                        sidsOpen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </span>
-                </button>
-                <div className={sidsOpen ? 'space-y-2 px-3 pb-3' : 'hidden'}>
-                  <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
-                    Optional — leave blank and the lab technician adds them later
-                    from the New Order worklist.
-                  </p>
-                  {groups.map((g, idx) => {
-                    const me = trimmed[idx];
-                    const clientDup =
-                      !!me && trimmed.filter((v) => v === me).length > 1;
-                    return (
-                      <SidField
-                        key={g.sampleTypeId}
-                        group={g}
-                        value={groupSids[g.sampleTypeId] ?? ''}
-                        onChange={(next) =>
-                          setGroupSids((p) => ({
-                            ...p,
-                            [g.sampleTypeId]: next,
-                          }))
-                        }
-                        status={groupStatus[g.sampleTypeId] ?? 'idle'}
-                        onStatus={(s) =>
-                          setGroupStatus((p) => ({
-                            ...p,
-                            [g.sampleTypeId]: s,
-                          }))
-                        }
-                        clientDup={clientDup}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
+      <div className="space-y-3">
           {state.error && (
-            <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="animate-shake rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-reduce:animate-none">
               {state.error}
             </p>
           )}
@@ -1406,14 +1432,18 @@ export function RegisterForm({
             // (no commit); the operator confirms or goes back from the panel.
             if (!reviewing) {
               return (
-                <Button
-                  type="button"
-                  className="w-full"
-                  disabled={blocked}
-                  onClick={() => setReviewing(true)}
-                >
-                  {label}
-                </Button>
+                // Sticky on phones so the primary action never scrolls out of
+                // reach while the operator reviews a long form.
+                <div className="sticky bottom-3 z-10 sm:static">
+                  <Button
+                    type="button"
+                    className="h-11 w-full text-base shadow-elevation-3"
+                    disabled={blocked}
+                    onClick={() => setReviewing(true)}
+                  >
+                    {label}
+                  </Button>
+                </div>
               );
             }
 
@@ -1424,7 +1454,7 @@ export function RegisterForm({
             }));
 
             return (
-              <div className="card-light space-y-3 p-4">
+              <div className="card-light animate-scale-in space-y-3 p-4 motion-reduce:animate-none">
                 <p className="text-xs font-semibold uppercase tracking-wide opacity-50">
                   Review — confirm to register
                 </p>
@@ -1553,7 +1583,7 @@ export function RegisterForm({
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-1"
+                    className="h-11 flex-1"
                     disabled={pending}
                     onClick={() => setReviewing(false)}
                   >
@@ -1561,7 +1591,7 @@ export function RegisterForm({
                   </Button>
                   <Button
                     type="submit"
-                    className="flex-1"
+                    className="h-11 flex-1 text-base"
                     disabled={blocked}
                   >
                     {pending
@@ -1572,8 +1602,7 @@ export function RegisterForm({
               </div>
             );
           })()}
-        </CardContent>
-      </Card>
+      </div>
     </form>
   );
 }

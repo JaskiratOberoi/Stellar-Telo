@@ -9,6 +9,8 @@ import {
   type PaymentModeFilter,
 } from '@/actions/ledger.actions';
 import { AccountsSummaryView } from '@/components/balances/balances-summary';
+import { PageHeader } from '@/components/ui/page-header';
+import { Skeleton } from '@/components/ui/skeleton';
 import { todayIST, firstOfMonthIST } from '@/lib/datetime';
 
 export const dynamic = 'force-dynamic';
@@ -54,20 +56,20 @@ export default async function BalancesPage({
 
   return (
     <div className="space-y-3">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Accounts summary</h1>
-        <p className="text-sm text-muted-foreground">
-          Telo-originated bills only, rolled up per Client code. Click a row to
-          see the bills driving its totals.
-        </p>
-      </div>
+      <PageHeader
+        title="Accounts summary"
+        description="Telo-originated bills only, rolled up per Client code. Click a row to see the bills driving its totals."
+        className="mb-0"
+      />
       {/* Suspense so the heading + breadcrumb paint immediately while the
        *  scope-wide summary (the slow Noble query) streams in. The fallback
        *  reserves table height so the layout doesn't jump on stream-in.   */}
       <Suspense
         fallback={
-          <div className="rounded-lg border border-foreground/5 bg-card/50 p-6 text-sm text-muted-foreground">
-            Loading accounts…
+          <div className="space-y-3 rounded-xl border border-border/70 bg-card p-6 shadow-elevation-1">
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="h-40 w-full" />
+            <p className="text-sm text-muted-foreground">Loading accounts…</p>
           </div>
         }
       >

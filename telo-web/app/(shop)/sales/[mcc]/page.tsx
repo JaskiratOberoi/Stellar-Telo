@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft, FlaskConical, TrendingUp } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
@@ -72,23 +73,27 @@ export default async function SalesMccPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+        <div className="min-w-0 animate-fade-in-up motion-reduce:animate-none">
+          {showBackLink && (
+            <Link
+              href="/sales"
+              className="mb-1.5 inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              All clients
+            </Link>
+          )}
+          <h1 className="text-2xl font-bold tracking-tight">
             {mccMeta?.name ?? `Client ${mccId}`}{' '}
-            <span className="font-mono text-base text-muted-foreground">
+            <span className="font-mono text-base font-medium text-muted-foreground">
               {mccMeta?.code ?? mccId}
             </span>
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             Sales · {fmtIST(from, 'date')} → {fmtIST(to, 'date')}
           </p>
         </div>
-        {showBackLink && (
-          <Link href="/sales" className="text-sm underline">
-            ← All clients
-          </Link>
-        )}
       </div>
 
       <DateRangeFilters
@@ -102,17 +107,23 @@ export default async function SalesMccPage({
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Sample(s)"
-          value={totals.sampleCount.toLocaleString('en-IN')}
-          hint="Distinct samples in period"
-        />
-        <StatCard
-          label="Sale"
-          value={inr(totals.saleAmount)}
-          hint="Total billable test charges"
-          variant="positive"
-        />
+        <div className="animate-fade-in-up motion-reduce:animate-none">
+          <StatCard
+            label="Sample(s)"
+            value={totals.sampleCount.toLocaleString('en-IN')}
+            hint="Distinct samples in period"
+            icon={<FlaskConical />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:70ms]">
+          <StatCard
+            label="Sale"
+            value={inr(totals.saleAmount)}
+            hint="Total billable test charges"
+            variant="positive"
+            icon={<TrendingUp />}
+          />
+        </div>
       </div>
 
       <SalesTable rows={sales.rows} />
@@ -128,24 +139,24 @@ export default async function SalesMccPage({
             {page > 1 ? (
               <Link
                 href={`/sales/${mccId}?${qs}&page=${page - 1}`}
-                className="rounded-md border border-foreground/10 px-3 py-1 hover:bg-foreground/5"
+                className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
                 ← Prev
               </Link>
             ) : (
-              <span className="rounded-md border border-foreground/5 px-3 py-1 text-muted-foreground opacity-50">
+              <span className="inline-flex items-center rounded-md border border-border/50 px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50">
                 ← Prev
               </span>
             )}
             {sales.hasMore ? (
               <Link
                 href={`/sales/${mccId}?${qs}&page=${page + 1}`}
-                className="rounded-md border border-foreground/10 px-3 py-1 hover:bg-foreground/5"
+                className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
                 Next →
               </Link>
             ) : (
-              <span className="rounded-md border border-foreground/5 px-3 py-1 text-muted-foreground opacity-50">
+              <span className="inline-flex items-center rounded-md border border-border/50 px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50">
                 Next →
               </span>
             )}

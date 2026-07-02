@@ -1,10 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  BadgeCheck,
+  ClipboardList,
+  FlaskConical,
+  Hourglass,
+  Printer,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import { getDashboardStats } from '@/actions/stats.actions';
 import type { DayStats } from '@/db/read/stats';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { StatCard } from '@/components/ui/stat-card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { fmtIST, todayIST, addDaysIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
@@ -21,10 +32,16 @@ const todayISO = () => todayIST();
 const shiftISO = (iso: string, days: number) => addDaysIST(iso, days);
 
 const STATUS_COLORS: Record<string, string> = {
-  Authorized: 'bg-secondary/15 text-secondary',
-  'In progress': 'bg-primary/15 text-primary',
-  Tested: 'bg-foreground/10 text-foreground',
-  Printed: 'bg-foreground/10 text-foreground',
+  Authorized: 'bg-success/15 text-success',
+  'In progress': 'bg-info/15 text-info',
+  Tested: 'bg-muted text-foreground',
+  Printed: 'bg-muted text-foreground',
+};
+
+const STATUS_ICONS: Record<string, LucideIcon> = {
+  Authorized: BadgeCheck,
+  Printed: Printer,
+  Tested: FlaskConical,
 };
 
 export function DashboardLive({ initial }: { initial: DayStats }) {
@@ -89,7 +106,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
   const maxRev = Math.max(1, ...s.trend.map((t) => t.revenue));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -137,7 +154,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
               className={cn(
                 'inline-block h-2 w-2 rounded-full',
                 isToday && live
-                  ? 'animate-pulse bg-secondary'
+                  ? 'animate-pulse bg-success motion-reduce:animate-none'
                   : 'bg-muted-foreground/40',
               )}
             />
@@ -166,45 +183,67 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
 
       {/* KPI tiles */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          variant="accent"
-          label="Revenue"
-          value={inr(s.revenue)}
-          hint={`${s.bills} bill${s.bills === 1 ? '' : 's'}`}
-        />
-        <KpiCard
-          variant="light"
-          label="Collected"
-          value={inr(s.collected)}
-        />
-        <KpiCard
-          variant="light"
-          label="Outstanding"
-          value={inr(s.outstanding)}
-          hint={s.discount ? `${inr(s.discount)} discount` : undefined}
-        />
-        <KpiCard
-          variant="light"
-          label="Patients billed"
-          value={s.patients.toLocaleString('en-IN')}
-        />
+        <div className="animate-card-in motion-reduce:animate-none">
+          <KpiCard
+            variant="accent"
+            label="Revenue"
+            value={inr(s.revenue)}
+            hint={`${s.bills} bill${s.bills === 1 ? '' : 's'}`}
+            className="h-full"
+          />
+        </div>
+        <div className="animate-card-in motion-reduce:animate-none [animation-delay:70ms]">
+          <StatCard
+            label="Collected"
+            value={inr(s.collected)}
+            variant="positive"
+            icon={<Wallet />}
+          />
+        </div>
+        <div className="animate-card-in motion-reduce:animate-none [animation-delay:140ms]">
+          <StatCard
+            label="Outstanding"
+            value={inr(s.outstanding)}
+            variant={s.outstanding > 0 ? 'warning' : 'muted'}
+            icon={<Hourglass />}
+            hint={s.discount ? `${inr(s.discount)} discount` : undefined}
+          />
+        </div>
+        <div className="animate-card-in motion-reduce:animate-none [animation-delay:210ms]">
+          <StatCard
+            label="Patients billed"
+            value={s.patients.toLocaleString('en-IN')}
+            icon={<Users />}
+          />
+        </div>
       </div>
 
       {/* Secondary stats row */}
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <KpiCard
-          label="Registrations"
-          value={s.registrations.toLocaleString('en-IN')}
-          hint="samples registered"
-        />
-        {['Authorized', 'Printed', 'Tested'].map((st) => {
+        <div className="animate-card-in motion-reduce:animate-none [animation-delay:240ms]">
+          <StatCard
+            label="Registrations"
+            value={s.registrations.toLocaleString('en-IN')}
+            hint="samples registered"
+            icon={<ClipboardList />}
+          />
+        </div>
+        {['Authorized', 'Printed', 'Tested'].map((st, i) => {
           const row = s.byStatus.find((b) => b.status === st);
+          const Icon = STATUS_ICONS[st] ?? FlaskConical;
           return (
-            <KpiCard
+            <div
               key={st}
-              label={st}
-              value={(row?.count ?? 0).toLocaleString('en-IN')}
-            />
+              className="animate-card-in motion-reduce:animate-none"
+              style={{ animationDelay: `${300 + i * 60}ms` }}
+            >
+              <StatCard
+                label={st}
+                value={(row?.count ?? 0).toLocaleString('en-IN')}
+                variant="muted"
+                icon={<Icon />}
+              />
+            </div>
           );
         })}
       </div>
@@ -212,29 +251,38 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
       {/* Charts row */}
       <div className="grid gap-3 lg:grid-cols-2">
         {/* Revenue trend bar chart */}
-        <div className="rounded-xl border border-foreground/5 bg-card p-4">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="animate-card-in rounded-xl border border-border/70 bg-card p-5 shadow-elevation-1 motion-reduce:animate-none [animation-delay:360ms]">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Revenue · 7 days ending {date}
           </p>
-          <div className="flex h-32 items-end gap-2">
+          <div className="flex h-36 items-end gap-2">
             {s.trend.map((t) => (
               <div
                 key={t.date}
-                className="flex flex-1 flex-col items-center gap-1"
+                className="flex flex-1 flex-col items-center gap-1.5"
                 title={`${t.date}: ${inr(t.revenue)}`}
               >
                 <div
                   className={cn(
-                    'w-full rounded-t transition-all duration-300',
-                    t.date === date
-                      ? 'bg-primary shadow-lg shadow-primary/30'
-                      : 'bg-primary/30',
+                    'w-full rounded-t-md transition-all duration-300',
+                    t.date === date && 'shadow-lg shadow-primary/30',
                   )}
                   style={{
                     height: `${Math.max(2, (t.revenue / maxRev) * 100)}%`,
+                    background:
+                      t.date === date
+                        ? 'hsl(var(--chart-1))'
+                        : 'hsl(var(--chart-1) / 0.3)',
                   }}
                 />
-                <span className="text-[10px] text-muted-foreground">
+                <span
+                  className={cn(
+                    'text-[10px] tabular-nums',
+                    t.date === date
+                      ? 'font-semibold text-foreground'
+                      : 'text-muted-foreground',
+                  )}
+                >
                   {t.date.slice(5)}
                 </span>
               </div>
@@ -243,8 +291,8 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         </div>
 
         {/* Samples by status */}
-        <div className="rounded-xl border border-foreground/5 bg-card p-4">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="animate-card-in rounded-xl border border-border/70 bg-card p-5 shadow-elevation-1 motion-reduce:animate-none [animation-delay:420ms]">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Samples by status
           </p>
           {s.byStatus.length === 0 ? (
@@ -256,11 +304,11 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
                   key={b.status}
                   className={cn(
                     'rounded-full px-3 py-1 text-sm font-medium transition-colors duration-200',
-                    STATUS_COLORS[b.status] ?? 'bg-foreground/10 text-foreground',
+                    STATUS_COLORS[b.status] ?? 'bg-muted text-foreground',
                   )}
                 >
                   {b.status}:{' '}
-                  <span className="font-bold">
+                  <span className="font-bold tabular-nums">
                     {b.count.toLocaleString('en-IN')}
                   </span>
                 </span>

@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
@@ -21,6 +20,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -131,12 +132,22 @@ async function ReceiptBody({
 
       {/* ── Screen view: interactive web layout ──────────────────── */}
       <div className="space-y-4 print:hidden">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight">
-              Receipt #{order.billNumber ?? order.billId}
-            </h1>
+      <PageHeader
+        className="mb-0"
+        backHref={back ?? '/orders'}
+        backLabel={back?.startsWith('/balances') ? 'Accounts' : 'All orders'}
+        title={
+          <>
+            Receipt{' '}
+            <span className="font-mono">#{order.billNumber ?? order.billId}</span>
+          </>
+        }
+        description={
+          <>
+            {order.patientName ?? 'Patient'} · {dateLabel} ·{' '}
+            {mccName ?? (
+              <>MCC <span className="font-mono">{order.mccCode ?? '—'}</span></>
+            )}
             {order.registeredByUsername && (
               <span
                 title={
@@ -144,7 +155,7 @@ async function ReceiptBody({
                     ? `Registered by ${order.preparedByUser} (${order.registeredByUsername})`
                     : `Registered by ${order.registeredByUsername}`
                 }
-                className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-foreground/5 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                className="ml-2 inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 align-middle text-[11px] font-medium text-muted-foreground"
               >
                 <span className="text-[9px] uppercase tracking-wide text-muted-foreground/70">
                   Registered by
@@ -154,40 +165,30 @@ async function ReceiptBody({
                 </span>
               </span>
             )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {order.patientName ?? 'Patient'} · {dateLabel} ·{' '}
-            {mccName ?? (
-              <>MCC <span className="font-mono">{order.mccCode ?? '—'}</span></>
+          </>
+        }
+        actions={
+          <>
+            {isSuperAdmin && activeLineCount > 0 && (
+              <CancelBookingButton
+                billId={order.billId}
+                activeCount={activeLineCount}
+                amountPaid={order.amountPaid}
+              />
             )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {isSuperAdmin && activeLineCount > 0 && (
-            <CancelBookingButton
-              billId={order.billId}
-              activeCount={activeLineCount}
-              amountPaid={order.amountPaid}
-            />
-          )}
-          <PrintLabButton
-            billId={order.billId}
-            billNumber={order.billNumber ?? order.billId}
-          />
-          {canViewBill && (
-            <PrintBillButton
+            <PrintLabButton
               billId={order.billId}
               billNumber={order.billNumber ?? order.billId}
             />
-          )}
-          <Link
-            href={back ?? '/orders'}
-            className="text-sm underline"
-          >
-            {back?.startsWith('/balances') ? '← Accounts' : '← All orders'}
-          </Link>
-        </div>
-      </div>
+            {canViewBill && (
+              <PrintBillButton
+                billId={order.billId}
+                billNumber={order.billNumber ?? order.billId}
+              />
+            )}
+          </>
+        }
+      />
 
       {/* Top row: Patient (narrow) + Samples (wide) */}
       <div className="grid gap-4 lg:grid-cols-12">
@@ -265,19 +266,21 @@ async function ReceiptBody({
                 {order.samples.map((s) => (
                   <div
                     key={s.vailid}
-                    className="flex flex-col gap-1 rounded-md border p-2.5 text-sm"
+                    className="flex flex-col gap-1 rounded-lg border border-border/70 bg-muted/40 p-2.5 text-sm transition-colors hover:bg-muted/70"
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="truncate font-medium" title={s.sampleTypeName}>
                         {s.sampleTypeName}
                       </p>
                       {s.status && (
-                        <span className="shrink-0 rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                           {s.status}
                         </span>
                       )}
                     </div>
-                    <p className="font-mono text-sm">{s.vailid}</p>
+                    <p className="font-mono text-base font-semibold tracking-wide">
+                      {s.vailid}
+                    </p>
                     <p
                       className="truncate font-mono text-xs text-muted-foreground"
                       title={s.testCodes ?? ''}
@@ -335,14 +338,14 @@ async function ReceiptBody({
                           {l.testName}
                         </span>
                         {l.cancelled && (
-                          <span className="ml-1.5 rounded bg-foreground/10 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                          <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
                             cancelled
                           </span>
                         )}
                       </TableCell>
                       {canViewBill && (
                         <TableCell
-                          className={`text-right ${isCredit ? 'text-destructive' : ''}`}
+                          className={`text-right tabular-nums ${isCredit ? 'text-destructive' : ''}`}
                         >
                           {isCredit ? '− ' : ''}₹{Math.abs(l.amount)}
                         </TableCell>
@@ -413,8 +416,28 @@ async function ReceiptBody({
                 </div>
               )}
 
-              <div className="border-t border-zinc-200 pt-2">
-                <Row label="Balance" value={`₹${order.balance}`} bold />
+              {/* Big balance figure — the number an operator needs first.
+                  Colored by state: due = destructive, settled = success. */}
+              <div className="border-t border-zinc-200 pt-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Balance
+                  </span>
+                  {order.balance > 0 ? (
+                    <Badge variant="destructive">Due</Badge>
+                  ) : order.balance < 0 ? (
+                    <Badge variant="destructive">Refund due</Badge>
+                  ) : (
+                    <Badge variant="success">Settled</Badge>
+                  )}
+                </div>
+                <p
+                  className={`mt-0.5 text-3xl font-bold tracking-tight tabular-nums ${
+                    order.balance !== 0 ? 'text-destructive' : 'text-success'
+                  }`}
+                >
+                  ₹{order.balance.toLocaleString('en-IN')}
+                </p>
               </div>
               {canPay && (
                 <div className="border-t border-zinc-200 pt-3">
@@ -455,7 +478,7 @@ function Row({
       className={`flex justify-between ${bold ? 'font-semibold text-zinc-900' : 'text-zinc-500'}`}
     >
       <span>{label}</span>
-      <span className={bold ? '' : 'text-zinc-900'}>{value}</span>
+      <span className={`tabular-nums ${bold ? '' : 'text-zinc-900'}`}>{value}</span>
     </div>
   );
 }
@@ -515,7 +538,7 @@ function ReceiptRow({
         />
       )}
       <span
-        className={`${
+        className={`tabular-nums ${
           isRefund ? 'font-medium text-red-700' : 'font-medium text-zinc-900'
         } ${isVoided ? 'line-through opacity-60' : ''}`}
       >

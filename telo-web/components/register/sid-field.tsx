@@ -78,12 +78,20 @@ export function SidField({
     !locked && (status === 'taken' || status === 'error' || clientDup || formatError);
   const ok = locked || (status === 'available' && !clientDup && !formatError);
   return (
-    <div className="space-y-1 rounded-lg border border-foreground/5 bg-card p-3">
+    <div
+      className={`space-y-1.5 rounded-lg border bg-card p-3 shadow-elevation-1 transition-colors ${
+        bad
+          ? 'border-destructive/40'
+          : ok
+            ? 'border-success/30'
+            : 'border-border/70'
+      }`}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <Label className="text-sm font-medium">
           {group.sampleTypeName}
           {group.sampleTypeId === -1 && (
-            <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-400">
+            <span className="ml-2 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
               unspecified
             </span>
           )}
@@ -93,7 +101,7 @@ export function SidField({
             </span>
           )}
           {locked && (
-            <span className="ml-2 rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-secondary">
+            <span className="ml-2 rounded bg-success/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-success">
               accessioned
             </span>
           )}
@@ -129,17 +137,17 @@ export function SidField({
         maxLength={50}
         disabled={locked}
         readOnly={locked}
-        className={
+        className={`h-11 font-mono text-base tracking-wide ${
           bad
-            ? 'border-destructive/60 focus-visible:ring-destructive/60'
+            ? 'border-destructive/60 focus-visible:border-destructive focus-visible:ring-destructive/20'
             : ok
-              ? 'border-secondary/60 focus-visible:ring-secondary/60'
-              : undefined
-        }
+              ? 'border-success/60 focus-visible:border-success focus-visible:ring-success/20'
+              : ''
+        }`}
         aria-invalid={bad}
       />
       {!locked && formatError && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Sample IDs must contain digits only — no letters or symbols.
         </p>
       )}
@@ -147,20 +155,22 @@ export function SidField({
         <p className="text-xs text-muted-foreground">Checking…</p>
       )}
       {!locked && !formatError && status === 'available' && !clientDup && (
-        <p className="text-xs text-secondary">✓ Available</p>
+        <p className="animate-fade-in text-xs font-medium text-success motion-reduce:animate-none">
+          ✓ Available
+        </p>
       )}
       {!locked && !formatError && status === 'taken' && !clientDup && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ This Sample ID already exists in Noble — use a different one.
         </p>
       )}
       {!locked && !formatError && status === 'error' && !clientDup && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Couldn&apos;t verify this Sample ID — try again before saving.
         </p>
       )}
       {!locked && !formatError && clientDup && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ This Sample ID is also entered in another field above.
         </p>
       )}

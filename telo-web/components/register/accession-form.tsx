@@ -117,12 +117,12 @@ export function AccessionForm({
       </div>
 
       {state.error && (
-        <p className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="animate-shake rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-reduce:animate-none">
           {state.error}
         </p>
       )}
 
-      <Button type="submit" className="w-full" disabled={blocked}>
+      <Button type="submit" className="h-11 w-full text-base" disabled={blocked}>
         {label}
       </Button>
     </form>

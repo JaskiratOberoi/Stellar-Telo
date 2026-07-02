@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft, Banknote, FlaskConical, TrendingUp, Wallet } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
@@ -86,26 +87,30 @@ export default async function ClientAccountPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+        <div className="min-w-0 animate-fade-in-up motion-reduce:animate-none">
+          {showBackLink && (
+            <Link
+              href="/client-accounts"
+              className="mb-1.5 inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              All clients
+            </Link>
+          )}
+          <h1 className="text-2xl font-bold tracking-tight">
             {mccMeta?.name ?? `Client ${mccId}`}{' '}
-            <span className="font-mono text-base text-muted-foreground">
+            <span className="font-mono text-base font-medium text-muted-foreground">
               {mccMeta?.code ?? mccId}
             </span>
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-muted-foreground">
             Franchise wallet · {detail.length} transaction
             {detail.length === 1 ? '' : 's'}
             {type ? ` (${type})` : ''} · {fmtIST(from, 'date')} →{' '}
             {fmtIST(to, 'date')}
           </p>
         </div>
-        {showBackLink && (
-          <Link href="/client-accounts" className="text-sm underline">
-            ← All clients
-          </Link>
-        )}
       </div>
 
       {canManagePayments && <RecordClientPayment mccId={mccId} today={td} />}
@@ -123,44 +128,56 @@ export default async function ClientAccountPage({
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Current Balance"
-          value={inr(summary.currentBalance)}
-          hint={
-            summary.currentBalance < 0
-              ? 'Outstanding (owed to lab)'
-              : 'In credit'
-          }
-          variant={summary.currentBalance < 0 ? 'warning' : 'positive'}
-        />
-        <StatCard
-          label="Total Deposited"
-          value={inr(summary.totalDeposited)}
-          hint="All-time payments"
-        />
-        <StatCard
-          label="Total Test Charges"
-          value={inr(summary.totalTestCharges)}
-          hint="All-time billed tests"
-        />
-        <StatCard
-          label="In selected period"
-          value={inr(summary.periodPayments)}
-          hint="Payments received"
-          variant="positive"
-          breakdown={[
-            { label: 'Test charges', value: inr(summary.periodTestCharges) },
-            ...(onlineCount > 0
-              ? [
-                  {
-                    label: 'Online payments',
-                    value: String(onlineCount),
-                    sub: 'auto-posted',
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <div className="animate-fade-in-up motion-reduce:animate-none">
+          <StatCard
+            label="Current Balance"
+            value={inr(summary.currentBalance)}
+            hint={
+              summary.currentBalance < 0
+                ? 'Outstanding (owed to lab)'
+                : 'In credit'
+            }
+            variant={summary.currentBalance < 0 ? 'warning' : 'positive'}
+            icon={<Wallet />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:70ms]">
+          <StatCard
+            label="Total Deposited"
+            value={inr(summary.totalDeposited)}
+            hint="All-time payments"
+            icon={<Banknote />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:140ms]">
+          <StatCard
+            label="Total Test Charges"
+            value={inr(summary.totalTestCharges)}
+            hint="All-time billed tests"
+            icon={<FlaskConical />}
+          />
+        </div>
+        <div className="animate-fade-in-up motion-reduce:animate-none [animation-delay:210ms]">
+          <StatCard
+            label="In selected period"
+            value={inr(summary.periodPayments)}
+            hint="Payments received"
+            variant="positive"
+            icon={<TrendingUp />}
+            breakdown={[
+              { label: 'Test charges', value: inr(summary.periodTestCharges) },
+              ...(onlineCount > 0
+                ? [
+                    {
+                      label: 'Online payments',
+                      value: String(onlineCount),
+                      sub: 'auto-posted',
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
       </div>
 
       <AccountDetailTable rows={detail} />

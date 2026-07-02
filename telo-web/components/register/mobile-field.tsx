@@ -88,22 +88,24 @@ export function MobileField({
         <p className="text-xs text-muted-foreground">Checking usage…</p>
       )}
       {status === 'ok' && count === 0 && (
-        <p className="text-xs text-secondary">✓ Not used before</p>
+        <p className="animate-fade-in text-xs font-medium text-success motion-reduce:animate-none">
+          ✓ Not used before
+        </p>
       )}
       {status === 'ok' && count > 0 && (
-        <p className="text-xs text-amber-400">
+        <p className="text-xs text-warning">
           Used by {count} patient{count === 1 ? '' : 's'} before — {remaining}{' '}
           more allowed.
         </p>
       )}
       {status === 'blocked' && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Already used by {count} patients — the limit is{' '}
           {MAX_PATIENTS_PER_MOBILE} patients per mobile number.
         </p>
       )}
       {status === 'error' && (
-        <p className="text-xs text-destructive">
+        <p className="animate-shake text-xs text-destructive motion-reduce:animate-none">
           ✗ Couldn&apos;t verify this number — try again before saving.
         </p>
       )}

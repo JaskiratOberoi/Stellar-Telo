@@ -61,7 +61,7 @@ export function VoidReceiptButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+        className="rounded px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400 transition-colors hover:bg-destructive/10 hover:text-destructive"
         title="Void this transaction (super admin)"
       >
         Void
@@ -69,16 +69,16 @@ export function VoidReceiptButton({
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:p-6"
+          className="fixed inset-0 z-50 flex animate-fade-in items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm motion-reduce:animate-none sm:p-6"
           onClick={() => setOpen(false)}
           role="dialog"
           aria-modal="true"
         >
           <div
-            className="mt-10 w-full max-w-sm rounded-lg border border-foreground/10 bg-card text-foreground shadow-2xl"
+            className="mt-10 w-full max-w-sm animate-scale-in rounded-xl border border-border bg-card text-foreground shadow-elevation-4 motion-reduce:animate-none"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-3 border-b border-foreground/10 p-3">
+            <div className="flex items-center justify-between gap-3 border-b border-border/70 p-3">
               <p className="text-sm font-medium">Void transaction</p>
               <Button variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close">
                 <X className="h-4 w-4" />

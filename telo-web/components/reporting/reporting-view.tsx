@@ -7,6 +7,7 @@ import {
   searchReportTests,
   type ReportSearchRow,
 } from '@/actions/reporting.actions';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -41,7 +42,7 @@ const MAX_BULK = 25;
 
 /** Shared <select> styling (matches the Input control). */
 const SELECT_CLASS =
-  'flex h-9 w-full rounded-md border border-foreground/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
+  'flex h-9 w-full rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function ReportingView({
   businessUnits,
@@ -188,115 +189,126 @@ export function ReportingView({
 
   return (
     <div className="space-y-5">
-      {/* ── Filters ─────────────────────────────────────────────────────── */}
+      {/* ── Search + filters toolbar ────────────────────────────────────── */}
       <form
-        className="grid grid-cols-1 gap-3 rounded-lg border border-foreground/10 bg-card p-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="space-y-4 rounded-xl border border-border/70 bg-card p-4 shadow-elevation-1 animate-fade-in motion-reduce:animate-none sm:p-5"
         onSubmit={(e) => {
           e.preventDefault();
           runSearch();
         }}
       >
-        {/* From + To share one cell (each half-width). */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Field label="From">
-            <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-          </Field>
-          <Field label="To">
-            <Input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
-          </Field>
-        </div>
-        <Field label="Status">
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="">All statuses</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Test filter">
-          <RemoteCombobox
-            value={testId}
-            onChange={(id) => setTestId(id)}
-            search={async (query) => {
-              const items = await searchReportTests(query);
-              setTestCache((prev) => {
-                const m = new Map(prev);
-                for (const it of items) m.set(it.id, { code: it.code, name: it.name });
-                return m;
-              });
-              return items;
-            }}
-            getSelectedLabel={(id) => {
-              const it = testCache.get(id);
-              return it ? `${it.name ?? it.code} (${it.code})` : undefined;
-            }}
-            placeholder="All tests — type to filter…"
-          />
-        </Field>
-        <Field label="Search">
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Patient, SID, PID, test name/code…"
-          />
-        </Field>
-        <Field label="Client code">
-          <Input
-            value={clientCode}
-            onChange={(e) => setClientCode(e.target.value)}
-            placeholder="e.g. HLD0512"
-            disabled={locked}
-            readOnly={locked}
-            title={locked ? 'Locked to your client account' : undefined}
-            className={locked ? 'cursor-not-allowed opacity-70' : undefined}
-          />
-        </Field>
-        <Field label="Business unit">
-          <select
-            value={businessUnit}
-            onChange={(e) => setBusinessUnit(e.target.value)}
-            className={`${SELECT_CLASS}${locked ? ' cursor-not-allowed opacity-70' : ''}`}
-            disabled={locked}
-            title={locked ? 'Showing all your business units' : undefined}
-          >
-            <option value="">All business units</option>
-            {businessUnits.map((bu) => (
-              <option key={bu} value={bu}>
-                {bu}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="flex items-end sm:col-span-2 lg:col-span-4">
-          <Button type="submit" disabled={pending} className="gap-1.5">
-            <Search className="h-4 w-4" />
+        {/* Prominent universal search. */}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search patient, SID, PID, test name/code…"
+              aria-label="Search reports"
+              className="h-10 pl-9"
+            />
+          </div>
+          <Button type="submit" disabled={pending} className="h-10 gap-1.5 sm:shrink-0">
+            <Search className="h-4 w-4" aria-hidden />
             {pending ? 'Searching…' : 'Search'}
           </Button>
+        </div>
+
+        {/* Filter row — wraps on mobile. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* From + To share one cell (each half-width). */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Field label="From">
+              <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+            </Field>
+            <Field label="To">
+              <Input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Status">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">All statuses</option>
+              {statuses.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Test filter">
+            <RemoteCombobox
+              value={testId}
+              onChange={(id) => setTestId(id)}
+              search={async (query) => {
+                const items = await searchReportTests(query);
+                setTestCache((prev) => {
+                  const m = new Map(prev);
+                  for (const it of items) m.set(it.id, { code: it.code, name: it.name });
+                  return m;
+                });
+                return items;
+              }}
+              getSelectedLabel={(id) => {
+                const it = testCache.get(id);
+                return it ? `${it.name ?? it.code} (${it.code})` : undefined;
+              }}
+              placeholder="All tests — type to filter…"
+            />
+          </Field>
+          <Field label="Client code">
+            <Input
+              value={clientCode}
+              onChange={(e) => setClientCode(e.target.value)}
+              placeholder="e.g. HLD0512"
+              disabled={locked}
+              readOnly={locked}
+              title={locked ? 'Locked to your client account' : undefined}
+              className={locked ? 'cursor-not-allowed opacity-70' : 'font-mono'}
+            />
+          </Field>
+          <Field label="Business unit">
+            <select
+              value={businessUnit}
+              onChange={(e) => setBusinessUnit(e.target.value)}
+              className={`${SELECT_CLASS}${locked ? ' cursor-not-allowed opacity-70' : ''}`}
+              disabled={locked}
+              title={locked ? 'Showing all your business units' : undefined}
+            >
+              <option value="">All business units</option>
+              {businessUnits.map((bu) => (
+                <option key={bu} value={bu}>
+                  {bu}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
       </form>
 
       {error && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
 
       {/* ── Results ─────────────────────────────────────────────────────── */}
       {pending && rows == null && (
-        <p className="rounded-lg border border-foreground/10 p-6 text-center text-sm text-muted-foreground">
+        <p className="animate-pulse rounded-xl border border-border/70 bg-card p-6 text-center text-sm text-muted-foreground motion-reduce:animate-none">
           Loading samples…
         </p>
       )}
       {rows != null && (
-        <div className="rounded-lg border border-foreground/10">
+        <div className="animate-fade-in motion-reduce:animate-none">
           {rows.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-xl border border-border/70 bg-card p-6 text-center text-sm text-muted-foreground">
               No results found for these filters.
             </p>
           ) : (
@@ -377,7 +389,24 @@ export function ReportingView({
                         )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-xs">{fmtListec(r.reportedAt)}</TableCell>
-                      <TableCell className="text-xs">{r.status ?? '—'}</TableCell>
+                      <TableCell>
+                        {r.status ? (
+                          <Badge
+                            variant={
+                              r.locked
+                                ? 'destructive'
+                                : r.ready
+                                  ? 'success'
+                                  : 'warning'
+                            }
+                            className="whitespace-nowrap"
+                          >
+                            {r.status}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         {r.locked ? (
                           <Button
@@ -424,18 +453,18 @@ export function ReportingView({
       {/* ── Balance-lock pop-up ─────────────────────────────────────────── */}
       {lockedNotice && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-fade-in motion-reduce:animate-none"
           role="dialog"
           aria-modal="true"
           onClick={() => setLockedNotice(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl"
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-elevation-4 animate-scale-in motion-reduce:animate-none"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-                <Lock className="h-4 w-4" />
+            <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                <Lock className="h-4 w-4" aria-hidden />
               </span>
               <div className="min-w-0">
                 <h2 className="text-base font-semibold">
@@ -445,7 +474,7 @@ export function ReportingView({
                   This report can’t be viewed or printed in Telo because{' '}
                   {lockedNotice.patientName ?? 'this patient'} has an outstanding
                   balance of{' '}
-                  <span className="font-semibold text-foreground">
+                  <span className="font-semibold tabular-nums text-foreground">
                     ₹{lockedNotice.dueAmount.toLocaleString('en-IN')}
                   </span>{' '}
                   on their{' '}
@@ -472,7 +501,7 @@ export function ReportingView({
 
       {/* ── Bulk selection bar ──────────────────────────────────────────── */}
       {selectedCount > 0 && (
-        <div className="sticky bottom-0 z-40 -mx-4 mt-2 border-t border-foreground/10 bg-card/80 px-4 py-3 backdrop-blur-sm">
+        <div className="glass sticky bottom-0 z-40 -mx-4 mt-2 border-t border-border/70 px-4 py-3 shadow-elevation-3 animate-slide-up motion-reduce:animate-none">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 text-sm">
               <span className="font-medium">
@@ -481,9 +510,9 @@ export function ReportingView({
               <button
                 type="button"
                 onClick={() => setSelectedSids(new Set())}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
-                <X className="h-3 w-3" /> Clear
+                <X className="h-3 w-3" aria-hidden /> Clear
               </button>
               {bulkError && (
                 <span className="text-xs text-destructive">{bulkError}</span>

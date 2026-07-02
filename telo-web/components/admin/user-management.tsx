@@ -16,6 +16,8 @@ import {
   type AdminFormState,
   type AdminOverview,
 } from '@/actions/admin.actions';
+import { Plus, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,7 +37,7 @@ import type { ScopedMcc } from '@/db/read/mccUnits';
 
 const initial: AdminFormState = { error: null, ok: false };
 const sel =
-  'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-9 w-full rounded-md border border-border bg-input px-3 text-sm text-foreground shadow-elevation-1 transition-[border-color,box-shadow] duration-150 focus:outline-none focus:border-primary focus:ring-4 focus:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50';
 
 const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
@@ -113,7 +115,7 @@ export function UserManagement({
   const pageRows = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   if (!mounted) {
-    return <div className="h-96 animate-pulse rounded-xl border border-foreground/5 bg-foreground/[0.04]" />;
+    return <div className="h-96 animate-pulse rounded-xl border border-border/60 bg-muted/40 motion-reduce:animate-none" />;
   }
 
   return (
@@ -193,8 +195,9 @@ export function UserManagement({
             {overview.users.length.toLocaleString('en-IN')} ·{' '}
             updated {fmtIST(overview.fetchedAt, 'time')} IST
           </span>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            + Add user
+          <Button size="sm" className="gap-1" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Add user
           </Button>
         </div>
       </div>
@@ -318,38 +321,37 @@ function UserRow({
         </TableCell>
         <TableCell>
           {user.teloRole ? (
-            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-              {labelFor(user.teloRole)}
-            </span>
+            <Badge className="whitespace-nowrap">{labelFor(user.teloRole)}</Badge>
           ) : (
-            <span
-              className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+            <Badge
+              variant="muted"
+              className="whitespace-nowrap"
               title="Derived from the LIS user type — no explicit Telo role assigned yet."
             >
               {labelFor(lisUsertypeToTeloRole(user.lisUsertypeId))}
-              <span className="ml-1 opacity-60 italic">(from LIS)</span>
-            </span>
+              <span className="ml-1 italic opacity-60">(from LIS)</span>
+            </Badge>
           )}
         </TableCell>
         <TableCell className="text-center">
           {user.teloActive ? (
-            <span className="text-xs text-secondary">Yes</span>
+            <span className="text-xs font-medium text-success">Yes</span>
           ) : (
-            <span className="text-xs text-destructive">No</span>
+            <span className="text-xs font-medium text-destructive">No</span>
           )}
         </TableCell>
         <TableCell className="text-center">
           {user.hasTeloAccount ? (
             user.lisAccess ? (
               <span
-                className="text-xs text-secondary"
+                className="text-xs font-medium text-success"
                 title="This Telo account can sign in to the LIS."
               >
                 Enabled
               </span>
             ) : (
               <span
-                className="text-xs text-amber-500"
+                className="text-xs font-medium text-warning"
                 title="LIS-locked — these credentials cannot sign in to the LIS."
               >
                 Locked
@@ -431,7 +433,7 @@ function UserRow({
       </TableRow>
       {openRow === 'edit' && user.createdByTelo && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-foreground/[0.03]">
+          <TableCell colSpan={7} className="bg-muted/40">
             <EditUserForm
               user={user}
               onDone={() => setOpenRow(null)}
@@ -441,7 +443,7 @@ function UserRow({
       )}
       {openRow === 'preparedBy' && user.hasTeloAccount && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-foreground/[0.03]">
+          <TableCell colSpan={7} className="bg-muted/40">
             <SetPreparedByForm
               userId={user.id}
               username={user.username}
@@ -453,7 +455,7 @@ function UserRow({
       )}
       {openRow === 'role' && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-foreground/[0.03]">
+          <TableCell colSpan={7} className="bg-muted/40">
             <SetRoleForm
               userId={user.id}
               current={user.teloRole}
@@ -464,7 +466,7 @@ function UserRow({
       )}
       {openRow === 'password' && (
         <TableRow>
-          <TableCell colSpan={7} className="bg-foreground/[0.03]">
+          <TableCell colSpan={7} className="bg-muted/40">
             <ResetPasswordForm
               userId={user.id}
               username={user.username}
@@ -668,7 +670,7 @@ function EditUserForm({
       <div className="space-y-1">
         <Label>Client codes (MCC scope)</Label>
         {scopeIsUnrestricted ? (
-          <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
+          <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             {labelFor(effectiveRole)} accounts have{' '}
             <span className="font-medium text-foreground">unrestricted</span>{' '}
             MCC scope — assignments here only matter if the role is downgraded
@@ -944,8 +946,8 @@ function SetLisAccessButton({
         }
         className={
           enabled
-            ? 'text-secondary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
-            : 'text-amber-500 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            ? 'text-success hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            : 'text-warning hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
         }
       >
         {enabled ? 'Enable LIS' : 'Lock LIS'}
@@ -976,8 +978,8 @@ function SetMrpOnlyButton({
         }
         className={
           enabled
-            ? 'text-amber-500 hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
-            : 'text-secondary hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            ? 'text-warning hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
+            : 'text-success hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline'
         }
       >
         {enabled ? 'Set MRP-only' : 'Allow B2B'}
@@ -1033,21 +1035,24 @@ function CreateUserPanel({
   const scopeIsUnrestricted = teloRole === 'super_admin' || teloRole === 'admin';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm animate-fade-in motion-reduce:animate-none">
       <form
         action={action}
-        className="w-full max-w-md space-y-2.5 rounded-2xl border border-foreground/5 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200"
+        className="w-full max-w-md space-y-2.5 rounded-xl border border-border bg-card p-6 shadow-elevation-4 animate-scale-in motion-reduce:animate-none"
       >
         <input type="hidden" name="mccIdsCsv" value={pickedMccIds.join(',')} />
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Onboard a new Telo user</h2>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="text-sm text-muted-foreground hover:text-foreground"
+            aria-label="Close"
+            className="-mr-2 -mt-2"
           >
-            ✕
-          </button>
+            <X className="h-4 w-4" aria-hidden />
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Creates the LIS login (plaintext password — see security notes) and
@@ -1124,7 +1129,7 @@ function CreateUserPanel({
         <div className="space-y-1 pt-1">
           <Label>Client codes (MCC scope)</Label>
           {scopeIsUnrestricted ? (
-            <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
+            <p className="rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               {ROLES.find((r) => r.value === teloRole)?.label} accounts have{' '}
               <span className="font-medium text-foreground">unrestricted</span>{' '}
               MCC scope — no selection needed.

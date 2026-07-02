@@ -22,19 +22,19 @@ import type {
   AgingBucket,
 } from '@/db/read/accounting';
 
-// ── Theme palette (lightened HSL tokens so they read on the dark bg) ────────
+// ── Theme palette — chart-N tokens follow light/dark automatically ──────────
 const C = {
-  primary: 'hsl(238, 40%, 62%)',
-  green: 'hsl(142, 60%, 48%)',
-  red: 'hsl(358, 75%, 63%)',
-  amber: 'hsl(38, 92%, 56%)',
-  cyan: 'hsl(190, 70%, 55%)',
-  purple: 'hsl(272, 60%, 66%)',
-  pink: 'hsl(330, 70%, 64%)',
+  indigo: 'hsl(var(--chart-1))',
+  emerald: 'hsl(var(--chart-2))',
+  amber: 'hsl(var(--chart-3))',
+  sky: 'hsl(var(--chart-4))',
+  violet: 'hsl(var(--chart-5))',
+  rose: 'hsl(var(--chart-6))',
+  destructive: 'hsl(var(--destructive))',
 };
-const DONUT = [C.primary, C.green, C.amber, C.cyan, C.purple, C.pink, C.red];
+const DONUT = [C.indigo, C.emerald, C.amber, C.sky, C.violet, C.rose, C.destructive];
 // Theme-aware so axes/gridlines stay legible in both light and dark.
-const GRID = 'hsl(var(--foreground) / 0.10)';
+const GRID = 'hsl(var(--border))';
 const TICK = { fill: 'hsl(var(--muted-foreground))', fontSize: 11 };
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
@@ -53,9 +53,11 @@ const tooltipStyle = {
     border: '1px solid hsl(var(--border))',
     borderRadius: 10,
     fontSize: 12,
+    boxShadow: '0 4px 12px hsl(var(--foreground) / 0.08)',
   },
   labelStyle: { color: 'hsl(var(--muted-foreground))' },
   itemStyle: { color: 'hsl(var(--foreground))' },
+  cursor: { fill: 'hsl(var(--muted) / 0.5)' },
 };
 
 function ChartCard({
@@ -68,9 +70,9 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-foreground/5 bg-card p-4">
+    <div className="rounded-xl border border-border/70 bg-card p-4 shadow-elevation-1 transition-shadow hover:shadow-elevation-2 animate-fade-in motion-reduce:animate-none">
       <div className="mb-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {title}
         </p>
         {hint && <p className="text-[11px] text-muted-foreground/70">{hint}</p>}
@@ -117,8 +119,8 @@ export function AccountingCharts({
               <YAxis tick={TICK} axisLine={false} tickLine={false} width={52} tickFormatter={inrCompact} />
               <Tooltip {...tooltipStyle} formatter={(v) => inr(Number(v))} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar name="Charges" dataKey="charges" fill={C.primary} radius={[3, 3, 0, 0]} maxBarSize={36} />
-              <Line name="Collected" type="monotone" dataKey="collected" stroke={C.green} strokeWidth={2} dot={false} />
+              <Bar name="Charges" dataKey="charges" fill={C.indigo} radius={[3, 3, 0, 0]} maxBarSize={36} />
+              <Line name="Collected" type="monotone" dataKey="collected" stroke={C.emerald} strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -132,7 +134,7 @@ export function AccountingCharts({
             <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
             <YAxis tick={TICK} axisLine={false} tickLine={false} width={32} allowDecimals={false} />
             <Tooltip {...tooltipStyle} />
-            <Bar name="Bills" dataKey="bills" fill={C.cyan} radius={[3, 3, 0, 0]} maxBarSize={36} />
+            <Bar name="Bills" dataKey="bills" fill={C.sky} radius={[3, 3, 0, 0]} maxBarSize={36} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -148,7 +150,7 @@ export function AccountingCharts({
               <Tooltip {...tooltipStyle} formatter={(v) => inr(Number(v))} />
               <Bar name="Balance" dataKey="balance" radius={[3, 3, 0, 0]} maxBarSize={56}>
                 {agingData.map((_, i) => (
-                  <Cell key={i} fill={[C.green, C.amber, C.primary, C.red][i] ?? C.primary} />
+                  <Cell key={i} fill={[C.emerald, C.amber, C.indigo, C.destructive][i] ?? C.indigo} />
                 ))}
               </Bar>
             </BarChart>
@@ -183,7 +185,7 @@ export function AccountingCharts({
           <ResponsiveContainer>
             <PieChart>
               <Pie data={cashCreditData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={84} paddingAngle={2} stroke="none">
-                <Cell fill={C.green} />
+                <Cell fill={C.emerald} />
                 <Cell fill={C.amber} />
               </Pie>
               <Tooltip {...tooltipStyle} formatter={(v) => inr(Number(v))} />

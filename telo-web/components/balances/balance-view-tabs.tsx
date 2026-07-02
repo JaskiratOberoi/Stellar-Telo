@@ -23,18 +23,19 @@ export function BalanceViewTabs({
     { key: 'bills', label: 'Bills', href: `/balances/${mccId}?${qs}` },
   ];
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-foreground/10 bg-card/60 p-1">
+    <div className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-card p-1 shadow-elevation-1">
       {tabs.map((t) => {
         const on = t.key === active;
         return (
           <Link
             key={t.key}
             href={t.href}
+            aria-current={on ? 'page' : undefined}
             className={cn(
-              'rounded-full px-4 py-1 text-xs font-medium transition-all duration-150',
+              'rounded-full px-4 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
               on
-                ? 'bg-primary/25 text-foreground'
-                : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
             )}
           >
             {t.label}

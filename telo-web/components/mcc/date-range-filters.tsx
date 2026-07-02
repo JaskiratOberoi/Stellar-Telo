@@ -79,18 +79,19 @@ export function DateRangeFilters({
           className="h-8 w-full sm:w-40"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-1 self-end rounded-lg border border-foreground/5 bg-card p-1">
+      <div className="flex flex-wrap items-center gap-1 self-end rounded-full border border-border/70 bg-card p-1 shadow-elevation-1">
         {periods.map((p) => (
           <button
             key={p.label}
             type="button"
             disabled={navigating}
             onClick={() => navigate(p.from, p.to)}
+            aria-pressed={p.label === activeLabel}
             className={cn(
-              'rounded px-2.5 py-1 text-xs font-medium transition-all duration-150',
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
               p.label === activeLabel
-                ? 'bg-primary/20 text-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               navigating && 'cursor-wait opacity-70',
             )}
           >

@@ -105,8 +105,10 @@ export function LoginBackdrop({ className }: { className?: string }) {
       '(prefers-reduced-motion: reduce)',
     ).matches;
 
+    // Indigo → violet sweep: both stops stay inside the brand's hue family so
+    // the ribbon reads as one continuous aurora rather than two-tone.
     const primary = themeColor('--primary', 22);
-    const secondary = themeColor('--secondary', 10);
+    const accent = themeColor('--chart-5', 8);
 
     let w = 0;
     let h = 0;
@@ -143,8 +145,8 @@ export function LoginBackdrop({ className }: { className?: string }) {
       const fill = ctx.createLinearGradient(0, 0, w, 0);
       fill.addColorStop(0, primary(0));
       fill.addColorStop(0.22, primary(1));
-      fill.addColorStop(0.6, secondary(0.85));
-      fill.addColorStop(1, secondary(0));
+      fill.addColorStop(0.6, accent(0.85));
+      fill.addColorStop(1, accent(0));
 
       for (const L of LAYERS) {
         // Band: top edge left→right, bottom edge right→left, closed + filled.

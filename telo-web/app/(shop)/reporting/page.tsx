@@ -3,6 +3,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getLookups } from '@/lib/listec';
 import { reportClientCodeScope } from '@/lib/reportScope';
+import { PageHeader } from '@/components/ui/page-header';
 import { ReportingView } from '@/components/reporting/reporting-view';
 
 export const dynamic = 'force-dynamic';
@@ -40,13 +41,11 @@ export default async function ReportingPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Reporting</h1>
-        <p className="text-sm text-muted-foreground">
-          Search lab results, preview the report, and download it on the Noble
-          letterhead.
-        </p>
-      </div>
+      <PageHeader
+        title="Reporting"
+        description="Search lab results, preview the report, and download it on the Noble letterhead."
+        className="mb-0"
+      />
       <ReportingView
         businessUnits={lookups.businessUnits ?? []}
         statuses={releasableStatuses}
