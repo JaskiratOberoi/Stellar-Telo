@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Receipt, Wallet, History } from 'lucide-react';
+import { ArrowRight, Receipt, Wallet, History, Lock } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { getMccScope, ownCentreIds } from '@/auth/scope';
@@ -220,6 +220,15 @@ async function ClientHomeBody({
                   ? 'In credit — advance balance with Noble'
                   : "You're all settled. Thank you!"}
             </p>
+            {due > 0 && (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                <p className="text-xs leading-relaxed text-destructive">
+                  Reports are on hold while a balance is outstanding. Clear your
+                  dues to unlock and download your reports.
+                </p>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 divide-x divide-foreground/5 border-t border-foreground/5">
             <div className="px-6 py-4">
