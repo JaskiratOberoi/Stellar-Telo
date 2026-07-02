@@ -13,6 +13,7 @@ import { getMccCentreByCode } from '@/db/read/mccUnits';
 import { getProfileInterpretations } from '@/db/read/profileInterpretations';
 import { reportQrDataUrl, verifyReportToken } from '@/lib/report/reportLink';
 import { canAccessSidReport } from '@/lib/reportScope';
+import { isSidReportLocked } from '@/lib/reportLock';
 import { getSampleReport } from '@/db/read/sampleReport';
 import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
 
@@ -72,6 +73,24 @@ export default async function ReportingPrintFragment({
     // client's reports. Unrestricted roles pass through. (The token path is
     // pre-scoped: tokens are only minted by the PDF route for in-scope SIDs.)
     if (!(await canAccessSidReport(user, decodedSid))) notFound();
+    // Balance lock (Telo-only): don't render the report while there's an
+    // outstanding balance. The token path is pre-gated by the PDF route.
+    const lock = await isSidReportLocked(decodedSid);
+    if (lock.locked) {
+      return (
+        <div className="mx-auto max-w-md p-10 text-center text-sm text-muted-foreground">
+          <p className="text-base font-semibold text-foreground">
+            Report on hold
+          </p>
+          <p className="mt-2">
+            This report can’t be viewed or printed in Telo because there’s an
+            outstanding balance of ₹{lock.dueAmount.toLocaleString('en-IN')} on
+            the {lock.reason === 'client' ? 'client account' : "patient’s bill"}.
+            Please clear the balance to release the report.
+          </p>
+        </div>
+      );
+    }
   }
 
   // Tight worksheet window around the sample's date when known (the SP crawls

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyReportToken } from '@/lib/report/reportLink';
+import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 
@@ -27,6 +28,13 @@ export async function GET(
   const date = url.searchParams.get('d');
 
   if (!decoded || !verifyReportToken(decoded, token)) {
+    return new NextResponse('Not found', { status: 404 });
+  }
+
+  // Balance lock (Telo-only): even a valid softcopy link is withheld while the
+  // patient bill / client wallet has an outstanding balance. 404 (not 423) so
+  // the public link stays opaque — same as an invalid token.
+  if ((await isSidReportLocked(decoded)).locked) {
     return new NextResponse('Not found', { status: 404 });
   }
 

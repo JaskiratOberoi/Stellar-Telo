@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { canAccessSidReport } from '@/lib/reportScope';
+import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 
@@ -47,6 +48,15 @@ export async function POST(req: Request) {
   // never gets a valid per-report token.
   if (!(await canAccessSidReport(user, sid.trim()))) {
     return new NextResponse('Forbidden', { status: 403 });
+  }
+  // Balance lock (Telo-only): no report while the patient's bill / client wallet
+  // has an outstanding balance. 423 Locked so the UI can show the pop-up.
+  const lock = await isSidReportLocked(sid.trim());
+  if (lock.locked) {
+    return NextResponse.json(
+      { error: 'BALANCE_LOCKED', reason: lock.reason, dueAmount: lock.dueAmount },
+      { status: 423 },
+    );
   }
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';

@@ -9,6 +9,7 @@ import {
   reportClientCodeScope,
   filterRowsByReportScope,
 } from '@/lib/reportScope';
+import { computeReportLocks } from '@/lib/reportLock';
 
 export interface ReportSearchFilters {
   from: string; // YYYY-MM-DD
@@ -46,6 +47,14 @@ export interface ReportSearchRow {
    *  therefore safe to bulk-download. Drives the Reporting multi-select gate —
    *  in-progress samples (e.g. "Sample Registered") are not selectable. */
   ready: boolean;
+  /** Balance lock (Telo-only): true when the report cannot be viewed/printed
+   *  because of an outstanding balance — the patient's own bill (B2C) or the
+   *  client's wallet (B2B). See lib/reportLock.ts. */
+  locked: boolean;
+  /** Which balance triggered the lock ('patient' | 'client'), or null. */
+  lockReason: 'patient' | 'client' | null;
+  /** The outstanding amount (₹) behind the lock, for the message. */
+  dueAmount: number;
 }
 
 /** A test/profile option for the Reporting test-filter picker. */
@@ -109,7 +118,28 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
       ymdFrom(r.last_modified_at) ??
       ymdFrom(r.regd_at),
     ready: r.results.length > 0 && r.results.every((t) => t.authorized),
+    // Defaults; searchReports fills these in via computeReportLocks().
+    locked: false,
+    lockReason: null,
+    dueAmount: 0,
   };
+}
+
+/** Stamp each result row with its balance lock (patient bill / client wallet). */
+async function annotateLocks(rows: ReportSearchRow[]): Promise<ReportSearchRow[]> {
+  if (rows.length === 0) return rows;
+  const locks = await computeReportLocks(
+    rows.map((r) => ({ sid: r.sid, pid: r.pid, clientCode: r.clientCode })),
+  );
+  for (const r of rows) {
+    const l = locks.get(r.sid);
+    if (l) {
+      r.locked = l.locked;
+      r.lockReason = l.reason;
+      r.dueAmount = l.dueAmount;
+    }
+  }
+  return rows;
 }
 
 /** Does the worksheet row match the universal query (case-insensitive)? */
@@ -223,10 +253,12 @@ export async function searchReports(
       await fetchScoped({ pageSize: 500 }),
       scopeCodes,
     );
-    return rows
-      .filter(isReleasable)
-      .map((r) => mapRow(r, anchor))
-      .filter(passesStatus);
+    return annotateLocks(
+      rows
+        .filter(isReleasable)
+        .map((r) => mapRow(r, anchor))
+        .filter(passesStatus),
+    );
   }
 
   const numeric = /^\d+$/.test(q);
@@ -259,7 +291,9 @@ export async function searchReports(
     if (rowMatchesQuery(r, qLower)) bySid.set(r.sid, mapRow(r, anchor));
   }
 
-  return Array.from(bySid.values()).filter(passesStatus).slice(0, 500);
+  return annotateLocks(
+    Array.from(bySid.values()).filter(passesStatus).slice(0, 500),
+  );
 }
 
 /**

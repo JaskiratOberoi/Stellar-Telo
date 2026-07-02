@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { canAccessSidReport, reportClientCodeScope } from '@/lib/reportScope';
+import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentsToPdfs } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { concatPdfs } from '@/lib/report/mergePdfs';
@@ -85,8 +86,22 @@ export async function POST(req: Request) {
     items = parsedItems.filter((_, i) => inScope[i]);
   }
 
+  // Balance lock (Telo-only, all roles): drop any SID whose patient bill /
+  // client wallet has an outstanding balance — a bulk print can't smuggle a
+  // balance-locked report through.
+  const lockStates = await Promise.all(
+    items.map((it) => isSidReportLocked(it.sid)),
+  );
+  const lockedCount = lockStates.filter((l) => l.locked).length;
+  items = items.filter((_, i) => !lockStates[i].locked);
+
   if (items.length === 0) {
-    return new NextResponse('No valid reports selected', { status: 400 });
+    return new NextResponse(
+      lockedCount > 0
+        ? 'All selected reports are on hold for an outstanding balance.'
+        : 'No valid reports selected',
+      { status: lockedCount > 0 ? 423 : 400 },
+    );
   }
   if (items.length > MAX_ITEMS) {
     return new NextResponse(

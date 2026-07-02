@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { Download, FileText, Search, X } from 'lucide-react';
+import { Download, FileText, Lock, Search, X } from 'lucide-react';
 import {
   searchReports,
   searchReportTests,
@@ -78,6 +78,8 @@ export function ReportingView({
   const [searchedTestCode, setSearchedTestCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
+  // Report the user tried to open while it's balance-locked → pop-up.
+  const [lockedNotice, setLockedNotice] = useState<ReportSearchRow | null>(null);
   const [pending, startTransition] = useTransition();
 
   // ── Bulk selection + download ───────────────────────────────────────────
@@ -118,7 +120,8 @@ export function ReportingView({
   }, []);
 
   // Only finalised reports are selectable for bulk download.
-  const readyRows = (rows ?? []).filter((r) => r.ready);
+  // Balance-locked reports can't be viewed/printed/bulk-downloaded.
+  const readyRows = (rows ?? []).filter((r) => r.ready && !r.locked);
   const selectedCount = selectedSids.size;
 
   function toggleOne(sid: string) {
@@ -333,14 +336,22 @@ export function ReportingView({
                         <Checkbox
                           className="mt-0.5"
                           checked={checked}
-                          disabled={!r.ready}
+                          disabled={!r.ready || r.locked}
                           onChange={() => toggleOne(r.sid)}
                           aria-label={
-                            r.ready
-                              ? `Select report for ${r.patientName ?? r.sid}`
-                              : 'Report not finalised yet'
+                            r.locked
+                              ? 'On hold — outstanding balance'
+                              : r.ready
+                                ? `Select report for ${r.patientName ?? r.sid}`
+                                : 'Report not finalised yet'
                           }
-                          title={r.ready ? undefined : 'Report not finalised yet'}
+                          title={
+                            r.locked
+                              ? 'On hold — outstanding balance'
+                              : r.ready
+                                ? undefined
+                                : 'Report not finalised yet'
+                          }
                         />
                       </TableCell>
                       <TableCell className="text-xs">{r.clientCode ?? '—'}</TableCell>
@@ -368,15 +379,27 @@ export function ReportingView({
                       <TableCell className="whitespace-nowrap text-xs">{fmtListec(r.reportedAt)}</TableCell>
                       <TableCell className="text-xs">{r.status ?? '—'}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={() => setSelected(r)}
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          View
-                        </Button>
+                        {r.locked ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5"
+                            onClick={() => setLockedNotice(r)}
+                          >
+                            <Lock className="h-3.5 w-3.5" />
+                            On hold
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => setSelected(r)}
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            View
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -396,6 +419,55 @@ export function ReportingView({
           patientName={selected.patientName}
           onClose={() => setSelected(null)}
         />
+      )}
+
+      {/* ── Balance-lock pop-up ─────────────────────────────────────────── */}
+      {lockedNotice && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLockedNotice(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                <Lock className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold">
+                  Report on hold — balance due
+                </h2>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  This report can’t be viewed or printed in Telo because{' '}
+                  {lockedNotice.patientName ?? 'this patient'} has an outstanding
+                  balance of{' '}
+                  <span className="font-semibold text-foreground">
+                    ₹{lockedNotice.dueAmount.toLocaleString('en-IN')}
+                  </span>{' '}
+                  on their{' '}
+                  {lockedNotice.lockReason === 'client'
+                    ? 'client account'
+                    : 'bill'}
+                  . Please collect the pending amount to release the report.
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Reports for patients with a pending balance are held across all
+                  client codes. Once the balance is cleared, the report unlocks
+                  automatically.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <Button size="sm" onClick={() => setLockedNotice(null)}>
+                Got it
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Bulk selection bar ──────────────────────────────────────────── */}
