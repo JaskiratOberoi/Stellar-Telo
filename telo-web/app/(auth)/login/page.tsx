@@ -86,13 +86,12 @@ export default function LoginPage() {
 
           <div className="relative max-w-md space-y-8">
             <div className="animate-card-in [animation-delay:100ms] motion-reduce:animate-none">
-              {/* Gradient logomark — same motif as the shell's brand tile */}
-              <span
-                aria-hidden
-                className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-xl font-black text-white shadow-elevation-3"
-              >
-                T
-              </span>
+              {/* Noble brand lockup — white variant on the navy panel */}
+              <img
+                src="/branding/noble-logo-ondark.png"
+                alt="Noble Diagnostics"
+                className="mb-5 h-16 w-auto"
+              />
               <span className="inline-flex items-start gap-2">
                 <span className="animate-shimmer bg-gradient-to-r from-sidebar-active via-chart-5 to-sidebar-active bg-[length:200%_auto] bg-clip-text text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
                   Telo
@@ -144,12 +143,16 @@ export default function LoginPage() {
           <div className="relative w-full max-w-sm">
             {/* Compact brand header (mobile only) */}
             <div className="mb-10 animate-card-in text-center lg:hidden motion-reduce:animate-none">
-              <span
-                aria-hidden
-                className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary via-primary to-chart-5 text-lg font-black text-white shadow-elevation-3"
-              >
-                T
-              </span>
+              <img
+                src="/branding/noble-logo-onlight.png"
+                alt="Noble Diagnostics"
+                className="mx-auto mb-4 h-14 w-auto dark:hidden"
+              />
+              <img
+                src="/branding/noble-logo-ondark.png"
+                alt="Noble Diagnostics"
+                className="mx-auto mb-4 hidden h-14 w-auto dark:block"
+              />
               <span className="inline-flex items-start justify-center gap-1.5">
                 <span className="text-brand-gradient animate-shimmer text-4xl font-bold tracking-tight drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
                   Telo
