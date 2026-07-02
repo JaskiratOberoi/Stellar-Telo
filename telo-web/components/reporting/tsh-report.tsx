@@ -133,6 +133,12 @@ export interface LabReportSigner {
 
 export interface LabReportData {
   pdf?: boolean;
+  /** Letterhead-paper mode: the report will be printed onto physical pre-printed
+   *  Noble letterhead, so the Noble letterhead band is left blank. Only affects
+   *  the on-screen preview (the PDF route skips the letterhead background itself);
+   *  here it swaps the recreated Noble header for a blank reserved zone so the
+   *  preview matches the headless PDF. */
+  headless?: boolean;
   /** Start each department on a new page (the LIS "split" layout). */
   splitByDepartment?: boolean;
   /** Item keys the user unticked — omitted from the PDF render. A top-level item
@@ -449,13 +455,18 @@ export function LabReport({ data }: { data: LabReportData }) {
       }`}
     >
       {/* ── Recreated Noble letterhead (preview only). In split preview the logo
-           is drawn atop each page sheet instead, so skip the once-at-top one. */}
-      {!data.pdf && !previewSheets && (
-        <div className="mb-4 flex items-center gap-4 border-b-2 border-[#2b2b6b] pb-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-14 w-auto" />
-        </div>
-      )}
+           is drawn atop each page sheet instead, so skip the once-at-top one.
+           In letterhead-paper mode the band is left blank — the PDF prints onto
+           pre-printed paper — so the preview reserves the space instead. */}
+      {!data.pdf && !previewSheets &&
+        (data.headless ? (
+          <LetterheadZone className="mb-4 h-14 pb-3" />
+        ) : (
+          <div className="mb-4 flex items-center gap-4 border-b-2 border-[#2b2b6b] pb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-14 w-auto" />
+          </div>
+        ))}
 
       {sections.length === 0 ? (
         <p className="py-4 text-center text-gray-500">No results available for this sample.</p>
@@ -513,10 +524,14 @@ export function LabReport({ data }: { data: LabReportData }) {
               <span className="pointer-events-none absolute right-2 top-2 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-500">
                 Page {si + 1} of {sections.length}
               </span>
-              <div className="mb-3 flex items-center gap-3 border-b-2 border-[#2b2b6b] pb-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
-              </div>
+              {data.headless ? (
+                <LetterheadZone className="mb-3 h-10 pb-2" />
+              ) : (
+                <div className="mb-3 flex items-center gap-3 border-b-2 border-[#2b2b6b] pb-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/branding/noble-logo.png" alt="Noble Diagnostic Centre" className="h-10 w-auto" />
+                </div>
+              )}
               {sectionTable}
               {/* The <tfoot> above is an invisible spacer; this visible copy is
                   pinned to the bottom of the sheet (matching the px/py inset). */}
@@ -570,6 +585,23 @@ export function LabReport({ data }: { data: LabReportData }) {
           <ReportFooterBlock data={data} />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Blank stand-in for the Noble letterhead band in letterhead-paper (headless)
+ *  preview mode. Reserves the same vertical space the logo header would take and
+ *  marks it as the pre-printed-letterhead zone, so the preview mirrors the
+ *  headless PDF (which leaves this band empty for physical letterhead paper). */
+function LetterheadZone({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`flex items-center justify-center rounded-sm border border-dashed border-gray-300 bg-gray-50/60 ${className}`}
+      aria-hidden
+    >
+      <span className="text-[9px] uppercase tracking-wide text-gray-400">
+        Pre-printed letterhead area
+      </span>
     </div>
   );
 }

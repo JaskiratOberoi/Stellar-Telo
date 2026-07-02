@@ -190,7 +190,7 @@ export function ReportPreview({
             title={`Report ${sid}`}
             src={`/print/reporting/${encodeURIComponent(sid)}?panel=${encodeURIComponent(panel)}${dateParam}${
               split ? '&split=1' : ''
-            }`}
+            }${headless ? '&headless=1' : ''}`}
             className="h-[80vh] w-full rounded bg-white"
           />
         </div>

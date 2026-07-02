@@ -43,12 +43,17 @@ export default async function ReportingPrintFragment({
     split?: string;
     exclude?: string;
     token?: string;
+    headless?: string;
   }>;
 }) {
   const { sid } = await params;
   const sp = await searchParams;
   const pdfMode = sp.pdf === '1' || sp.pdf === 'true';
   const splitByDepartment = sp.split === '1' || sp.split === 'true';
+  // Letterhead-paper preview: blank the Noble letterhead band so the preview
+  // matches the headless PDF. Preview-only — the PDF route drops the letterhead
+  // background itself, so this hint is ignored under ?pdf=1.
+  const headless = sp.headless === '1' || sp.headless === 'true';
 
   // Tests the user unticked in the preview. Keys are "deptIndex:itemIndex" for a
   // top-level item, "deptIndex:itemIndex:childIndex" for a panel child, with an
@@ -170,6 +175,7 @@ export default async function ReportingPrintFragment({
 
   const data: LabReportData = {
     pdf: pdfMode,
+    headless: headless && !pdfMode,
     splitByDepartment,
     excludedKeys,
     patientName: row.patient_name,
