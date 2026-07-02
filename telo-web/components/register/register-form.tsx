@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   registerOrder,
   searchCatalogAction,
+  searchCustomTestsAction,
   previewOrder,
   previewSampleGroupsAction,
   fetchRefDataAction,
@@ -12,6 +13,7 @@ import {
   type PreviewResult,
   type RefDataForMcc,
 } from '@/actions/register.actions';
+import type { CustomTestPublic } from '@/db/read/customTests';
 import { removeFromCart } from '@/actions/cart.actions';
 import type { SampleGroup } from '@/db/sp/previewSampleGroups';
 import { PAY_METHODS } from '@/lib/payment-methods';
@@ -208,6 +210,12 @@ export function RegisterForm({
   const [picked, setPicked] = useState<Picked[]>(initialItems);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<CatalogItemPublic[]>([]);
+  // Telo-only ("custom") tests — billed but not performed on our LIS (e.g.
+  // "Glucose - External" for MDCARE). Kept in their own track so nothing leaks
+  // into the LIS test/sample/pricing paths. Each pick carries a live qty.
+  type CustomPick = CustomTestPublic & { qty: number };
+  const [customResults, setCustomResults] = useState<CustomTestPublic[]>([]);
+  const [customPicked, setCustomPicked] = useState<CustomPick[]>([]);
   const [preview, setPreview] = useState<PreviewResult>({ lines: [], total: 0 });
   const [, startSearch] = useTransition();
   const [, startPreview] = useTransition();
@@ -274,15 +282,33 @@ export function RegisterForm({
     if (timer.current) clearTimeout(timer.current);
     if (!q.trim()) {
       setResults([]);
+      setCustomResults([]);
       return;
     }
+    const mccArg = mcc === '' ? null : Number(mcc);
     timer.current = setTimeout(() => {
-      startSearch(async () => setResults(await searchCatalogAction(q)));
+      startSearch(async () => {
+        // Custom tests are client-scoped, so only search them once a Client
+        // code is chosen. Run both lookups together.
+        const [cat, custom] = await Promise.all([
+          searchCatalogAction(q),
+          mccArg != null ? searchCustomTestsAction(q, mccArg) : Promise.resolve([]),
+        ]);
+        setResults(cat);
+        setCustomResults(custom);
+      });
     }, 250);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [q]);
+  }, [q, mcc]);
+
+  // A custom test is scoped to one Client code; if the operator switches Client
+  // after picking one, drop custom picks that no longer apply (re-search fills
+  // the dropdown for the new client). Real (LIS) picks are client-agnostic.
+  useEffect(() => {
+    setCustomPicked([]);
+  }, [mcc]);
 
   // Debounced pricing preview. Bulk-adds from the catalog (cart hydration,
   // a profile that expands into many tests) used to fire one previewOrder
@@ -318,8 +344,13 @@ export function RegisterForm({
     0,
   );
   const goldApplied = !isB2b && goldCard;
-  // The billed total everything keys off: halved when a Gold Card is applied.
-  const effectiveTotal = goldApplied ? goldTotal : preview.total;
+  // Custom lines bill at a fixed amount × qty and are never Gold-Card halved.
+  const customTotal = customPicked.reduce((s, c) => s + c.mrp * c.qty, 0);
+  // Any custom line that mandates an MRD makes the MRD field compulsory.
+  const mrdRequired = customPicked.some((c) => c.requiresMrd);
+  // The billed total everything keys off: real lines (halved when a Gold Card
+  // is applied) plus the fixed custom-line total.
+  const effectiveTotal = (goldApplied ? goldTotal : preview.total) + customTotal;
 
   // Keep the FIRST payment line pinned to half the current total while the
   // operator hasn't overridden it. Re-runs whenever the priced total changes
@@ -389,6 +420,23 @@ export function RegisterForm({
         : [...p, { id: i.id, kind: i.kind, code: i.code, name: i.name }],
     );
   }
+  function addCustom(t: CustomTestPublic) {
+    setCustomPicked((p) =>
+      p.some((x) => x.id === t.id) ? p : [...p, { ...t, qty: 1 }],
+    );
+  }
+  function removeCustom(id: number) {
+    setCustomPicked((p) => p.filter((x) => x.id !== id));
+  }
+  function setCustomQty(id: number, qty: number) {
+    setCustomPicked((p) =>
+      p.map((x) =>
+        x.id === id
+          ? { ...x, qty: Math.min(99, Math.max(1, Math.round(qty) || 1)) }
+          : x,
+      ),
+    );
+  }
   function remove(id: number, kind: string) {
     setPicked((p) => p.filter((x) => !(x.id === id && x.kind === kind)));
     // If this item came from the catalog cart, remove it there too so the
@@ -408,6 +456,11 @@ export function RegisterForm({
       <input type="hidden" name="mcc" value={mcc} />
       <input type="hidden" name="b2b" value={isB2b ? '1' : ''} />
       <input type="hidden" name="itemsJson" value={JSON.stringify(picked)} />
+      <input
+        type="hidden"
+        name="customItemsJson"
+        value={JSON.stringify(customPicked.map((c) => ({ id: c.id, qty: c.qty })))}
+      />
       <input
         type="hidden"
         name="paymentsJson"
@@ -610,7 +663,10 @@ export function RegisterForm({
               )}
             </div>
             <div className="space-y-0.5">
-              <Label htmlFor="refCustomer">MRD + (IPD/OPD/ICU)</Label>
+              <Label htmlFor="refCustomer">
+                MRD + (IPD/OPD/ICU)
+                {mrdRequired && <span className="ml-0.5 text-destructive">*</span>}
+              </Label>
               <Input
                 id="refCustomer"
                 value={refCustomerText}
@@ -622,7 +678,13 @@ export function RegisterForm({
                 }
                 maxLength={100}
                 disabled={mcc === ''}
+                aria-invalid={mrdRequired && !refCustomerText.trim()}
               />
+              {mrdRequired && !refCustomerText.trim() && (
+                <p className="text-[11px] text-destructive">
+                  MRD number is required for the external test in this order.
+                </p>
+              )}
             </div>
           </div>
 
@@ -949,8 +1011,31 @@ export function RegisterForm({
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {results.length > 0 && (
+          {(results.length > 0 || customResults.length > 0) && (
             <div className="max-h-48 overflow-auto rounded-lg border border-foreground/10 bg-card">
+              {/* Telo-only tests first, badged so they're distinguishable from
+                  LIS catalogue tests. */}
+              {customResults.map((r) => {
+                const already = customPicked.some((x) => x.id === r.id);
+                return (
+                  <button
+                    type="button"
+                    key={`custom-${r.id}`}
+                    onClick={() => addCustom(r)}
+                    disabled={already}
+                    className="flex w-full items-center justify-between border-b border-foreground/5 px-3 py-2 text-left text-sm last:border-0 hover:bg-foreground/5 disabled:opacity-50"
+                  >
+                    <span>
+                      <span className="font-mono text-xs">{r.code}</span>{' '}
+                      {r.name}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        ₹{r.mrp}
+                      </span>
+                    </span>
+                    <Badge variant="secondary">External</Badge>
+                  </button>
+                );
+              })}
               {results.map((r) => (
                 <button
                   type="button"
@@ -993,9 +1078,11 @@ export function RegisterForm({
               </div>
             )}
             {picked.length === 0 ? (
-              <p className="px-3 py-4 text-sm text-muted-foreground">
-                No tests added yet.
-              </p>
+              customPicked.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">
+                  No tests added yet.
+                </p>
+              ) : null
             ) : isB2b ? (
               picked.map((it) => {
                 const pl = preview.lines.find(
@@ -1070,6 +1157,56 @@ export function RegisterForm({
                 );
               })
             )}
+            {/* Telo-only custom lines (e.g. Glucose - External). Separate from
+                the LIS picks above; each can carry a quantity. */}
+            {customPicked.map((c) => (
+              <div
+                key={`custom-${c.id}`}
+                className="flex items-center justify-between gap-3 border-b border-foreground/5 px-3 py-2 text-sm last:border-0"
+              >
+                <span className="min-w-0">
+                  <span className="font-mono text-xs">{c.code}</span> {c.name}
+                  <Badge variant="secondary" className="ml-2 align-middle">
+                    External
+                  </Badge>
+                </span>
+                <span className="flex items-center gap-3">
+                  {c.allowQty && (
+                    <span className="flex items-center rounded-md border border-foreground/10">
+                      <button
+                        type="button"
+                        onClick={() => setCustomQty(c.id, c.qty - 1)}
+                        disabled={c.qty <= 1}
+                        className="px-2 py-0.5 text-sm disabled:opacity-40"
+                        aria-label="Decrease quantity"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[1.5rem] text-center text-sm tabular-nums">
+                        {c.qty}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomQty(c.id, c.qty + 1)}
+                        disabled={c.qty >= 99}
+                        className="px-2 py-0.5 text-sm disabled:opacity-40"
+                        aria-label="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </span>
+                  )}
+                  <span className="tabular-nums">₹{c.mrp * c.qty}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeCustom(c.id)}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    remove
+                  </button>
+                </span>
+              </div>
+            ))}
             <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
               <span>
                 Total
@@ -1208,11 +1345,14 @@ export function RegisterForm({
             const mobileBlocked = mobileStatus === 'blocked';
             const mobileBusy =
               mobileStatus === 'checking' || mobileStatus === 'error';
+            const mrdMissing = mrdRequired && !refCustomerText.trim();
             const blocked =
               pending ||
-              picked.length === 0 ||
+              (picked.length === 0 && customPicked.length === 0) ||
               mcc === '' ||
-              groups.length === 0 ||
+              // Real (LIS) picks need their sample groups resolved; a custom-only
+              // order has no groups and is exempt.
+              (picked.length > 0 && groups.length === 0) ||
               anyTaken ||
               anyChecking ||
               anyError ||
@@ -1224,7 +1364,8 @@ export function RegisterForm({
               aboveMaxDiscount ||
               txnMissing ||
               goldMissing ||
-              refDoctorMissing;
+              refDoctorMissing ||
+              mrdMissing;
             const label = pending
               ? 'Registering…'
               : mcc === ''
@@ -1233,13 +1374,15 @@ export function RegisterForm({
                   ? 'Patient details required'
                   : refDoctorMissing
                     ? 'Ref. doctor required'
+                  : mrdMissing
+                    ? 'MRD number required'
                   : mobileBlocked
                     ? 'Mobile number limit reached'
                     : mobileStatus === 'checking'
                       ? 'Checking mobile number…'
                       : mobileStatus === 'error'
                         ? 'Could not verify mobile number'
-                        : groups.length === 0
+                        : picked.length === 0 && customPicked.length === 0
                     ? 'Add tests to continue'
                     : anyTaken
                       ? 'Sample ID already exists'
@@ -1341,7 +1484,8 @@ export function RegisterForm({
                   )}
                   <span className="text-zinc-500">Tests</span>
                   <span>
-                    {picked.length} item(s) · ₹{effectiveTotal}
+                    {picked.length + customPicked.length} item(s) · ₹
+                    {effectiveTotal}
                     {goldApplied && (
                       <span className="text-zinc-400">
                         {' '}(was ₹{preview.total})

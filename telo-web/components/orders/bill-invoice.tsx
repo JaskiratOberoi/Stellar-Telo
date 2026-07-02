@@ -163,6 +163,9 @@ export function BillInvoice({
     order.gender === 1 ? 'M' : order.gender === 2 ? 'F' : '—';
 
   const total = order.lines.reduce((s, l) => s + l.amount, 0);
+  // Externally-performed lines (e.g. Glucose - External) get a "*" marker and a
+  // footer note clarifying Noble did not perform them.
+  const hasExternal = order.lines.some((l) => l.isExternal);
 
   return (
     <div className="w-full bg-white text-black font-sans text-[13px] leading-snug border border-gray-400">
@@ -260,7 +263,10 @@ export function BillInvoice({
             {order.lines.map((l, idx) => (
               <tr key={idx} className="border-b border-gray-100">
                 <td className="py-0.5 pr-2 text-gray-500">{idx + 1}</td>
-                <td className="py-0.5 pr-2">{l.testName ?? '—'}</td>
+                <td className="py-0.5 pr-2">
+                  {l.testName ?? '—'}
+                  {l.isExternal && <sup className="text-gray-500">*</sup>}
+                </td>
                 <td className="py-0.5 text-right">{inr(l.amount)}</td>
               </tr>
             ))}
@@ -380,6 +386,14 @@ export function BillInvoice({
           <li>Not Valid for medico legal use.</li>
           <li>Non refundable, subject to realization of cheque.</li>
           <li>All above services are exempted under GST.</li>
+          {hasExternal && (
+            <li>
+              Service(s) marked <span className="font-semibold">*</span> are
+              performed by the referring facility, not by Noble Diagnostics.
+              Noble has billed them on the facility’s behalf and is not
+              responsible for their conduct, results or interpretation.
+            </li>
+          )}
         </ol>
       </div>
 

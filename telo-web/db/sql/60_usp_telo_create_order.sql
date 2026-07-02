@@ -75,14 +75,24 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     -- Split payments: one row per payment line (₹500 Cash + ₹500 UPI). When
     -- supplied (and non-empty) it SUPERSEDES the @paymentType/@receiptAmount/
     -- @paymentRef scalars, which are kept only for older single-payment callers.
-    @payments         dbo.TeloPayment READONLY
+    @payments         dbo.TeloPayment READONLY,
+    -- Telo-only ("custom") lines: billed but NOT performed on our LIS. Each
+    -- becomes a tbl_billing_patient_test_detail line + a telo_custom_test_order
+    -- log row ONLY — never a tbl_med_mcc_patient_tests / _samples row — so it
+    -- stays out of the LIS lab workflow, worksheets and reports entirely.
+    @customLines      dbo.TeloCustomLine READONLY,
+    -- MRD free-text snapshot (the operator's "MRD + visit" field) recorded on
+    -- each custom line for traceability. Required when a custom line's
+    -- definition marks requires_mrd = 1 (enforced below).
+    @mrdText          NVARCHAR(200)  = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
     DECLARE @pid INT, @billId INT, @billNo INT,
-            @total INT = 0, @rateTypeId INT, @buCode INT, @pname NVARCHAR(200),
+            @total INT = 0, @customTotal INT = 0,
+            @rateTypeId INT, @buCode INT, @pname NVARCHAR(200),
             @o BIT, @ec VARCHAR(20), @sampleCount INT = 0,
             @txn VARCHAR(24);
 
@@ -123,10 +133,27 @@ BEGIN
         SELECT * FROM @emptySamples;
         RETURN;
     END
-    IF NOT EXISTS (SELECT 1 FROM @items)
+    /* An order needs at least one line — a normal LIS test/profile (@items) OR
+       a Telo-only custom line (@customLines). A custom-only order is valid. */
+    IF NOT EXISTS (SELECT 1 FROM @items) AND NOT EXISTS (SELECT 1 FROM @customLines)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'No test/profile lines supplied',
+               patient_id = NULL, bill_id = NULL, bill_number = NULL,
+               total = 0, sample_count = 0;
+        SELECT * FROM @emptySamples;
+        RETURN;
+    END
+    /* MRD gate: a custom line whose definition requires an MRD cannot be billed
+       without one. The MRD is captured via the ref_customer field — an existing
+       id (@refCustomer) or a fresh name (@newRefCustomerName, the typed MRD).
+       Authoritative gate; registerOrder blocks the submit too. */
+    IF EXISTS (SELECT 1 FROM @customLines WHERE requiresMrd = 1)
+       AND @refCustomer IS NULL
+       AND (@newRefCustomerName IS NULL OR LTRIM(RTRIM(@newRefCustomerName)) = N'')
+    BEGIN
+        SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
+               message = N'An MRD number is required for this order.',
                patient_id = NULL, bill_id = NULL, bill_number = NULL,
                total = 0, sample_count = 0;
         SELECT * FROM @emptySamples;
@@ -296,6 +323,12 @@ BEGIN
     END
 
     SELECT @total = ISNULL(SUM(rate), 0) FROM @lines;
+
+    /* Telo-only custom lines add to the bill total (unitAmount × qty each) but
+       drive NO sample grouping and NO LIS test rows. They are NEVER halved by a
+       Gold Card — they're a pass-through of an externally-performed charge. */
+    SELECT @customTotal = ISNULL(SUM(unitAmount * qty), 0) FROM @customLines;
+    SET @total = @total + @customTotal;
 
     /* =================== compute required sample groups =================== */
     /* Mirror the preview SP exactly so the SP is self-contained and the form
@@ -616,6 +649,34 @@ BEGIN
             (billid, mcccode, testcode, testname, testamount, testtype)
         SELECT @billId, @mcc, LEFT(l.code,10), l.name, l.rate, l.testtype
         FROM @lines l;
+
+        /* ⑤b Telo-only custom lines — a billing line ONLY (no LIS test/sample
+           row was ever written for them). One row per custom line; the amount is
+           unitAmount × qty and the name carries the count so the bill reads e.g.
+           "Glucose - External ×3". testtype 't' keeps it a plain billing line
+           for the invoice reader (it is not, and must not resolve to, an LIS
+           test). */
+        IF EXISTS (SELECT 1 FROM @customLines)
+        BEGIN
+            INSERT INTO dbo.tbl_billing_patient_test_detail
+                (billid, mcccode, testcode, testname, testamount, testtype)
+            SELECT @billId, @mcc, LEFT(c.code,10),
+                   LEFT(CASE WHEN c.qty > 1 THEN CONCAT(c.name, N' x', c.qty) ELSE c.name END, 200),
+                   c.unitAmount * c.qty, 't'
+            FROM @customLines c;
+
+            /* Traceability log: keeps these billed-but-not-performed charges
+               queryable (with the MRD snapshot) without ever touching the LIS
+               test tables. */
+            INSERT INTO dbo.telo_custom_test_order
+                (bill_id, patient_id, custom_test_id, code, name,
+                 unit_amount, qty, mrd, mcc_code, created_by)
+            SELECT @billId, @pid, c.customTestId, c.code, c.name,
+                   c.unitAmount, c.qty,
+                   NULLIF(LTRIM(RTRIM(@mrdText)), N''), @mcc,
+                   CONCAT(N'telo:', @userId)
+            FROM @customLines c;
+        END
 
         /* ⑥ receipts — ONE row per payment line (split payments supported:
            e.g. ₹500 Cash + ₹500 UPI = two receipt rows). Each receipt mints

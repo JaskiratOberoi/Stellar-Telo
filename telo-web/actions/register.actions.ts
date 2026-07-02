@@ -7,6 +7,12 @@ import { currentUser } from '@/auth/session';
 import { requireCapability, requireCapabilityForMcc } from '@/auth/guards';
 import { hasCapability } from '@/auth/rbac';
 import { loadCatalog, filterCatalog } from '@/db/read/catalog';
+import {
+  clientCodeForMcc,
+  loadCustomTestsForClientCode,
+  loadCustomTestForClient,
+  type CustomTestPublic,
+} from '@/db/read/customTests';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
 import {
   fetchDoctorsForMcc,
@@ -79,6 +85,36 @@ export async function searchCatalogAction(
   }
   const all = await loadCatalog();
   return filterCatalog(all, q, kind, 30).map(toPublicCatalogItem);
+}
+
+/**
+ * Search Telo-only ("custom") tests offered for the selected client (MCC) —
+ * e.g. "Glucose - External" for MDCARE. Scoped by the MCC's client code so a
+ * custom test only surfaces for the client it's configured for. Gated by
+ * `order:create` for that MCC. Returns [] for an out-of-scope / unknown MCC.
+ */
+export async function searchCustomTestsAction(
+  q: string,
+  mcc: number,
+): Promise<CustomTestPublic[]> {
+  if (!Number.isInteger(mcc) || mcc <= 0) return [];
+  try {
+    await requireCapabilityForMcc('order:create', mcc);
+  } catch {
+    return [];
+  }
+  const clientCode = await clientCodeForMcc(mcc);
+  if (!clientCode) return [];
+  const all = await loadCustomTestsForClientCode(clientCode);
+  const needle = (q ?? '').trim().toLowerCase();
+  const out = needle
+    ? all.filter(
+        (t) =>
+          t.name.toLowerCase().includes(needle) ||
+          t.code.toLowerCase().includes(needle),
+      )
+    : all;
+  return out.slice(0, 30);
 }
 
 /**
@@ -264,6 +300,14 @@ const itemSchema = z.object({
   name: z.string(),
 });
 
+// A Telo-only custom line the operator added — identity + count only. Price,
+// name, scope and the "MRD required" flag are re-resolved server-side from
+// dbo.telo_custom_test; the client's numbers are never trusted.
+const customItemSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  qty: z.coerce.number().int().min(1).max(99),
+});
+
 // Empty form values arrive as '' — coerce those to undefined BEFORE numeric
 // parsing, otherwise z.coerce.number('') === 0 and a 0 ref_doctor/ref_customer
 // violates the FK to tbl_med_mcc_doctors/customer.
@@ -323,6 +367,9 @@ const registerSchema = z.object({
   goldCardNumber: z.string().trim().max(50).optional(),
   goldCardHolder: z.string().trim().max(200).optional(),
   itemsJson: z.string(),
+  // Telo-only custom lines: JSON array of { id, qty }. Optional; validated and
+  // re-priced server-side below.
+  customItemsJson: z.string().optional(),
   // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
   b2b: z.string().optional(),
 });
@@ -389,8 +436,22 @@ export async function registerOrder(
 
     let items: z.infer<typeof itemSchema>[];
     try {
-      items = z.array(itemSchema).min(1).parse(JSON.parse(f.itemsJson));
+      items = z.array(itemSchema).parse(JSON.parse(f.itemsJson));
     } catch {
+      return { error: 'Add at least one test or profile.' };
+    }
+
+    // Telo-only custom lines (e.g. "Glucose - External"). Re-resolved &
+    // re-priced server-side further below. An order may be custom-only.
+    let customItemsRaw: z.infer<typeof customItemSchema>[];
+    try {
+      customItemsRaw = z
+        .array(customItemSchema)
+        .parse(JSON.parse(f.customItemsJson || '[]'));
+    } catch {
+      return { error: 'External test details are invalid.' };
+    }
+    if (items.length === 0 && customItemsRaw.length === 0) {
       return { error: 'Add at least one test or profile.' };
     }
 
@@ -416,6 +477,45 @@ export async function registerOrder(
     const user = await currentUser();
     if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
     await requireCapabilityForMcc('order:create', f.mcc);
+
+    // Re-resolve every custom line from the DB, scoped to THIS client code —
+    // price, name, code, qty-allowed and the MRD-required flag all come from
+    // dbo.telo_custom_test, never the client. An id that isn't an active custom
+    // test for this client is rejected (out-of-scope / tampered POST).
+    const customLines: {
+      customTestId: number;
+      code: string;
+      name: string;
+      unitAmount: number;
+      qty: number;
+      requiresMrd: boolean;
+    }[] = [];
+    let customTotal = 0;
+    if (customItemsRaw.length > 0) {
+      const clientCode = await clientCodeForMcc(f.mcc);
+      if (!clientCode) {
+        return { error: 'This collection centre cannot bill external tests.' };
+      }
+      for (const ci of customItemsRaw) {
+        const def = await loadCustomTestForClient(ci.id, clientCode);
+        if (!def) {
+          return {
+            error: 'An external test in this order is not available for this client.',
+          };
+        }
+        const qty = def.allowQty ? Math.min(99, Math.max(1, ci.qty)) : 1;
+        customLines.push({
+          customTestId: def.id,
+          code: def.code,
+          name: def.name,
+          unitAmount: def.mrp,
+          qty,
+          requiresMrd: def.requiresMrd,
+        });
+        customTotal += def.mrp * qty;
+      }
+    }
+    const requiresMrd = customLines.some((c) => c.requiresMrd);
 
     // Per-mobile patient cap. The form pre-checks this live, but a tampered
     // POST (or a stale form) must not slip past — the SP repeats this count
@@ -468,10 +568,11 @@ export async function registerOrder(
       : (await resolveRatesBatch(f.mcc, items.map(toResolveItem))).map(
           (r) => r.rate ?? 0,
         );
-    const resolvedTotal = rateList.reduce(
-      (s, r) => s + (gold ? Math.round(r / 2) : r),
-      0,
-    );
+    // Custom lines bill at their fixed amount (never gold-halved) and add to the
+    // authoritative total the 50% floor / 20% discount cap are measured against.
+    const resolvedTotal =
+      rateList.reduce((s, r) => s + (gold ? Math.round(r / 2) : r), 0) +
+      customTotal;
     const minPaid = resolvedTotal > 0 ? Math.round(resolvedTotal / 2) : 0;
     if (paidTotal < minPaid) {
       return {
@@ -501,6 +602,17 @@ export async function registerOrder(
     if (!b2b && !refDoc) {
       return { error: 'Select or add a referring doctor.' };
     }
+    // MRD is compulsory when the order carries a custom line that requires it
+    // (e.g. "Glucose - External"). The MRD is captured via the ref_customer
+    // field. Authoritative gate; the SP repeats it.
+    if (requiresMrd && !refCust) {
+      return {
+        error: 'Enter the patient’s MRD number — it is required for this external test.',
+      };
+    }
+    // MRD text snapshot for the custom-line log (the operator types it fresh as
+    // a new ref_customer, so it's the 'new' name).
+    const mrdText = refCust?.kind === 'new' ? refCust.name : null;
     const clinicalPdf = await readClinicalPdf(formData);
 
     // Match the LIS order form exactly: it keeps the salutation in
@@ -539,6 +651,8 @@ export async function registerOrder(
         code: i.code,
         name: i.name,
       })),
+      customLines,
+      mrdText,
       discountAmount,
       payMode: 1, // LIS standard paymode; real method captured per receipt line
       // One receipt per line; ref only meaningful for non-cash (ignored for Cash).

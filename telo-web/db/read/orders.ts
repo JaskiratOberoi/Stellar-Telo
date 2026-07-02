@@ -23,6 +23,10 @@ export interface OrderLine {
    *  The original line is kept; a negative "(Cancelled)" offset line (amount < 0)
    *  is added alongside it. */
   cancelled: boolean;
+  /** True for a Telo-only "external" line (e.g. Glucose - External) — billed by
+   *  Noble but performed outside it. Drives the invoice's not-performed-by-Noble
+   *  disclaimer. */
+  isExternal: boolean;
 }
 
 export interface OrderSample {
@@ -285,10 +289,18 @@ export async function getOrder(
         testType: string | null;
         amount: number;
         cancelled: number;
+        isExternal: number;
       }>(`
         SELECT d.id AS lineId, d.testcode AS testCode, d.testname AS testName,
                d.testtype AS testType, d.testamount AS amount,
-               CASE WHEN tc.line_id IS NULL THEN 0 ELSE 1 END AS cancelled
+               CASE WHEN tc.line_id IS NULL THEN 0 ELSE 1 END AS cancelled,
+               -- A Telo-only "external" line (e.g. Glucose - External): billed by
+               -- us but performed outside Noble. Flagged from its per-bill log so
+               -- the invoice can add the not-performed-by-Noble disclaimer.
+               CASE WHEN EXISTS (
+                      SELECT 1 FROM dbo.telo_custom_test_order cto
+                      WHERE cto.bill_id = d.billid AND LEFT(cto.code, 10) = d.testcode
+                    ) THEN 1 ELSE 0 END AS isExternal
         FROM dbo.tbl_billing_patient_test_detail d
         LEFT JOIN dbo.telo_test_cancellation tc ON tc.line_id = d.id
         WHERE d.billid = @bid
@@ -418,6 +430,7 @@ export async function getOrder(
         testType: x.testType,
         amount: Number(x.amount ?? 0),
         cancelled: x.cancelled === 1,
+        isExternal: x.isExternal === 1,
       })),
       samples,
       receipts,

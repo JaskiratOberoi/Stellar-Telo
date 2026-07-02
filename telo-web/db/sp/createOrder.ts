@@ -15,6 +15,17 @@ export interface PaymentLine {
   ref?: string | null; // txn reference for a non-cash line; null for Cash
 }
 
+/** A Telo-only ("custom") order line — billed but not performed on our LIS.
+ *  Produces a billing line + telo_custom_test_order log row only. */
+export interface CustomLine {
+  customTestId: number; // dbo.telo_custom_test.id (authoritative price/name source)
+  code: string;
+  name: string;
+  unitAmount: number; // rupees per unit (server-resolved)
+  qty: number; // >= 1
+  requiresMrd: boolean;
+}
+
 export interface IssuedSample {
   sampleId: number;
   vailid: string;
@@ -43,6 +54,11 @@ export interface CreateOrderInput {
   newRefDoctorName?: string | null;
   newRefCustomerName?: string | null;
   items: CartItem[];
+  /** Telo-only lines (e.g. "Glucose - External"). Empty/omitted for a normal
+   *  order. Each bills unitAmount × qty and writes NO LIS test/sample row. */
+  customLines?: CustomLine[];
+  /** The operator's MRD free-text, snapshotted on each custom line. */
+  mrdText?: string | null;
   discountAmount?: number;
   payMode?: number | null;
   /** Payment lines collected now. Each becomes one receipt row; an empty array
@@ -94,6 +110,37 @@ function buildTestListTvp(items: CartItem[]): sql.Table {
       kind,
       (i.code ?? '').slice(0, 50) || String(i.id),
       (i.name ?? '').slice(0, 200) || (i.code ?? String(i.id)),
+    );
+  }
+  return t;
+}
+
+function buildCustomLineTvp(lines: CustomLine[]): sql.Table {
+  const t = new sql.Table('dbo.TeloCustomLine');
+  t.create = false;
+  t.columns.add('customTestId', sql.Int, { nullable: false });
+  t.columns.add('code', sql.NVarChar(50), { nullable: false });
+  t.columns.add('name', sql.NVarChar(200), { nullable: false });
+  t.columns.add('unitAmount', sql.Int, { nullable: false });
+  t.columns.add('qty', sql.Int, { nullable: false });
+  t.columns.add('requiresMrd', sql.Bit, { nullable: false });
+  // Coalesce repeats of the same custom test into one line, summing qty — the
+  // form only adds one line per custom test, but this guards a tampered POST.
+  const byId = new Map<number, CustomLine>();
+  for (const l of lines) {
+    const qty = Math.max(1, Math.round(Number(l.qty) || 1));
+    const prev = byId.get(l.customTestId);
+    if (prev) prev.qty += qty;
+    else byId.set(l.customTestId, { ...l, qty });
+  }
+  for (const l of byId.values()) {
+    t.rows.add(
+      l.customTestId,
+      (l.code ?? '').slice(0, 50) || String(l.customTestId),
+      (l.name ?? '').slice(0, 200) || (l.code ?? String(l.customTestId)),
+      Math.max(0, Math.round(Number(l.unitAmount) || 0)),
+      l.qty,
+      l.requiresMrd ? true : false,
     );
   }
   return t;
@@ -181,6 +228,8 @@ export async function createOrder(
       .input('goldCardNumber', sql.NVarChar(50), input.goldCardNumber ?? null)
       .input('goldCardHolder', sql.NVarChar(200), input.goldCardHolder ?? null)
       .input('payments', buildPaymentTvp(input.payments ?? []))
+      .input('customLines', buildCustomLineTvp(input.customLines ?? []))
+      .input('mrdText', sql.NVarChar(200), input.mrdText ?? null)
       .execute<Record<string, unknown>>('dbo.usp_telo_create_order');
 
     const sets = r.recordsets as unknown as [
