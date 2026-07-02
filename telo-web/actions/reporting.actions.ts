@@ -182,19 +182,45 @@ export async function searchReports(
   // client-facing role (client_reporting) never sees another client's reports.
   const scopeCodes = await reportClientCodeScope(user);
 
-  // Shared scope filters applied to every fetch.
-  const base = {
+  // Which clientCode(s) to push to the SERVER query. For a client-scoped role
+  // (client_reporting) we ALWAYS pin to their own code(s): the worksheet fetch
+  // is page-capped, so a null clientCode returns a global page in which one
+  // client's reports can be crowded out entirely by other clients — post-
+  // filtering that page then yields nothing (the "no reports" bug). If they
+  // typed a code within their scope, honour just that one. Unrestricted roles
+  // (super_admin/admin) keep the single, optionally-null fetch.
+  const typedCode = filters.clientCode?.trim() || null;
+  let queryCodes: (string | null)[];
+  if (scopeCodes) {
+    if (scopeCodes.size === 0) return []; // scoped to no client → nothing to show
+    queryCodes =
+      typedCode && scopeCodes.has(typedCode.toUpperCase())
+        ? [typedCode]
+        : [...scopeCodes];
+  } else {
+    queryCodes = [typedCode];
+  }
+
+  const baseFilters = {
     fromDate: filters.from,
     toDate: filters.to,
-    clientCode: filters.clientCode?.trim() || null,
     businessUnit: filters.businessUnit?.trim() || null,
     testCode: anchor || null,
   };
+  // Fetch once per in-scope clientCode (usually exactly one) and flatten.
+  const fetchScoped = (
+    extra: Partial<Parameters<typeof getWorksheetReports>[0]>,
+  ) =>
+    Promise.all(
+      queryCodes.map((cc) =>
+        getWorksheetReports({ ...baseFilters, clientCode: cc, ...extra }),
+      ),
+    ).then((batches) => batches.flat());
 
   // No universal query → plain date-range list (today's behaviour).
   if (!q) {
     const rows = filterRowsByReportScope(
-      await getWorksheetReports({ ...base, pageSize: 500 }),
+      await fetchScoped({ pageSize: 500 }),
       scopeCodes,
     );
     return rows
@@ -207,14 +233,12 @@ export async function searchReports(
   const qLower = q.toLowerCase();
 
   // (a) Precise, unbounded server fetch routed by query shape.
-  const routedPromise = getWorksheetReports({
-    ...base,
-    ...(numeric ? { sid: q } : { patientName: q }),
-    pageSize: 500,
-  });
+  const routedPromise = fetchScoped(
+    numeric ? { sid: q, pageSize: 500 } : { patientName: q, pageSize: 500 },
+  );
   // (b) Broad date-range window, filtered in-process across every field so test
   //     name / code / PID also match (bounded to this window).
-  const windowPromise = getWorksheetReports({ ...base, pageSize: 1000 });
+  const windowPromise = fetchScoped({ pageSize: 1000 });
 
   const [routedRaw, windowRaw] = await Promise.all([
     routedPromise,
