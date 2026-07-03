@@ -9,6 +9,11 @@ import { getOrder } from '@/db/read/orders';
 import { setBillDiscount } from '@/db/sp/setBillDiscount';
 import { voidReceipt } from '@/db/sp/voidReceipt';
 import { cancelTest } from '@/db/sp/cancelTest';
+import {
+  editBillTests,
+  type EditTestItem,
+  type EditCustomLine,
+} from '@/db/sp/editBillTests';
 import { recordRefund } from '@/db/sp/recordRefund';
 import { recordMccPayment } from '@/db/sp/recordMccPayment';
 import { audit } from '@/lib/audit';
@@ -353,5 +358,63 @@ export async function recordMccPaymentAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong recording the payment.');
+  }
+}
+
+/**
+ * Replace the test set of a Telo bill (LIS tests + custom lines), recomputing the
+ * amount/Balance. SUPER-ADMIN ONLY. The SP (usp_telo_edit_bill_tests) refuses
+ * non-Telo bills, bills that already have samples, and Gold-Card bills.
+ */
+export async function editBillTestsAction(input: {
+  billId: number;
+  items?: EditTestItem[];
+  customLines?: EditCustomLine[];
+  mrdText?: string | null;
+}): Promise<BillingAdminState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'edit-bill-tests');
+
+    const billId = Number(input.billId);
+    if (!Number.isInteger(billId) || billId <= 0) return err('Invalid bill.');
+    const items = (input.items ?? []).filter(
+      (i) => Number.isInteger(i.testMasterId) && i.testMasterId > 0,
+    );
+    const customLines = (input.customLines ?? []).filter(
+      (c) => Number.isInteger(c.customTestId) && c.customTestId > 0 && c.qty >= 1,
+    );
+    if (items.length === 0 && customLines.length === 0) {
+      return err('Add at least one test or custom line.');
+    }
+
+    // Defence-in-depth: the bill must be inside the caller's MCC scope.
+    const mcc = await billMcc(billId);
+    if (mcc == null) return err('Bill not found.');
+    const scope = await getMccScope(actor.uid);
+    if (!inScope(scope, mcc)) return err('That bill is outside your scope.');
+
+    const res = await editBillTests({
+      billId,
+      userId: actor.uid,
+      items,
+      customLines,
+      mrdText: input.mrdText ?? null,
+    });
+    if (!res.ok) return err(res.message ?? 'Could not update the tests.');
+
+    audit({
+      kind: 'bill.tests.edited',
+      actor: actor.uid,
+      billId,
+      itemCount: items.length,
+      customCount: customLines.length,
+      balance: res.balance,
+    });
+    revalidatePath(`/orders/${billId}`);
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating the tests.');
   }
 }
