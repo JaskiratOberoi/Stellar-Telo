@@ -38,6 +38,18 @@ const FEATURES = [
   },
 ] as const;
 
+/** Twinkling motes scattered across the sign-in panel — position/size/tempo
+ *  are hand-placed so they cluster around the edges, never under the form. */
+const MOTES = [
+  { top: '14%', left: '12%', size: 4, tone: 'bg-primary/40', duration: '5s', delay: '0s' },
+  { top: '24%', left: '78%', size: 3, tone: 'bg-chart-5/50', duration: '6.5s', delay: '1.2s' },
+  { top: '38%', left: '6%', size: 2, tone: 'bg-foreground/30', duration: '4.5s', delay: '2.1s' },
+  { top: '62%', left: '88%', size: 4, tone: 'bg-primary/30', duration: '7s', delay: '0.6s' },
+  { top: '78%', left: '18%', size: 3, tone: 'bg-chart-5/40', duration: '5.5s', delay: '1.8s' },
+  { top: '86%', left: '64%', size: 2, tone: 'bg-foreground/25', duration: '6s', delay: '3s' },
+  { top: '8%', left: '52%', size: 2, tone: 'bg-primary/35', duration: '8s', delay: '2.5s' },
+] as const;
+
 /** Tiny tileable fractal-noise SVG — overlaid at ~3% for a film-grain finish. */
 const GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
@@ -146,14 +158,60 @@ export default function LoginPage() {
         </section>
 
         {/* ── Sign-in panel ──────────────────────────────────────────────── */}
-        <section className="relative flex items-center justify-center px-4 py-12 sm:px-8">
+        <section className="relative flex items-center justify-center overflow-hidden px-4 py-12 sm:px-8">
           {/* Legibility scrim — settles the ambient blobs under the form */}
           <div
             aria-hidden
             className="absolute inset-0 bg-gradient-to-l from-background/90 via-background/60 to-transparent"
           />
 
-          <div className="relative w-full max-w-sm">
+          {/* ── Living backdrop — the form floats on a gently moving field ── */}
+          {/* Drifting colour orbs */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-24 right-[-12%] h-80 w-80 animate-blob rounded-full bg-primary/20 blur-[100px] motion-reduce:animate-none print:hidden"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute bottom-[-18%] left-[2%] h-96 w-96 animate-blob rounded-full bg-chart-5/[0.18] blur-[110px] [animation-delay:-8s] motion-reduce:animate-none print:hidden"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute right-[12%] top-1/2 h-64 w-64 animate-blob rounded-full bg-secondary/10 blur-[90px] [animation-delay:-14s] motion-reduce:animate-none print:hidden"
+          />
+          {/* Slow halo sweep orbiting behind the card */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 h-[46rem] w-[46rem] -translate-x-1/2 -translate-y-1/2 opacity-[0.22] blur-2xl [animation:spin_70s_linear_infinite] motion-reduce:[animation:none] print:hidden"
+            style={{
+              background:
+                'conic-gradient(from 0deg, transparent, hsl(var(--primary) / 0.4) 18%, transparent 42%, hsl(var(--chart-5) / 0.32) 66%, transparent 86%)',
+            }}
+          />
+          {/* Fine dotted grid, faded toward the edges */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_center,hsl(var(--foreground)/0.05)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_78%)] print:hidden"
+          />
+          {/* Twinkling motes */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 print:hidden">
+            {MOTES.map((m, i) => (
+              <span
+                key={i}
+                className={`absolute animate-pulse rounded-full motion-reduce:animate-none ${m.tone}`}
+                style={{
+                  top: m.top,
+                  left: m.left,
+                  width: m.size,
+                  height: m.size,
+                  animationDuration: m.duration,
+                  animationDelay: m.delay,
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="relative w-full max-w-sm rounded-2xl border border-border/60 bg-card/70 p-6 shadow-elevation-3 backdrop-blur-xl sm:p-8">
             {/* Compact brand header (mobile only) */}
             <div className="mb-10 animate-card-in text-center lg:hidden motion-reduce:animate-none">
               <img
