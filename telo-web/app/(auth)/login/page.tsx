@@ -1,7 +1,13 @@
 'use client';
 
 import { useActionState, useEffect, useState } from 'react';
-import { ArrowRight, FileText, Loader2, Receipt, Wallet } from 'lucide-react';
+import {
+  ArrowRight,
+  FileText,
+  FlaskConical,
+  Loader2,
+  Wallet,
+} from 'lucide-react';
 import { loginAction, type LoginState } from './actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,19 +22,19 @@ const initial: LoginState = { error: null };
 /** What signing in unlocks — mirrors the landing page's three pillars. */
 const FEATURES = [
   {
-    icon: Receipt,
-    title: 'Billing & orders',
-    desc: 'Raise orders and settle bills against live LIS data.',
+    icon: FlaskConical,
+    title: 'Registration & sampling',
+    desc: 'Register patients, accession samples and raise orders on live LIS data.',
   },
   {
     icon: FileText,
-    title: 'Lab reports',
-    desc: 'Preview, customise and download branded PDF reports.',
+    title: 'Reporting & results',
+    desc: 'Preview, customise and download branded PDF lab reports.',
   },
   {
     icon: Wallet,
-    title: 'Accounts',
-    desc: 'Ledgers, receipts and balances for every client.',
+    title: 'Billing & accounts',
+    desc: 'Bills, receipts, ledgers and balances for every client.',
   },
 ] as const;
 
@@ -106,8 +112,8 @@ export default function LoginPage() {
                 </span>
               </span>
               <p className="mt-4 text-lg leading-relaxed text-sidebar-foreground/85">
-                Billing for the Noble laboratory network — orders, reports and
-                accounts in one place.
+                A complete laboratory information system for the Noble network —
+                orders, samples, reports and accounts, end to end.
               </p>
             </div>
 
@@ -167,7 +173,7 @@ export default function LoginPage() {
                 <VersionBadge className="mt-1" />
               </span>
               <p className="mt-1 text-sm text-muted-foreground">
-                Noble laboratory billing
+                Noble laboratory information system
               </p>
             </div>
 

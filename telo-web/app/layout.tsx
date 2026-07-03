@@ -19,8 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Telo — Billing',
-  description: 'Billing & reporting for the Noble laboratory network',
+  title: 'Telo — Laboratory Information System',
+  description:
+    'The laboratory information system for the Noble network — registration, sampling, reporting, billing and accounts.',
 };
 
 export const viewport: Viewport = {
