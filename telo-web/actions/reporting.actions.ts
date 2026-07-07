@@ -125,6 +125,28 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
   };
 }
 
+/**
+ * Cluster rows so every patient's samples are contiguous — a lab tech sees all
+ * of one PID's reports together (e.g. all three VINTI rows in a row). Stable
+ * group-by: groups appear in each PID's first-seen order, and rows keep their
+ * incoming order within a group, so the underlying reported-time ordering is
+ * preserved as much as grouping allows.
+ */
+function groupByPid(rows: ReportSearchRow[]): ReportSearchRow[] {
+  const groups = new Map<number, ReportSearchRow[]>();
+  const order: number[] = [];
+  for (const r of rows) {
+    let g = groups.get(r.pid);
+    if (!g) {
+      g = [];
+      groups.set(r.pid, g);
+      order.push(r.pid);
+    }
+    g.push(r);
+  }
+  return order.flatMap((pid) => groups.get(pid) ?? []);
+}
+
 /** Stamp each result row with its balance lock (patient bill / client wallet). */
 async function annotateLocks(rows: ReportSearchRow[]): Promise<ReportSearchRow[]> {
   if (rows.length === 0) return rows;
@@ -254,10 +276,12 @@ export async function searchReports(
       scopeCodes,
     );
     return annotateLocks(
-      rows
-        .filter(isReleasable)
-        .map((r) => mapRow(r, anchor))
-        .filter(passesStatus),
+      groupByPid(
+        rows
+          .filter(isReleasable)
+          .map((r) => mapRow(r, anchor))
+          .filter(passesStatus),
+      ),
     );
   }
 
@@ -292,7 +316,7 @@ export async function searchReports(
   }
 
   return annotateLocks(
-    Array.from(bySid.values()).filter(passesStatus).slice(0, 500),
+    groupByPid(Array.from(bySid.values()).filter(passesStatus).slice(0, 500)),
   );
 }
 
