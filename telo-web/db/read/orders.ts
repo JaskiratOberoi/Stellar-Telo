@@ -56,6 +56,18 @@ export interface OrderReceipt {
   /** True once a super admin has voided this receipt (telo_receipt_void). The
    *  row is kept for the trail but no longer counts toward amount_paid. */
   voided: boolean;
+  /** True once a super admin has edited this receipt's amount
+   *  (telo_receipt_edit). The txn id and date are unchanged; `amount` is the
+   *  corrected value. Drives the on-screen "modified" badge — the printed
+   *  bill deliberately shows no trace of the edit. */
+  edited: boolean;
+  /** Amount as originally recorded (first edit's old_amount). Null when never
+   *  edited. */
+  originalAmount: number | null;
+  /** Latest edit's metadata for the badge tooltip. Null when never edited. */
+  lastEditDate: string | null;
+  lastEditBy: string | null;
+  lastEditReason: string | null;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -322,6 +334,11 @@ export async function getOrder(
         status: string | null;
         txnId: string | null;
         voided: number;
+        edited: number;
+        originalAmount: number | null;
+        lastEditDate: Date | null;
+        lastEditBy: string | null;
+        lastEditReason: string | null;
       }>(`
         SELECT r.id AS receiptId,
                r.recd_date AS date,
@@ -330,10 +347,31 @@ export async function getOrder(
                r.card_number AS reference,
                r.receive_status AS status,
                t.txn_id AS txnId,
-               CASE WHEN v.receipt_id IS NULL THEN 0 ELSE 1 END AS voided
+               CASE WHEN v.receipt_id IS NULL THEN 0 ELSE 1 END AS voided,
+               -- Amount-edit trail (telo_receipt_edit): first edit's old_amount
+               -- is the amount as originally recorded; the latest edit supplies
+               -- the badge tooltip (who / when / why).
+               CASE WHEN fe.receipt_id IS NULL THEN 0 ELSE 1 END AS edited,
+               fe.old_amount AS originalAmount,
+               le.edited_date AS lastEditDate,
+               NULLIF(LTRIM(RTRIM(CONCAT(eu.firstname, ' ', eu.lastname))), '') AS lastEditBy,
+               le.reason AS lastEditReason
         FROM dbo.tbl_billing_patient_amount_receipt r
         LEFT JOIN dbo.telo_txn t ON t.receipt_id = r.id
         LEFT JOIN dbo.telo_receipt_void v ON v.receipt_id = r.id
+        OUTER APPLY (
+          SELECT TOP 1 e.receipt_id, e.old_amount
+          FROM dbo.telo_receipt_edit e
+          WHERE e.receipt_id = r.id
+          ORDER BY e.id ASC
+        ) fe
+        OUTER APPLY (
+          SELECT TOP 1 e.edited_date, e.edited_by, e.reason
+          FROM dbo.telo_receipt_edit e
+          WHERE e.receipt_id = r.id
+          ORDER BY e.id DESC
+        ) le
+        LEFT JOIN dbo.tbl_med_user_master eu ON eu.id = le.edited_by
         WHERE r.bill_id = @bid
         ORDER BY r.id
       `);
@@ -386,6 +424,11 @@ export async function getOrder(
       txnId: x.txnId?.trim() || null,
       kind: x.status === '2' ? 'refund' : 'payment',
       voided: x.voided === 1,
+      edited: x.edited === 1,
+      originalAmount: x.originalAmount != null ? Number(x.originalAmount) : null,
+      lastEditDate: x.lastEditDate ? x.lastEditDate.toISOString() : null,
+      lastEditBy: x.lastEditBy?.trim() || null,
+      lastEditReason: x.lastEditReason?.trim() || null,
     }));
 
     const samples: OrderSample[] = sr.recordset.map((x) => ({

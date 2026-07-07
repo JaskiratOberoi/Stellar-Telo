@@ -8,6 +8,7 @@ import { getPool, sql, withRetry } from '@/db/pool';
 import { getOrder } from '@/db/read/orders';
 import { setBillDiscount } from '@/db/sp/setBillDiscount';
 import { voidReceipt } from '@/db/sp/voidReceipt';
+import { editReceiptAmount } from '@/db/sp/editReceiptAmount';
 import { cancelTest } from '@/db/sp/cancelTest';
 import {
   editBillTests,
@@ -23,6 +24,8 @@ import { AppError } from '@/lib/errors';
  * Super-admin-only billing/account mutations:
  *   - setBillDiscountAction:  change a bill's discount, recompute Balance.
  *   - voidReceiptAction:      void a recorded payment/refund txn.
+ *   - editReceiptAmountAction: correct the amount of a recorded txn (same txn
+ *                             number/date; audit-trailed with a mandatory reason).
  *   - cancelTestAction:       cancel a single test on the bill.
  *   - recordMccPaymentAction: post a manual client payment into the LIS
  *                             franchise-wallet ledger (Client Accounts screen).
@@ -146,6 +149,66 @@ export async function voidReceiptAction(
   } catch (e) {
     if (e instanceof AppError) return err(e.message);
     return err('Something went wrong voiding the transaction.');
+  }
+}
+
+const editReceiptAmountSchema = z.object({
+  billId: z.coerce.number().int().positive(),
+  receiptId: z.coerce.number().int().positive(),
+  amount: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Corrects the amount of a single recorded payment/refund receipt. SUPER-ADMIN
+ * ONLY. The txn number and date stay exactly as recorded; only the amount
+ * changes (bill's amount_paid/Balance shift by the delta) and an audit row is
+ * appended to telo_receipt_edit — reason is mandatory. See
+ * db/sql/101_usp_telo_edit_receipt_amount.sql.
+ */
+export async function editReceiptAmountAction(
+  _prev: BillingAdminState,
+  formData: FormData,
+): Promise<BillingAdminState> {
+  try {
+    const actor = await requireCapability('user:manage');
+    await throttleAdminAction(actor.uid, 'receipt_edit');
+
+    const parsed = editReceiptAmountSchema.safeParse(Object.fromEntries(formData));
+    if (!parsed.success) {
+      return err('Enter a valid amount and a reason for the change.');
+    }
+    const { billId, receiptId, amount, reason } = parsed.data;
+
+    const mcc = await billMcc(billId);
+    if (mcc == null) return err('Bill not found.');
+    const scope = await getMccScope(actor.uid);
+    if (!inScope(scope, mcc)) {
+      return err('This bill is not in your assigned collection centres.');
+    }
+
+    const res = await editReceiptAmount({
+      receiptId,
+      billId,
+      newAmount: amount,
+      actor: actor.uid,
+      reason,
+    });
+    if (!res.ok) return err(res.message ?? 'Could not update the transaction.');
+
+    audit({
+      kind: 'receipt.amount.edited',
+      actor: actor.uid,
+      billId,
+      receiptId,
+      oldAmount: res.oldAmount,
+      newAmount: amount,
+    });
+    revalidatePath(`/orders/${billId}`);
+    return ok();
+  } catch (e) {
+    if (e instanceof AppError) return err(e.message);
+    return err('Something went wrong updating the transaction.');
   }
 }
 

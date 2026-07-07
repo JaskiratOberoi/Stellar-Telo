@@ -4,7 +4,7 @@
   "private": true,
   "description": "Telo — B2C billing web app on the Noble LIS database",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

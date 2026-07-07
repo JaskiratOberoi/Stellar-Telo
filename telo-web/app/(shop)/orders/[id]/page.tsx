@@ -11,6 +11,7 @@ import { PrintLabButton, PrintBillButton } from '@/components/orders/print-bill-
 import { EditPatientInfo } from '@/components/orders/edit-patient-info';
 import { EditDiscount } from '@/components/orders/edit-discount';
 import { VoidReceiptButton } from '@/components/orders/void-receipt-button';
+import { EditReceiptAmountButton } from '@/components/orders/edit-receipt-amount-button';
 import { CancelTestButton } from '@/components/orders/cancel-test-button';
 import { CancelBookingButton } from '@/components/orders/cancel-booking-button';
 import { fmtIST } from '@/lib/datetime';
@@ -463,8 +464,11 @@ function Row({
 // One line per payment / refund in the Summary card. Refunds show in red
 // with a leading minus so the running net is clear at a glance. Voided
 // receipts are struck through and tagged — they no longer count toward the
-// net (the void already reversed amount_paid). Super admins get a "Void"
-// control on still-active receipts.
+// net (the void already reversed amount_paid). Super admins get "Edit" (amount
+// correction, audit-trailed, same txn id/date) and "Void" controls on
+// still-active receipts. Amount-edited rows carry a "modified" badge whose
+// tooltip shows the original amount and the latest edit's who/when/why — the
+// printed bill shows only the corrected amount, no badge.
 function ReceiptRow({
   rcpt,
   billId,
@@ -501,10 +505,36 @@ function ReceiptRow({
           </span>
         )}
       </span>
+      {rcpt.edited && (
+        <span
+          className="cursor-help rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700"
+          title={[
+            rcpt.originalAmount != null
+              ? `Originally ₹${rcpt.originalAmount.toLocaleString('en-IN')}`
+              : null,
+            rcpt.lastEditBy ? `Edited by ${rcpt.lastEditBy}` : null,
+            rcpt.lastEditDate ? `on ${fmtIST(rcpt.lastEditDate, 'date')}` : null,
+            rcpt.lastEditReason ? `— ${rcpt.lastEditReason}` : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          modified
+        </span>
+      )}
       {isVoided && (
         <span className="rounded bg-zinc-200 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
           voided
         </span>
+      )}
+      {canVoid && !isVoided && (
+        <EditReceiptAmountButton
+          billId={billId}
+          receiptId={rcpt.receiptId}
+          kind={rcpt.kind}
+          amount={rcpt.amount}
+          txnId={rcpt.txnId}
+        />
       )}
       {canVoid && !isVoided && (
         <VoidReceiptButton

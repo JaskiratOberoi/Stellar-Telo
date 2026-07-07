@@ -26,6 +26,7 @@ type AuditEvent =
   | { kind: 'patient.info.update'; actor: number; billId: number }
   | { kind: 'bill.discount.set'; actor: number; billId: number; discount: number }
   | { kind: 'receipt.voided'; actor: number; billId: number; receiptId: number }
+  | { kind: 'receipt.amount.edited'; actor: number; billId: number; receiptId: number; oldAmount: number | null; newAmount: number }
   | { kind: 'bill.test.cancelled'; actor: number; billId: number; lineId: number }
   | { kind: 'bill.booking.cancelled'; actor: number; billId: number; cancelled: number; refunded: number }
   | { kind: 'bill.booking.cancel.blocked'; actor: number; billId: number; cancelled: number; blocked: number }
