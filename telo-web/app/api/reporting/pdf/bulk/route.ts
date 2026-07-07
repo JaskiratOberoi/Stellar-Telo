@@ -6,6 +6,7 @@ import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentsToPdfs } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { concatPdfs } from '@/lib/report/mergePdfs';
+import { reportToken } from '@/lib/report/reportLink';
 
 export const dynamic = 'force-dynamic';
 // Headless Chromium needs the Node runtime (not Edge).
@@ -33,9 +34,14 @@ function fragmentPath(item: BulkItem): string {
   // with the signature/QR footer pinned to the page bottom). It matches the
   // single-report download, whose preview defaults `split = true`. Omitting it
   // falls back to the continuous thead/tfoot mode where signatures ride up.
+  // Auth via per-report HMAC token, not cookie replay — the `__Secure-` prod
+  // session cookie can't be set on the http loopback origin the headless render
+  // loads. Each SID here has already cleared scope + balance-lock checks below.
+  const token = reportToken(item.sid.trim());
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
   return `/print/reporting/${encodeURIComponent(item.sid.trim())}?pdf=1&split=1${
     panelId ? `&panel=${encodeURIComponent(panelId)}` : ''
-  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}`;
+  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}${tokenParam}`;
 }
 
 /**
@@ -117,9 +123,13 @@ export async function POST(req: Request) {
   const fileName = `Reports_${items.length}_${stamp}.pdf`;
 
   try {
+    // Auth rides on the per-report token in each fragmentPath, NOT cookies —
+    // pass null so headless Chromium never tries to set the caller's
+    // `__Secure-`/`__Host-`-prefixed prod cookies on the http://127.0.0.1 render
+    // origin (which throws "Invalid cookie fields" and fails the render).
     const contents = await renderFragmentsToPdfs(
       items.map(fragmentPath),
-      req.headers.get('cookie'),
+      null,
     );
     // Stamp each onto the letterhead, then concatenate into one document.
     const letterheaded = await Promise.all(

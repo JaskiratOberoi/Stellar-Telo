@@ -5,6 +5,7 @@ import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
+import { reportToken } from '@/lib/report/reportLink';
 
 export const dynamic = 'force-dynamic';
 // Headless Chromium needs the Node runtime (not Edge).
@@ -80,15 +81,25 @@ export async function POST(req: Request) {
       .replace(/^_+|_+$/g, '') || 'Report';
   const fileName = `${safeName}_${sid.trim()}.pdf`;
 
+  // Auth for the headless render goes via a per-report HMAC token, NOT cookie
+  // replay: in a TLS prod deploy the session cookie is `__Secure-`-prefixed and
+  // Chromium refuses to set it on the http://127.0.0.1 loopback origin the
+  // renderer loads, so cookie-based auth silently fails and the fragment renders
+  // the login page. The token path is pre-scoped — every check above (capability,
+  // client scope, balance lock) has already passed for this exact SID.
+  const token = reportToken(sid.trim());
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
   const fragmentPath = `/print/reporting/${encodeURIComponent(sid.trim())}?pdf=1${
     panelId ? `&panel=${encodeURIComponent(panelId)}` : ''
-  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}${splitParam}${excludeParam}`;
+  }${dateHint ? `&date=${encodeURIComponent(dateHint)}` : ''}${splitParam}${excludeParam}${tokenParam}`;
 
   try {
-    const content = await renderFragmentToPdf(
-      fragmentPath,
-      req.headers.get('cookie'),
-    );
+    // Auth rides on the per-report token in fragmentPath, NOT cookies. We pass
+    // null so headless Chromium never tries to set the caller's cookies: the
+    // prod session/CSRF cookies are `__Secure-`/`__Host-`-prefixed and setting
+    // them on the http://127.0.0.1 render origin throws "Invalid cookie fields",
+    // failing the whole render. (The public /r/ softcopy route does the same.)
+    const content = await renderFragmentToPdf(fragmentPath, null);
     const merged = await mergeOntoLetterhead(content, { headless: headlessReport });
 
     return new NextResponse(new Uint8Array(merged), {
