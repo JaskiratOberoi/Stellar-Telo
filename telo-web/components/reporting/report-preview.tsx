@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, X } from 'lucide-react';
+import { Download, X, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { buildReportFilename } from '@/lib/report/reportFilename';
 
 /**
  * Modal preview of a single sample report. Loads the server-rendered fragment
@@ -16,22 +17,34 @@ export function ReportPreview({
   panel,
   date,
   patientName,
+  profileName,
   onClose,
 }: {
   sid: string;
   panel: string;
   date: string | null;
   patientName: string | null;
+  /** Friendly name of the active profile/test filter, appended to the download
+   *  filename (PatientName_SID_ProfileName.pdf). Null when the search had no
+   *  single-test filter. */
+  profileName: string | null;
   onClose: () => void;
 }) {
   const dateParam = date ? `&date=${encodeURIComponent(date)}` : '';
   // Split-by-department is the default layout (one department per page).
   const [split, setSplit] = useState(true);
-  // Headless: drop the Noble letterhead from the PDF but keep the same margins,
-  // so it can be printed onto physical pre-printed letterhead paper.
-  const [headless, setHeadless] = useState(false);
+  // Headless: drop the Noble letterhead (header + footer) from the PDF but keep
+  // the same margins, so it can be printed onto physical pre-printed letterhead
+  // paper. Default ON (headless) — the "Letterhead" toggle below is OFF by
+  // default; turning it ON adds the Noble header + footer.
+  const [headless, setHeadless] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Graph attachment (LIS): some tests (Double/Quadruple Marker, allergy panels)
+  // have a graph PDF stapled to the report in the LIS. We expose it as a separate
+  // download. `graphCount` (0 => no button) comes from a cheap meta probe.
+  const [graphCount, setGraphCount] = useState(0);
+  const [graphBusy, setGraphBusy] = useState(false);
   // Item keys the user unticked in the preview iframe (reported via postMessage).
   // These tests are omitted from the generated PDF. `report` carries the test
   // counts so we can block a download with nothing ticked. `remaining` already
@@ -87,6 +100,57 @@ export function ReportPreview({
     return () => window.removeEventListener('message', onMessage);
   }, [sid]);
 
+  // Probe whether this SID has a graph attachment (cheap, no bytes) so we only
+  // show the button when there's something to download.
+  useEffect(() => {
+    let alive = true;
+    setGraphCount(0);
+    fetch(`/api/reporting/graph/${encodeURIComponent(sid)}?meta=1`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (alive && d && typeof d.count === 'number') setGraphCount(d.count);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sid]);
+
+  async function downloadGraph() {
+    setError(null);
+    setGraphBusy(true);
+    try {
+      const res = await fetch(`/api/reporting/graph/${encodeURIComponent(sid)}`);
+      if (res.status === 423) {
+        throw new Error('Reports are on hold while a balance is outstanding.');
+      }
+      if (res.status === 404) {
+        setGraphCount(0);
+        throw new Error('No graph is attached to this report.');
+      }
+      if (!res.ok) {
+        throw new Error(`Could not download the graph (HTTP ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const ext =
+        blob.type === 'image/png' ? 'png' : blob.type.startsWith('image/') ? 'jpg' : 'pdf';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // PatientName_SID_graph.<ext> — mirrors the report's own filename scheme.
+      const base = buildReportFilename({ patientName, sid, profileName }).replace(/\.pdf$/i, '');
+      a.download = `${base}_graph.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Graph download failed.');
+    } finally {
+      setGraphBusy(false);
+    }
+  }
+
   async function download() {
     if (nothingSelected) {
       setError('Tick at least one test to include in the PDF.');
@@ -98,7 +162,7 @@ export function ReportPreview({
       const res = await fetch('/api/reporting/pdf', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sid, panel, date, patientName, split, headless, exclude: excluded }),
+        body: JSON.stringify({ sid, panel, date, patientName, profileName, split, headless, exclude: excluded }),
       });
       if (!res.ok) {
         throw new Error(`Could not generate PDF (HTTP ${res.status}).`);
@@ -107,11 +171,9 @@ export function ReportPreview({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Filename = patient name + SID (never the test name).
-      const safeName =
-        (patientName ?? '').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '') ||
-        'Report';
-      a.download = `${safeName}_${sid}.pdf`;
+      // Filename = PatientName_SID_ProfileName (a.download overrides the
+      // server's Content-Disposition for blob saves — keep them in sync).
+      a.download = buildReportFilename({ patientName, sid, profileName });
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -147,19 +209,19 @@ export function ReportPreview({
           <div className="flex shrink-0 items-center gap-2">
             <label
               className="flex h-9 cursor-pointer select-none items-center gap-2 rounded-md border border-foreground/10 bg-input px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/5"
-              title="Hide the Noble letterhead but keep all spacing/margins, so the PDF can be printed onto pre-printed letterhead paper."
+              title="ON: include the Noble letterhead (header + footer). OFF (default): headless — same spacing/margins with no header/footer, for printing onto pre-printed letterhead paper."
             >
               <span className="relative inline-flex h-4 w-7 shrink-0 items-center">
                 <input
                   type="checkbox"
-                  checked={headless}
-                  onChange={(e) => setHeadless(e.target.checked)}
+                  checked={!headless}
+                  onChange={(e) => setHeadless(!e.target.checked)}
                   className="peer sr-only"
                 />
                 <span className="absolute inset-0 rounded-full bg-foreground/20 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-input" />
                 <span className="absolute left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-3" />
               </span>
-              Letterhead paper
+              Letterhead
             </label>
             <select
               value={split ? 'split' : 'continuous'}
@@ -170,6 +232,23 @@ export function ReportPreview({
               <option value="continuous">Continuous</option>
               <option value="split">Split by department</option>
             </select>
+            {graphCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={downloadGraph}
+                disabled={graphBusy}
+                title="Download the graph attached to this report (e.g. Double/Quadruple Marker)"
+              >
+                <LineChart className="h-3.5 w-3.5" />
+                {graphBusy
+                  ? 'Preparing…'
+                  : graphCount > 1
+                    ? `Graph (${graphCount})`
+                    : 'Graph'}
+              </Button>
+            )}
             <Button
               size="sm"
               className="gap-1.5"
