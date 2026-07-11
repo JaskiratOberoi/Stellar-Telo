@@ -305,12 +305,11 @@ export function ReportingView({
       )}
 
       {/* ── Results ─────────────────────────────────────────────────────── */}
-      {pending && rows == null && (
-        <p className="rounded-lg border border-foreground/10 p-6 text-center text-sm text-muted-foreground">
-          Loading samples…
-        </p>
-      )}
-      {rows != null && (
+      {/* While a search runs the skeleton REPLACES the previous results — stale
+          rows must not be scrollable/clickable mid-search (a click on an old row
+          could open the wrong patient's report). */}
+      {pending && <ResultsSkeleton />}
+      {!pending && rows != null && (
         <div className="rounded-lg border border-foreground/10">
           {rows.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
@@ -561,5 +560,73 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="font-medium text-muted-foreground">{label}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * Shimmering placeholder for the results table, shown while a search runs. It
+ * mirrors the real columns (select, client, PID, patient, SID, tests, reported,
+ * status, report button) and carries a floating "Searching reports…" pill —
+ * matching the report-preview loader — so it's obvious a fresh search is in
+ * flight and the old rows are gone.
+ */
+function ResultsSkeleton() {
+  const bar = 'rounded bg-foreground/10';
+  const dim = 'rounded bg-foreground/[0.06]';
+  // Deterministic per-row width variation so the shimmer reads as real data.
+  const nameW = [72, 55, 64, 48, 68, 58];
+  const testW = [80, 60, 72, 52, 66, 76];
+  return (
+    <div
+      className="relative overflow-hidden rounded-lg border border-foreground/10"
+      role="status"
+      aria-busy="true"
+      aria-label="Searching reports"
+    >
+      <div className="animate-pulse" aria-hidden>
+        {/* Column header band */}
+        <div className="flex items-center gap-4 border-b border-foreground/10 bg-foreground/[0.03] px-4 py-3.5">
+          <div className={`h-4 w-4 ${dim}`} />
+          <div className={`h-2 w-12 ${bar}`} />
+          <div className={`h-2 w-8 ${bar}`} />
+          <div className={`h-2 w-28 flex-1 ${bar} max-w-[9rem]`} />
+          <div className={`h-2 w-10 ${bar}`} />
+          <div className={`h-2 w-24 flex-1 ${bar} max-w-[8rem]`} />
+          <div className={`hidden h-2 w-20 sm:block ${bar}`} />
+          <div className={`hidden h-2 w-14 sm:block ${bar}`} />
+          <div className={`h-2 w-14 ${bar}`} />
+        </div>
+        {/* Result rows */}
+        {nameW.map((w, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-4 border-b border-foreground/5 px-4 py-3.5 last:border-b-0"
+          >
+            <div className={`h-4 w-4 ${dim}`} />
+            <div className={`h-2.5 w-12 ${bar}`} />
+            <div className={`h-2.5 w-8 ${bar}`} />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className={`h-2.5 ${bar}`} style={{ width: `${w}%` }} />
+              <div className={`h-2 w-24 ${dim}`} />
+            </div>
+            <div className={`h-2.5 w-10 ${bar}`} />
+            <div className="hidden min-w-0 flex-1 space-y-1.5 sm:block">
+              <div className={`h-2.5 ${bar}`} style={{ width: `${testW[i]}%` }} />
+              {i % 2 === 0 && <div className={`h-2.5 ${dim}`} style={{ width: `${testW[i] * 0.6}%` }} />}
+            </div>
+            <div className={`hidden h-2.5 w-20 sm:block ${bar}`} />
+            <div className={`hidden h-2.5 w-14 sm:block ${bar}`} />
+            <div className={`h-8 w-[4.5rem] rounded-md ${dim}`} />
+          </div>
+        ))}
+      </div>
+      {/* Floating status pill */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex items-center gap-2.5 rounded-full border border-foreground/10 bg-card px-4 py-2 shadow-lg">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+          <span className="text-xs font-medium text-foreground">Searching reports…</span>
+        </div>
+      </div>
+    </div>
   );
 }
