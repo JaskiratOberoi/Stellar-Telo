@@ -6,6 +6,7 @@ import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { reportToken } from '@/lib/report/reportLink';
+import { buildReportFilename } from '@/lib/report/reportFilename';
 
 export const dynamic = 'force-dynamic';
 // Headless Chromium needs the Node runtime (not Edge).
@@ -33,11 +34,13 @@ export async function POST(req: Request) {
   let panel: unknown;
   let date: unknown;
   let patientName: unknown;
+  let profileName: unknown;
   let split: unknown;
   let exclude: unknown;
   let headless: unknown;
   try {
-    ({ sid, panel, date, patientName, split, exclude, headless } = await req.json());
+    ({ sid, panel, date, patientName, profileName, split, exclude, headless } =
+      await req.json());
   } catch {
     return new NextResponse('Bad request', { status: 400 });
   }
@@ -74,12 +77,14 @@ export async function POST(req: Request) {
   const excludeParam = excludeList.length
     ? `&exclude=${encodeURIComponent(excludeList.join(','))}`
     : '';
-  // Filename = patient name + SID (never the test name).
-  const safeName =
-    (typeof patientName === 'string' ? patientName : '')
-      .replace(/[^\w]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'Report';
-  const fileName = `${safeName}_${sid.trim()}.pdf`;
+  // Filename = PatientName_SID_ProfileName (profile omitted when no filter is
+  // active). Shared with the preview modal + one-report bulk download so every
+  // single-report path saves an identically-named file.
+  const fileName = buildReportFilename({
+    patientName: typeof patientName === 'string' ? patientName : null,
+    sid: sid.trim(),
+    profileName: typeof profileName === 'string' ? profileName : null,
+  });
 
   // Auth for the headless render goes via a per-report HMAC token, NOT cookie
   // replay: in a TLS prod deploy the session cookie is `__Secure-`-prefixed and

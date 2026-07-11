@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/table';
 import { fmtListec, todayIST } from '@/lib/datetime';
 import { ReportPreview } from '@/components/reporting/report-preview';
+import { buildReportFilename } from '@/lib/report/reportFilename';
 
 /** Split the LIS test-names CSV into clean individual test names. */
 function splitTestNames(s: string | null): string[] {
@@ -76,6 +77,9 @@ export function ReportingView({
   // The test code that produced the current rows — anchors the report value
   // column and is forwarded to the preview / PDF routes (the fragment ignores it).
   const [searchedTestCode, setSearchedTestCode] = useState('');
+  // Friendly name of that same filter (the profile/test the search was run on).
+  // Appended to single-report download filenames as the ProfileName segment.
+  const [searchedTestName, setSearchedTestName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
   // Report the user tried to open while it's balance-locked → pop-up.
@@ -93,6 +97,7 @@ export function ReportingView({
     setSelectedSids(new Set());
     setBulkError(null);
     const testCode = testId === '' ? '' : testCache.get(testId)?.code ?? '';
+    const testName = testId === '' ? '' : testCache.get(testId)?.name ?? '';
     startTransition(async () => {
       try {
         const result = await searchReports({
@@ -105,6 +110,7 @@ export function ReportingView({
           q,
         });
         setSearchedTestCode(testCode);
+        setSearchedTestName(testName);
         setRows(result);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Search failed.');
@@ -173,8 +179,19 @@ export function ReportingView({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      a.download = `Reports_${items.length}_${stamp}.pdf`;
+      // One selected report → name it after the patient like every other
+      // single-report download. A true multi-report merge can't carry several
+      // patients, so it keeps the batch name Reports_<count>_<date>.pdf.
+      if (items.length === 1) {
+        a.download = buildReportFilename({
+          patientName: items[0].patientName,
+          sid: items[0].sid,
+          profileName: searchedTestName,
+        });
+      } else {
+        const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        a.download = `Reports_${items.length}_${stamp}.pdf`;
+      }
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -417,6 +434,7 @@ export function ReportingView({
           panel={searchedTestCode}
           date={selected.dateHint}
           patientName={selected.patientName}
+          profileName={searchedTestName || null}
           onClose={() => setSelected(null)}
         />
       )}
