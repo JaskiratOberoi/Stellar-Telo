@@ -5,6 +5,7 @@ import { getWorksheetReports } from '@/lib/listec';
 import {
   resolveBusinessUnit,
   getSignersForBusinessUnit,
+  getDepartmentSignerMap,
   getSignatureBytes,
   getDefaultSigners,
 } from '@/db/read/signatures';
@@ -143,12 +144,39 @@ export default async function ReportingPrintFragment({
       reportQrDataUrl(decodedSid, qrDate),
     ]);
 
-  // All configured signatories, ordered primary → secondary (DOC_TYPE asc),
-  // capped at three so the footer never overflows the page width. Signature
-  // images are inlined as data-URIs so they render without a separate authed
-  // request (the public token softcopy has no session).
+  // Configured signatories for the BU, made DEPARTMENT-AWARE (mirrors the LIS
+  // Department_View_Sign export): a specialist mapped only to a specific
+  // department — e.g. the Microbiology MD — prints only when the report
+  // contains that department, not on every report. General / BU-specific
+  // signatories (not tied to any department) always print.
   const rawSigners = bu ? await getSignersForBusinessUnit(bu.id) : [];
-  const orderedSigners = [...rawSigners]
+  const deptSignerMap = rawSigners.length ? await getDepartmentSignerMap() : new Map();
+  const reportDepts = new Set(
+    report.departments.map((d) => d.name.trim().toUpperCase()),
+  );
+  // Collapse duplicate doctors (the LIS has e.g. two "Upinder Singh" rows),
+  // preferring the id that carries the department mapping so its rules apply.
+  const normName = (n: string | null) =>
+    (n ?? '').toLowerCase().replace(/^dr\.?\s*/, '').replace(/[^a-z0-9]/g, '');
+  const byName = new Map<string, (typeof rawSigners)[number]>();
+  for (const s of rawSigners) {
+    const k = normName(s.doctorName);
+    const existing = byName.get(k);
+    if (!existing) byName.set(k, s);
+    else if (deptSignerMap.has(s.id) && !deptSignerMap.has(existing.id)) byName.set(k, s);
+  }
+  // Keep a signatory iff it is not department-managed (general/BU-specific) OR
+  // one of its departments is present on this report.
+  const deptFiltered = [...byName.values()].filter((s) => {
+    const depts = deptSignerMap.get(s.id) as Set<string> | undefined;
+    if (!depts || depts.size === 0) return true;
+    for (const d of depts) if (reportDepts.has(d)) return true;
+    return false;
+  });
+  // Guard: never leave a report unsigned — if the department filter removed
+  // everyone, fall back to the deduped list.
+  const selectedSigners = deptFiltered.length ? deptFiltered : [...byName.values()];
+  const orderedSigners = [...selectedSigners]
     .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
     .slice(0, 3);
   const configuredSigners = await Promise.all(

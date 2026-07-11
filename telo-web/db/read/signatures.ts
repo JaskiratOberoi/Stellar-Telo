@@ -158,6 +158,52 @@ export async function getSignatureBytes(
   return { mime: envelope.mime, bytes: Buffer.from(envelope.bytesB64, 'base64') };
 }
 
+/**
+ * Department → signatory mapping (LIS `tbl_med_department_master.Fist_doctor` /
+ * `Second_doctor`, the same data behind `Department_View_Sign`). Returns a map
+ * from signature id → the set of department names (UPPER-cased) that signatory
+ * signs. A signatory NOT present in this map is "general" / BU-specific (e.g. a
+ * per-BU pathologist) — not tied to any single department.
+ *
+ * Used to make the configured-BU signer list department-aware: a specialist
+ * (e.g. the Microbiology MD, mapped only to CLINICAL MICROBIOLOGY) prints only
+ * on reports that actually contain that department — exactly as the LIS export
+ * does — instead of on every report.
+ */
+export async function getDepartmentSignerMap(): Promise<Map<number, Set<string>>> {
+  // Cache a JSON-serialisable [id, deptNames[]][] (a Map/Set can't round-trip
+  // through the redis envelope), then rebuild the Map.
+  const entries = await cached<[number, string[]][]>(
+    'telo:report:dept-signer-map',
+    60 * 60,
+    () =>
+      withRetry(async () => {
+        const pool = await getPool();
+        const r = await pool.request().query<{
+          dept: string | null;
+          fist: number | null;
+          second: number | null;
+        }>(`
+          SELECT Name AS dept, Fist_doctor AS fist, Second_doctor AS second
+          FROM dbo.tbl_med_department_master
+          WHERE Fist_doctor IS NOT NULL OR Second_doctor IS NOT NULL
+        `);
+        const map = new Map<number, Set<string>>();
+        const add = (id: number | null, dept: string | null) => {
+          const name = (dept ?? '').trim().toUpperCase();
+          if (!Number.isInteger(id) || id == null || id <= 0 || !name) return;
+          (map.get(id) ?? map.set(id, new Set()).get(id)!).add(name);
+        };
+        for (const row of r.recordset) {
+          add(row.fist, row.dept);
+          add(row.second, row.dept);
+        }
+        return [...map.entries()].map(([id, set]) => [id, [...set]] as [number, string[]]);
+      }),
+  );
+  return new Map(entries.map(([id, depts]) => [id, new Set(depts)]));
+}
+
 /** A report signatory with its signature image already inlined as a data-URI. */
 export interface InlineSigner {
   id: number;
