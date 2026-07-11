@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, X, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,28 @@ export function ReportPreview({
   // paper. Default ON (headless) — the "Letterhead" toggle below is OFF by
   // default; turning it ON adds the Noble header + footer.
   const [headless, setHeadless] = useState(true);
+  // The iframe URL is frozen at mount (seeded with the defaults above): flipping
+  // Letterhead / layout must NOT reload the iframe — the fragment applies them
+  // client-side on a `telo:report-display` postMessage, so the switch is
+  // instant instead of a multi-second server re-render.
+  const [previewSrc] = useState(
+    () =>
+      `/print/reporting/${encodeURIComponent(sid)}?panel=${encodeURIComponent(panel)}${dateParam}&split=1&headless=1`,
+  );
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // True until the report fragment finishes loading — drives the skeleton
+  // overlay below (only the initial load; display toggles don't reload).
+  const [previewLoading, setPreviewLoading] = useState(true);
+
+  // Push the current display options into the loaded fragment. Runs on every
+  // toggle and again on iframe load (covering toggles made while loading).
+  useEffect(() => {
+    if (previewLoading) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'telo:report-display', sid, split, headless },
+      window.location.origin,
+    );
+  }, [previewLoading, split, headless, sid]);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Graph attachment (LIS): some tests (Double/Quadruple Marker, allergy panels)
@@ -264,17 +286,88 @@ export function ReportPreview({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-neutral-200 p-3">
+        <div className="relative min-h-0 flex-1 overflow-auto bg-neutral-200 p-3">
+          {previewLoading && <ReportSkeleton />}
           <iframe
+            ref={iframeRef}
             title={`Report ${sid}`}
-            src={`/print/reporting/${encodeURIComponent(sid)}?panel=${encodeURIComponent(panel)}${dateParam}${
-              split ? '&split=1' : ''
-            }${headless ? '&headless=1' : ''}`}
-            className="h-[80vh] w-full rounded bg-white"
+            src={previewSrc}
+            onLoad={() => setPreviewLoading(false)}
+            className={`h-[80vh] w-full rounded bg-white transition-opacity duration-300 ${
+              previewLoading ? 'opacity-0' : 'opacity-100'
+            }`}
           />
         </div>
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Loading state for the preview iframe: a shimmering mock of the report page
+ * (letterhead band, patient-meta grid, result table rows, signature footer)
+ * with a floating "Preparing report…" pill, shown until the server-rendered
+ * fragment finishes loading. Display toggles never re-trigger it — they apply
+ * client-side inside the loaded fragment.
+ */
+function ReportSkeleton() {
+  const line = 'rounded bg-gray-200';
+  return (
+    <div className="absolute inset-3 z-10 flex items-start justify-center overflow-hidden rounded bg-white">
+      <div className="w-full max-w-[680px] animate-pulse px-10 pt-10" aria-hidden>
+        {/* Letterhead band */}
+        <div className="mb-5 flex items-center gap-4 border-b-2 border-gray-100 pb-4">
+          <div className="h-12 w-12 rounded-full bg-gray-200" />
+          <div className="space-y-2">
+            <div className={`h-3.5 w-44 ${line}`} />
+            <div className={`h-2.5 w-64 bg-gray-100 rounded`} />
+          </div>
+        </div>
+        {/* Patient meta grid */}
+        <div className="mb-5 grid grid-cols-2 gap-x-12 gap-y-2.5">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className={`h-2.5 w-20 bg-gray-100 rounded`} />
+              <div className={`h-2.5 ${line}`} style={{ width: `${[62, 40, 52, 34, 46, 58, 38, 50][i]}%` }} />
+            </div>
+          ))}
+        </div>
+        {/* Department band + column headers */}
+        <div className="mb-2 h-5 w-full rounded bg-gray-100" />
+        <div className="mb-3 flex gap-4">
+          <div className={`h-2.5 w-2/5 ${line}`} />
+          <div className={`h-2.5 w-1/6 ${line}`} />
+          <div className={`h-2.5 w-1/6 ${line}`} />
+          <div className={`h-2.5 w-1/4 ${line}`} />
+        </div>
+        {/* Result rows */}
+        <div className="space-y-2.5">
+          {Array.from({ length: 9 }, (_, i) => (
+            <div key={i} className="flex gap-4">
+              <div className="h-2.5 rounded bg-gray-100" style={{ width: `${[38, 30, 34, 26, 36, 28, 32, 24, 35][i]}%` }} />
+              <div className="h-2.5 w-12 rounded bg-gray-100" />
+              <div className="h-2.5 w-16 rounded bg-gray-100" />
+            </div>
+          ))}
+        </div>
+        {/* Signature footer */}
+        <div className="mt-8 flex justify-between">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="space-y-2">
+              <div className={`h-2.5 w-24 ${line}`} />
+              <div className="h-2 w-20 rounded bg-gray-100" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Floating status pill */}
+      <div className="absolute inset-x-0 top-[38%] flex justify-center">
+        <div className="flex items-center gap-2.5 rounded-full border border-foreground/10 bg-card px-4 py-2 shadow-lg">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+          <span className="text-xs font-medium text-foreground">Preparing report…</span>
+        </div>
+      </div>
+    </div>
   );
 }

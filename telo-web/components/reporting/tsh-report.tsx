@@ -218,6 +218,27 @@ export function LabReport({ data }: { data: LabReportData }) {
   // non-interactive and instead drops the excluded items outright.
   const interactive = !data.pdf;
 
+  // Display options (letterhead band, split-by-department layout) are purely
+  // presentational, so they live in client state: the preview modal flips them
+  // via postMessage and the report re-renders instantly — no iframe reload, no
+  // server round-trip. Seeded from the URL-driven props; the PDF render is
+  // non-interactive and keeps the seeded values.
+  const [headless, setHeadless] = useState(!!data.headless);
+  const [split, setSplit] = useState(!!data.splitByDepartment);
+  useEffect(() => {
+    if (!interactive) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data;
+      if (d && d.type === 'telo:report-display' && d.sid === data.sid) {
+        if (typeof d.headless === 'boolean') setHeadless(d.headless);
+        if (typeof d.split === 'boolean') setSplit(d.split);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [interactive, data.sid]);
+
   // Which items/children are unticked. Preview owns this set live; PDF mode is
   // seeded from the keys passed in by the route and never changes.
   const [excluded, setExcluded] = useState<Set<string>>(
@@ -430,7 +451,7 @@ export function LabReport({ data }: { data: LabReportData }) {
   // "sheet" so the pagination is visible — screen media has no real pages, so
   // break-before:page / min-h are inert here. The PDF is a separate ?pdf=1
   // render and is unaffected by any of this preview chrome.
-  const previewSheets = !data.pdf && data.splitByDepartment;
+  const previewSheets = !data.pdf && split;
 
   // The signature/footer block can't be bottom-pinned from inside <tfoot>: a
   // table-footer-group repeats on every page but bottoms-out just under the last
@@ -467,7 +488,7 @@ export function LabReport({ data }: { data: LabReportData }) {
            In letterhead-paper mode the band is left blank — the PDF prints onto
            pre-printed paper — so the preview reserves the space instead. */}
       {!data.pdf && !previewSheets &&
-        (data.headless ? (
+        (headless ? (
           <LetterheadZone className="mb-4 h-14 pb-3" />
         ) : (
           <div className="mb-4 flex items-center gap-4 border-b-2 border-[#2b2b6b] pb-3">
@@ -478,7 +499,7 @@ export function LabReport({ data }: { data: LabReportData }) {
 
       {sections.length === 0 ? (
         <p className="py-4 text-center text-gray-500">No results available for this sample.</p>
-      ) : data.splitByDepartment ? (
+      ) : split ? (
         /* SPLIT: each section is a self-contained <table> — patient header in
            <thead> (repeats atop every page the section spans), results in
            <tbody>, and the signature/footer as an invisible <tfoot> spacer that
@@ -532,7 +553,7 @@ export function LabReport({ data }: { data: LabReportData }) {
               <span className="pointer-events-none absolute right-2 top-2 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-500">
                 Page {si + 1} of {sections.length}
               </span>
-              {data.headless ? (
+              {headless ? (
                 <LetterheadZone className="mb-3 h-10 pb-2" />
               ) : (
                 <div className="mb-3 flex items-center gap-3 border-b-2 border-[#2b2b6b] pb-2">

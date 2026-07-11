@@ -78,10 +78,13 @@ export default async function ReportingPrintFragment({
     // Client-facing reporters (client_reporting) may only open their own
     // client's reports. Unrestricted roles pass through. (The token path is
     // pre-scoped: tokens are only minted by the PDF route for in-scope SIDs.)
-    if (!(await canAccessSidReport(user, decodedSid))) notFound();
     // Balance lock (Telo-only): don't render the report while there's an
     // outstanding balance. The token path is pre-gated by the PDF route.
-    const lock = await isSidReportLocked(decodedSid);
+    const [scopeOk, lock] = await Promise.all([
+      canAccessSidReport(user, decodedSid),
+      isSidReportLocked(decodedSid),
+    ]);
+    if (!scopeOk) notFound();
     if (lock.locked) {
       return (
         <div className="mx-auto max-w-md p-10 text-center text-sm text-muted-foreground">
