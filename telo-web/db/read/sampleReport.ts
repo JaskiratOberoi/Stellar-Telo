@@ -49,6 +49,10 @@ export interface SampleReportRow {
  * one-element list and prints as-is.
  */
 export interface CultureReport {
+  /** Culture narrative lines shown above the organism/antibiogram, in LIS order:
+   *  "1st Interim Report" / "2nd Interim Report" / "Final Report" (the 24h / 48h
+   *  / 5-day incubation results). Label kept verbatim from the LIS parameter. */
+  narratives: { label: string; value: string }[];
   gramStain: string | null;
   organism: string | null;
   colonyCount: string | null;
@@ -179,6 +183,7 @@ const splitAbxList = (s: string | null | undefined): string[] =>
     .filter(Boolean);
 
 const emptyCulture = (): CultureReport => ({
+  narratives: [],
   gramStain: null,
   organism: null,
   colonyCount: null,
@@ -193,6 +198,19 @@ const emptyCulture = (): CultureReport => ({
  *  lists keep their per-drug line breaks; the scalar fields are collapsed. */
 const applyCultureField = (group: SampleReportGroup, x: RawRow): void => {
   const key = (x.testname ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  // Culture narrative: "1st/2nd/… Interim Report" + "Final Report" (the 24h/48h/
+  // 5-day incubation results). Matched by pattern so any number of interim rows
+  // is handled; kept in encounter order (= LIS row order), label preserved.
+  if (key.includes('interim') || key.includes('final report')) {
+    const val = cleanMultiline(x.value);
+    if (val) {
+      (group.culture ??= emptyCulture()).narratives.push({
+        label: (x.testname ?? '').replace(/\s+/g, ' ').trim(),
+        value: val,
+      });
+    }
+    return;
+  }
   switch (key) {
     case 'gram stained smear':
     case 'gram stain':
@@ -226,6 +244,7 @@ const applyCultureField = (group: SampleReportGroup, x: RawRow): void => {
  *  non-culture multi-parameter test that merely has a "Remarks" parameter. */
 const hasAntibiogram = (c: CultureReport): boolean =>
   c.organism != null ||
+  c.narratives.length > 0 ||
   c.sensitive.length > 0 ||
   c.intermediate.length > 0 ||
   c.resistant.length > 0;

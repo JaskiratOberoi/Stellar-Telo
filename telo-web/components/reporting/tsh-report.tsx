@@ -1126,6 +1126,15 @@ function CultureBlock({
         <div className="[break-inside:avoid] text-[12px]">
           <table className="mb-2">
             <tbody>
+              {/* Interim / Final report narrative — shown above the organism +
+                  antibiogram, matching the LIS layout. */}
+              {culture.narratives.map((n) => (
+                <tr key={n.label} className="align-top">
+                  <td className="py-0.5 pr-3 font-medium">{n.label}</td>
+                  <td className="py-0.5 pr-2 text-gray-500">:</td>
+                  <td className="py-0.5 whitespace-pre-line">{n.value}</td>
+                </tr>
+              ))}
               {header.map(([label, value]) =>
                 value ? (
                   <tr key={label} className="align-top">
