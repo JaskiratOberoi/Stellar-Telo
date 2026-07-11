@@ -12,8 +12,15 @@ import { getWorksheetReports } from '@/lib/listec';
  *     used — B2C payments never post to the LIS client account, so its balance
  *     is a permanent phantom negative.
  *   - B2B (the patient has NO per-patient bill — Noble bills the client wallet
- *     in bulk, e.g. SHIV/HR0201): locked when the client's wallet balance < 0
- *     (i.e. the client owes Noble).
+ *     in bulk, e.g. SHIV/HR0201): locked when the client's wallet balance drops
+ *     to/below its credit allowance (i.e. the client owes more than allowed).
+ *
+ * Credit allowance (B2B): the legacy LIS lets a client owe up to a per-client
+ * limit before blocking — `tbl_med_mcc_unit_master.creditlimit`, stored as a
+ * NEGATIVE floor the balance may sink to (e.g. -2500 = may owe up to ₹2500).
+ * We mirror the LIS exactly: the allowance applies only when creditlimit < 0;
+ * NULL/0/positive = no allowance (locked on any negative balance). The lock's
+ * dueAmount is the amount OVER the allowance, not the full balance.
  *
  * Unified: locked = patientBillDue > 0 OR (noOwnBill AND clientWalletDue > 0).
  *
@@ -77,19 +84,24 @@ export async function computeReportLocks(
     }
 
     // Client wallet balance (B2B). currentbalance < 0 = client owes Noble.
+    // creditlimit (< 0) is the allowed floor: locked only once bal drops below it.
     const walletDue = new Map<string, number>();
     for (let i = 0; i < codes.length; i += 1500) {
       const slice = codes.slice(i, i + 1500);
       const req = pool.request();
       const ph = slice.map((v, j) => { req.input('c' + j, sql.VarChar(50), v); return '@c' + j; });
-      const r = await req.query<{ code: string; bal: number | null }>(`
-        SELECT u.MCCUnitCode AS code, a.currentbalance AS bal
+      const r = await req.query<{ code: string; bal: number | null; creditlimit: number | null }>(`
+        SELECT u.MCCUnitCode AS code, a.currentbalance AS bal, u.creditlimit AS creditlimit
         FROM dbo.tbl_med_mcc_unit_master u
         LEFT JOIN dbo.tbl_med_mcc_account_master a ON a.mcccode = u.id
         WHERE UPPER(u.MCCUnitCode) IN (${ph.join(',')})`);
       for (const row of r.recordset) {
         const bal = Number(row.bal ?? 0);
-        walletDue.set(normCode(row.code), bal < 0 ? -bal : 0);
+        // Allowed floor the balance may sink to (LIS convention: only negative
+        // limits count; NULL/0/positive => 0 = no allowance).
+        const floor = Number(row.creditlimit ?? 0) < 0 ? Number(row.creditlimit) : 0;
+        // Locked once balance drops below the floor; due = amount over the floor.
+        walletDue.set(normCode(row.code), bal < floor ? floor - bal : 0);
       }
     }
     return { patientDue, hasOwnBill, walletDue };

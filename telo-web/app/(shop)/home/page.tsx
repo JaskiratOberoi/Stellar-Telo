@@ -190,6 +190,15 @@ async function ClientHomeBody({
   const balance = summary.currentBalance;
   const due = balance < 0 ? -balance : 0;
   const credit = balance > 0 ? balance : 0;
+  // Credit allowance (LIS tbl_med_mcc_unit_master.creditlimit): a negative floor
+  // the balance may sink to before reports lock. Mirrors lib/reportLock.ts.
+  const allowance = summary.creditLimit; // <= 0; 0 = no allowance
+  const limitAmount = allowance < 0 ? -allowance : 0; // e.g. 2500
+  // Reports lock only once the balance drops BELOW the allowed floor.
+  const overLimit = balance < allowance ? allowance - balance : 0;
+  const locked = overLimit > 0;
+  // Owes money but still within the allowance → reports remain available.
+  const withinAllowance = due > 0 && !locked;
 
   return (
     <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[1.35fr_1fr]">
@@ -198,7 +207,7 @@ async function ClientHomeBody({
         <div className="animate-fade-in-up overflow-hidden rounded-2xl border border-foreground/10 bg-card">
           <div
             className={`px-6 py-6 ${
-              due > 0
+              locked
                 ? 'bg-gradient-to-br from-destructive/10 to-transparent'
                 : 'bg-gradient-to-br from-secondary/10 to-transparent'
             }`}
@@ -208,27 +217,43 @@ async function ClientHomeBody({
             </p>
             <p
               className={`mt-1 text-4xl font-bold tracking-tight tabular-nums ${
-                due > 0 ? 'text-destructive' : 'text-secondary'
+                locked
+                  ? 'text-destructive'
+                  : withinAllowance
+                    ? 'text-foreground'
+                    : 'text-secondary'
               }`}
             >
               {due > 0 ? inr(due) : credit > 0 ? inr(credit) : '₹0'}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {due > 0
+              {locked
                 ? 'Outstanding balance on your account'
-                : credit > 0
-                  ? 'In credit — advance balance with Noble'
-                  : "You're all settled. Thank you!"}
+                : withinAllowance
+                  ? `Within your ${inr(limitAmount)} credit limit — reports available`
+                  : credit > 0
+                    ? 'In credit — advance balance with Noble'
+                    : "You're all settled. Thank you!"}
             </p>
-            {due > 0 && (
+            {locked ? (
               <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5">
                 <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
                 <p className="text-xs leading-relaxed text-destructive">
-                  Reports are on hold while a balance is outstanding. Clear your
-                  dues to unlock and download your reports.
+                  Reports are on hold — your balance has crossed the{' '}
+                  {inr(limitAmount)} credit limit by {inr(overLimit)}. Clear{' '}
+                  {inr(overLimit)} to unlock and download your reports.
                 </p>
               </div>
-            )}
+            ) : withinAllowance ? (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-secondary/20 bg-secondary/5 px-3 py-2.5">
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-secondary" />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Reports are available — you&apos;re within your{' '}
+                  {inr(limitAmount)} credit limit. {inr(limitAmount - due)}{' '}
+                  of credit remaining.
+                </p>
+              </div>
+            ) : null}
           </div>
           <div className="grid grid-cols-2 divide-x divide-foreground/5 border-t border-foreground/5">
             <div className="px-6 py-4">

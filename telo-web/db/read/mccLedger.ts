@@ -63,6 +63,13 @@ export function paymentModeLabel(m: number | null): string {
 export interface MccAccountSummary {
   /** Live running wallet balance (negative = client owes the lab). */
   currentBalance: number;
+  /**
+   * Per-client credit allowance from the LIS (tbl_med_mcc_unit_master.creditlimit).
+   * Stored as a NEGATIVE floor the balance may sink to before reports lock
+   * (e.g. -2500 = may owe up to ₹2500). 0 here = no allowance (NULL/0/positive
+   * in the LIS all normalise to 0). Report-lock uses the same value via reportLock.ts.
+   */
+  creditLimit: number;
   /** All-time deposits recomputed from detail (NOT the stale master column). */
   totalDeposited: number;
   /** All-time test charges (amount_checked rows). */
@@ -105,6 +112,7 @@ export async function getMccAccountSummary(
   if (!Number.isInteger(mccId)) {
     return {
       currentBalance: 0,
+      creditLimit: 0,
       totalDeposited: 0,
       totalTestCharges: 0,
       periodPayments: 0,
@@ -120,6 +128,7 @@ export async function getMccAccountSummary(
       .input('to', sql.VarChar(10), range.to)
       .query<{
         currentBalance: number | null;
+        creditLimit: number | null;
         totalDeposited: number | null;
         totalTestCharges: number | null;
         periodPayments: number | null;
@@ -129,6 +138,9 @@ export async function getMccAccountSummary(
           (SELECT TOP 1 m.currentbalance
              FROM dbo.tbl_med_mcc_account_master m
             WHERE m.mcccode = @mcc) AS currentBalance,
+          (SELECT TOP 1 u.creditlimit
+             FROM dbo.tbl_med_mcc_unit_master u
+            WHERE u.id = @mcc) AS creditLimit,
           (SELECT SUM(d.amount)
              FROM dbo.tbl_med_mcc_account_detail d
             WHERE d.mcccode = @mcc AND d.credittype = 1
@@ -151,8 +163,13 @@ export async function getMccAccountSummary(
               AND t.updateddate <  DATEADD(day, 1, CAST(@to AS DATE))) AS periodTestCharges
       `);
     const x = r.recordset[0] ?? {};
+    // Normalise to the LIS convention: only a negative limit is a real
+    // allowance; NULL/0/positive => 0 (no allowance). Keep in lockstep with
+    // the floor logic in lib/reportLock.ts.
+    const rawLimit = Number(x.creditLimit ?? 0);
     return {
       currentBalance: Number(x.currentBalance ?? 0),
+      creditLimit: rawLimit < 0 ? rawLimit : 0,
       totalDeposited: Number(x.totalDeposited ?? 0),
       totalTestCharges: Number(x.totalTestCharges ?? 0),
       periodPayments: Number(x.periodPayments ?? 0),
