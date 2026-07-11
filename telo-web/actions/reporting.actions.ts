@@ -193,9 +193,10 @@ function rowMatchesQuery(r: WorksheetReportRow, qLower: string): boolean {
  * Search samples for the Reporting tab. Gated to `report:view`. The optional
  * `testCode` narrows to samples carrying that test/profile (and surfaces the
  * test's headline value); `q` is a universal search — routed server-side
- * (digits → SID/bill#, text → patient name/MRN) AND matched across the loaded
- * date-range window (patient/SID/PID/client/BU/test name+code). The generated
- * report always shows the full sample — this only finds the SID.
+ * (digits → SID/bill#, text → patient name/MRN AND test name/code) plus
+ * matched across the loaded date-range window (patient/SID/PID/client/BU/test
+ * name+code). The generated report always shows the full sample — this only
+ * finds the SID.
  */
 export async function searchReports(
   filters: ReportSearchFilters,
@@ -288,16 +289,27 @@ export async function searchReports(
   const numeric = /^\d+$/.test(q);
   const qLower = q.toLowerCase();
 
-  // (a) Precise, unbounded server fetch routed by query shape.
-  const routedPromise = fetchScoped(
-    numeric ? { sid: q, pageSize: 500 } : { patientName: q, pageSize: 500 },
-  );
-  // (b) Broad date-range window, filtered in-process across every field so test
-  //     name / code / PID also match (bounded to this window).
+  // (a) Precise, unbounded server fetches routed by query shape. A text query
+  //     is routed BOTH as a patient-name match AND as a server-side test
+  //     filter (the SP's @test_code matches S.testcodes and result test
+  //     names), so a test-name search like "double" finds every matching
+  //     sample in the date range — not just those inside the page-capped
+  //     window fetch below. Skipped when the dedicated test filter (anchor)
+  //     is set, since both ride the same @test_code parameter.
+  const routedPromises = [
+    fetchScoped(
+      numeric ? { sid: q, pageSize: 500 } : { patientName: q, pageSize: 500 },
+    ),
+  ];
+  if (!numeric && !anchor) {
+    routedPromises.push(fetchScoped({ testCode: q, pageSize: 500 }));
+  }
+  // (b) Broad date-range window, filtered in-process across every field so
+  //     PID / client / bill# also match (bounded to this window).
   const windowPromise = fetchScoped({ pageSize: 1000 });
 
   const [routedRaw, windowRaw] = await Promise.all([
-    routedPromise,
+    Promise.all(routedPromises).then((batches) => batches.flat()),
     windowPromise,
   ]);
   const routed = filterRowsByReportScope(routedRaw, scopeCodes);
