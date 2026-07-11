@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Telo favicon — indigo brand tile (Noble navy #2B246A → indigo) with a
+       geometric "T" and a four-point star, echoing Noble's blue-star mark.
+       Drawn as paths so it renders identically everywhere, crisp at 16px. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B54D6"/>
+      <stop offset="1" stop-color="#2B246A"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#tile)"/>
+  <!-- T: cross bar + stem, rounded -->
+  <rect x="14" y="16" width="30" height="9" rx="4.5" fill="#FFFFFF"/>
+  <rect x="24.5" y="16" width="9" height="33" rx="4.5" fill="#FFFFFF"/>
+  <!-- four-point star, top-right -->
+  <path fill="#A5B4FC" d="M49 12c1.1 4.4 2.6 5.9 7 7-4.4 1.1-5.9 2.6-7 7-1.1-4.4-2.6-5.9-7-7 4.4-1.1 5.9-2.6 7-7z"/>
+</svg>
