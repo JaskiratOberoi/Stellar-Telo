@@ -70,6 +70,12 @@ export interface MccAccountSummary {
    * in the LIS all normalise to 0). Report-lock uses the same value via reportLock.ts.
    */
   creditLimit: number;
+  /**
+   * LIS PerminentUnlock bit (tbl_med_mcc_unit_master.PerminentUnlock). When true
+   * the client's reports are force-unlocked regardless of balance / credit limit.
+   * Mirrors reportLock.ts.
+   */
+  permanentUnlock: boolean;
   /** All-time deposits recomputed from detail (NOT the stale master column). */
   totalDeposited: number;
   /** All-time test charges (amount_checked rows). */
@@ -113,6 +119,7 @@ export async function getMccAccountSummary(
     return {
       currentBalance: 0,
       creditLimit: 0,
+      permanentUnlock: false,
       totalDeposited: 0,
       totalTestCharges: 0,
       periodPayments: 0,
@@ -129,6 +136,7 @@ export async function getMccAccountSummary(
       .query<{
         currentBalance: number | null;
         creditLimit: number | null;
+        permanentUnlock: boolean | null;
         totalDeposited: number | null;
         totalTestCharges: number | null;
         periodPayments: number | null;
@@ -141,6 +149,9 @@ export async function getMccAccountSummary(
           (SELECT TOP 1 u.creditlimit
              FROM dbo.tbl_med_mcc_unit_master u
             WHERE u.id = @mcc) AS creditLimit,
+          (SELECT TOP 1 u.PerminentUnlock
+             FROM dbo.tbl_med_mcc_unit_master u
+            WHERE u.id = @mcc) AS permanentUnlock,
           (SELECT SUM(d.amount)
              FROM dbo.tbl_med_mcc_account_detail d
             WHERE d.mcccode = @mcc AND d.credittype = 1
@@ -170,6 +181,7 @@ export async function getMccAccountSummary(
     return {
       currentBalance: Number(x.currentBalance ?? 0),
       creditLimit: rawLimit < 0 ? rawLimit : 0,
+      permanentUnlock: x.permanentUnlock === true,
       totalDeposited: Number(x.totalDeposited ?? 0),
       totalTestCharges: Number(x.totalTestCharges ?? 0),
       periodPayments: Number(x.periodPayments ?? 0),

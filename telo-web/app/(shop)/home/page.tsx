@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Receipt, Wallet, History, Lock } from 'lucide-react';
+import { ArrowRight, Receipt, Wallet, History, Lock, Unlock } from 'lucide-react';
 import { requireSession } from '@/auth/session';
 import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { getMccScope, ownCentreIds } from '@/auth/scope';
@@ -194,11 +194,16 @@ async function ClientHomeBody({
   // the balance may sink to before reports lock. Mirrors lib/reportLock.ts.
   const allowance = summary.creditLimit; // <= 0; 0 = no allowance
   const limitAmount = allowance < 0 ? -allowance : 0; // e.g. 2500
-  // Reports lock only once the balance drops BELOW the allowed floor.
+  // PerminentUnlock force-unlocks the client regardless of balance/limit.
+  const permUnlock = summary.permanentUnlock;
+  // Reports lock only once the balance drops BELOW the allowed floor (and the
+  // client isn't permanently unlocked).
   const overLimit = balance < allowance ? allowance - balance : 0;
-  const locked = overLimit > 0;
-  // Owes money but still within the allowance → reports remain available.
-  const withinAllowance = due > 0 && !locked;
+  const locked = overLimit > 0 && !permUnlock;
+  // Owes money but reports stay available — either permanently unlocked, or
+  // still within a real credit allowance.
+  const unlockedWithDue = due > 0 && !locked && permUnlock;
+  const withinAllowance = due > 0 && !locked && !permUnlock && allowance < 0;
 
   return (
     <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[1.35fr_1fr]">
@@ -219,7 +224,7 @@ async function ClientHomeBody({
               className={`mt-1 text-4xl font-bold tracking-tight tabular-nums ${
                 locked
                   ? 'text-destructive'
-                  : withinAllowance
+                  : withinAllowance || unlockedWithDue
                     ? 'text-foreground'
                     : 'text-secondary'
               }`}
@@ -229,11 +234,13 @@ async function ClientHomeBody({
             <p className="mt-1 text-xs text-muted-foreground">
               {locked
                 ? 'Outstanding balance on your account'
-                : withinAllowance
-                  ? `Within your ${inr(limitAmount)} credit limit — reports available`
-                  : credit > 0
-                    ? 'In credit — advance balance with Noble'
-                    : "You're all settled. Thank you!"}
+                : unlockedWithDue
+                  ? 'Reports are available — your account is unlocked'
+                  : withinAllowance
+                    ? `Within your ${inr(limitAmount)} credit limit — reports available`
+                    : credit > 0
+                      ? 'In credit — advance balance with Noble'
+                      : "You're all settled. Thank you!"}
             </p>
             {locked ? (
               <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5">
@@ -242,6 +249,15 @@ async function ClientHomeBody({
                   Reports are on hold — your balance has crossed the{' '}
                   {inr(limitAmount)} credit limit by {inr(overLimit)}. Clear{' '}
                   {inr(overLimit)} to unlock and download your reports.
+                </p>
+              </div>
+            ) : unlockedWithDue ? (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-secondary/20 bg-secondary/5 px-3 py-2.5">
+                <Unlock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-secondary" />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Your reports are unlocked despite the outstanding balance —
+                  no hold applies to your account. Payments are still welcome to
+                  clear your dues.
                 </p>
               </div>
             ) : withinAllowance ? (

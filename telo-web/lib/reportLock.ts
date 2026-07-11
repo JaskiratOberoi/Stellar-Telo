@@ -22,6 +22,11 @@ import { getWorksheetReports } from '@/lib/listec';
  * NULL/0/positive = no allowance (locked on any negative balance). The lock's
  * dueAmount is the amount OVER the allowance, not the full balance.
  *
+ * Permanent unlock (B2B): the LIS `tbl_med_mcc_unit_master.PerminentUnlock` bit
+ * force-unlocks a client's reports regardless of balance or credit limit (legacy
+ * rule: PerminentUnlock => active). We honor it the same way — a set bit zeroes
+ * the client wallet due so its reports never lock on the wallet balance.
+ *
  * Unified: locked = patientBillDue > 0 OR (noOwnBill AND clientWalletDue > 0).
  *
  * All reads are read-only against the shared LIS/Telo bill + client-account
@@ -85,17 +90,24 @@ export async function computeReportLocks(
 
     // Client wallet balance (B2B). currentbalance < 0 = client owes Noble.
     // creditlimit (< 0) is the allowed floor: locked only once bal drops below it.
+    // PerminentUnlock force-unlocks the client regardless of balance.
     const walletDue = new Map<string, number>();
     for (let i = 0; i < codes.length; i += 1500) {
       const slice = codes.slice(i, i + 1500);
       const req = pool.request();
       const ph = slice.map((v, j) => { req.input('c' + j, sql.VarChar(50), v); return '@c' + j; });
-      const r = await req.query<{ code: string; bal: number | null; creditlimit: number | null }>(`
-        SELECT u.MCCUnitCode AS code, a.currentbalance AS bal, u.creditlimit AS creditlimit
+      const r = await req.query<{ code: string; bal: number | null; creditlimit: number | null; punlock: boolean | null }>(`
+        SELECT u.MCCUnitCode AS code, a.currentbalance AS bal, u.creditlimit AS creditlimit,
+               u.PerminentUnlock AS punlock
         FROM dbo.tbl_med_mcc_unit_master u
         LEFT JOIN dbo.tbl_med_mcc_account_master a ON a.mcccode = u.id
         WHERE UPPER(u.MCCUnitCode) IN (${ph.join(',')})`);
       for (const row of r.recordset) {
+        // Permanent unlock wins outright (LIS: PerminentUnlock => active).
+        if (row.punlock === true) {
+          walletDue.set(normCode(row.code), 0);
+          continue;
+        }
         const bal = Number(row.bal ?? 0);
         // Allowed floor the balance may sink to (LIS convention: only negative
         // limits count; NULL/0/positive => 0 = no allowance).
