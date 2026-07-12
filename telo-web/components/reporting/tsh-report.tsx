@@ -604,13 +604,17 @@ export function LabReport({ data }: { data: LabReportData }) {
       )}
 
       {/* PDF: the single visible footer, pinned to the bottom of EVERY printed
-          page. Chromium paints a position:fixed element once per page at the
-          content-box bottom (= the @page bottom margin line, just above the
-          letterhead's footer band); the <tfoot> ghost above reserves its height
-          so flowing content never overlaps it. Full-bleed with a 14mm inset to
-          match the @page side margins / report content width. */}
+          page. Chromium positions a position:fixed element relative to the @page
+          CONTENT AREA (inside the 14mm side / 34mm bottom margins), not the
+          physical sheet — so `inset-x-0 bottom-0` already spans the exact width
+          of the report body (which has no horizontal padding in PDF mode) and
+          sits on the bottom margin line, just above the letterhead footer band.
+          A `px-[14mm]` here would double-count the side margins and inset the
+          footer 14mm further than the body — the source of the left/right gap.
+          The <tfoot> ghost above reserves this footer's height so flowing
+          content never overlaps it. */}
       {data.pdf && sections.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 px-[14mm]">
+        <div className="fixed inset-x-0 bottom-0">
           <ReportFooterBlock data={data} />
         </div>
       )}
@@ -1304,7 +1308,12 @@ function ResultRow({
   const dimClass = dim ? 'opacity-40' : '';
   return (
     <>
-      <tr className={`align-top ${dimClass}`}>
+      {/* [break-inside:avoid]: keep a result row whole across a page break. A
+          tall row (e.g. a multi-line value like "LOW RISK FOR TRISOMIES 13, 18
+          AND 21", or a gestational weeks-range cell) must not split — half of it
+          flowing onto the next page reads as stray text. It moves wholesale to
+          the next page instead. */}
+      <tr className={`align-top [break-inside:avoid] ${dimClass}`}>
         <td className={`py-0.5 pr-3 ${indentClass ?? ''}`}>
           <div className="flex items-start gap-1.5">
             {lead}
@@ -1315,8 +1324,8 @@ function ResultRow({
           <span className={row.abnormal ? 'text-[13px] font-bold text-red-700' : ''}>{row.value ?? '—'}</span>
         </td>
         <td className="py-0.5 pr-3">{row.unit ?? '—'}</td>
-        <td className="whitespace-pre-line py-0.5 text-[10px] leading-tight text-gray-700">
-          {formatRange(row.range)}
+        <td className="py-0.5 text-[10px] leading-tight text-gray-700">
+          <RangeCell range={row.range} />
         </td>
         <td className="py-0.5 text-[8px] leading-tight text-gray-600">{row.method ?? '—'}</td>
       </tr>
@@ -1329,6 +1338,58 @@ function ResultRow({
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * Biological-reference-interval cell. A gestational "Weeks Range" — a header
+ * line ("Weeks Range") followed by one "<week> <low>-<high>" line per week —
+ * is rendered as an aligned three-column mini-table (week · low · high) so the
+ * numbers line up and read clearly instead of running together as ragged text.
+ * Every other range (a plain "0.35 - 5.50", or multi-band "Desirable < 200 …")
+ * falls back to the one-band-per-line text from formatRange.
+ */
+function RangeCell({ range }: { range: string | null }) {
+  const text = formatRange(range);
+  if (text === '—') return <>—</>;
+  // (weeks-range aligned table below)
+
+  const lines = text.split('\n');
+  const dataLine = /^(\d{1,2})\s+(.+)$/; // "<week> <range>"
+  const header = lines[0] && !dataLine.test(lines[0]) ? lines[0] : null;
+  const body = header ? lines.slice(1) : lines;
+  const weeks = body.map((l) => {
+    const m = l.match(dataLine);
+    if (!m) return null;
+    // Split the "<low>-<high>" band into two aligned columns; keep as one span
+    // when it isn't a simple numeric band.
+    const band = m[2].trim();
+    const parts = band.match(/^([0-9.]+)\s*-\s*([0-9.]+)$/);
+    return { week: m[1], lo: parts ? parts[1] : band, hi: parts ? parts[2] : null };
+  });
+
+  const isWeeks =
+    !!header && /week/i.test(header) && weeks.length >= 2 && weeks.every(Boolean);
+
+  if (!isWeeks) {
+    return <span className="whitespace-pre-line">{text}</span>;
+  }
+
+  return (
+    <div className="[break-inside:avoid]">
+      <p className="mb-0.5 font-semibold uppercase tracking-wide text-[9px] text-gray-500">
+        {header}
+      </p>
+      <div className="grid grid-cols-[auto_auto_auto] items-baseline gap-x-1.5 gap-y-[1.5px] tabular-nums">
+        {(weeks as { week: string; lo: string; hi: string | null }[]).map((w, i) => (
+          <Fragment key={i}>
+            <span className="text-right font-medium text-gray-500">{w.week}</span>
+            <span className="text-right text-gray-800">{w.lo}</span>
+            <span className="text-gray-800">{w.hi != null ? `– ${w.hi}` : ''}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
   );
 }
 

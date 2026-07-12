@@ -21,3 +21,43 @@ export async function concatPdfs(pdfs: Uint8Array[]): Promise<Uint8Array> {
   }
   return out.save();
 }
+
+/**
+ * Append a graph/attachment file to an already-rendered report PDF, so the
+ * report + its LIS graph download as one document (the "withGraph" option on
+ * the single and bulk PDF routes). A PDF attachment contributes its pages
+ * as-is; an image (PNG/JPEG — defensive, the LIS data is practically all PDF)
+ * is centred on its own A4 page.
+ */
+export async function appendAttachment(
+  report: Uint8Array,
+  extra: { mime: string; bytes: Uint8Array },
+): Promise<Uint8Array> {
+  const out = await PDFDocument.load(report, { ignoreEncryption: true });
+  if (extra.mime === 'application/pdf') {
+    const doc = await PDFDocument.load(extra.bytes, { ignoreEncryption: true });
+    const pages = await out.copyPages(doc, doc.getPageIndices());
+    for (const p of pages) out.addPage(p);
+  } else {
+    const img =
+      extra.mime === 'image/png'
+        ? await out.embedPng(extra.bytes)
+        : await out.embedJpg(extra.bytes);
+    const page = out.addPage([595.28, 841.89]); // A4 portrait, points
+    const margin = 36;
+    const scale = Math.min(
+      (page.getWidth() - margin * 2) / img.width,
+      (page.getHeight() - margin * 2) / img.height,
+      1,
+    );
+    const w = img.width * scale;
+    const h = img.height * scale;
+    page.drawImage(img, {
+      x: (page.getWidth() - w) / 2,
+      y: (page.getHeight() - h) / 2,
+      width: w,
+      height: h,
+    });
+  }
+  return out.save();
+}

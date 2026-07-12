@@ -5,8 +5,9 @@ import { canAccessSidReport, reportClientCodeScope } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentsToPdfs } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
-import { concatPdfs } from '@/lib/report/mergePdfs';
+import { appendAttachment, concatPdfs } from '@/lib/report/mergePdfs';
 import { reportToken } from '@/lib/report/reportLink';
+import { getSidGraphFile } from '@/db/read/reportGraph';
 
 export const dynamic = 'force-dynamic';
 // Headless Chromium needs the Node runtime (not Edge).
@@ -60,11 +61,14 @@ export async function POST(req: Request) {
   }
 
   let rawItems: unknown;
+  let rawWithGraph: unknown;
   try {
-    ({ items: rawItems } = await req.json());
+    ({ items: rawItems, withGraph: rawWithGraph } = await req.json());
   } catch {
     return new NextResponse('Bad request', { status: 400 });
   }
+  const withGraph =
+    rawWithGraph === true || rawWithGraph === '1' || rawWithGraph === 'true';
   if (!Array.isArray(rawItems)) {
     return new NextResponse('Missing items', { status: 400 });
   }
@@ -131,9 +135,22 @@ export async function POST(req: Request) {
       items.map(fragmentPath),
       null,
     );
-    // Stamp each onto the letterhead, then concatenate into one document.
+    // Stamp each onto the letterhead — then, with "Include graphs" on, staple
+    // each report's LIS graph attachment right after its own pages (SIDs
+    // without an attachment pass through unchanged) — and concatenate into one
+    // document.
     const letterheaded = await Promise.all(
-      contents.map((c) => mergeOntoLetterhead(c)),
+      contents.map(async (c, i) => {
+        const pdf: Uint8Array = await mergeOntoLetterhead(c);
+        if (!withGraph) return pdf;
+        const graph = await getSidGraphFile(items[i].sid);
+        return graph
+          ? appendAttachment(pdf, {
+              mime: graph.mime,
+              bytes: new Uint8Array(graph.bytes),
+            })
+          : pdf;
+      }),
     );
     const merged = await concatPdfs(letterheaded);
 

@@ -67,6 +67,14 @@ export function ReportPreview({
   // download. `graphCount` (0 => no button) comes from a cheap meta probe.
   const [graphCount, setGraphCount] = useState(0);
   const [graphBusy, setGraphBusy] = useState(false);
+  // True while the graph-attachment probe is in flight. Drives a placeholder in
+  // the toolbar so the download controls don't visibly jump when the probe
+  // resolves and (maybe) reveals the "+ Graph" toggle + Graph button.
+  const [graphProbing, setGraphProbing] = useState(true);
+  // Staple the graph pages after the report in the downloaded PDF (one merged
+  // document, like the LIS printed report). Only offered when the SID has a
+  // graph attachment; defaults ON — that's the report the lab actually issues.
+  const [includeGraph, setIncludeGraph] = useState(true);
   // Item keys the user unticked in the preview iframe (reported via postMessage).
   // These tests are omitted from the generated PDF. `report` carries the test
   // counts so we can block a download with nothing ticked. `remaining` already
@@ -127,12 +135,16 @@ export function ReportPreview({
   useEffect(() => {
     let alive = true;
     setGraphCount(0);
+    setGraphProbing(true);
     fetch(`/api/reporting/graph/${encodeURIComponent(sid)}?meta=1`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (alive && d && typeof d.count === 'number') setGraphCount(d.count);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setGraphProbing(false);
+      });
     return () => {
       alive = false;
     };
@@ -184,7 +196,17 @@ export function ReportPreview({
       const res = await fetch('/api/reporting/pdf', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sid, panel, date, patientName, profileName, split, headless, exclude: excluded }),
+        body: JSON.stringify({
+          sid,
+          panel,
+          date,
+          patientName,
+          profileName,
+          split,
+          headless,
+          exclude: excluded,
+          withGraph: graphCount > 0 && includeGraph,
+        }),
       });
       if (!res.ok) {
         throw new Error(`Could not generate PDF (HTTP ${res.status}).`);
@@ -254,33 +276,107 @@ export function ReportPreview({
               <option value="continuous">Continuous</option>
               <option value="split">Split by department</option>
             </select>
-            {graphCount > 0 && (
+            {/* Graph button: real once probed & present; a skeleton while the
+                attachment probe is in flight so the toolbar doesn't jump. */}
+            {graphProbing ? (
+              <div
+                className="h-8 w-[4.75rem] shrink-0 animate-pulse rounded-md border border-foreground/10 bg-foreground/5"
+                aria-hidden
+              />
+            ) : (
+              graphCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={downloadGraph}
+                  disabled={graphBusy}
+                  title="Download the graph attached to this report (e.g. Double/Quadruple Marker)"
+                >
+                  <LineChart className="h-3.5 w-3.5" />
+                  {graphBusy
+                    ? 'Preparing…'
+                    : graphCount > 1
+                      ? `Graph (${graphCount})`
+                      : 'Graph'}
+                </Button>
+              )
+            )}
+            {graphProbing ? (
+              // Probing: render the split-shaped Download with a spinner where the
+              // "+ Graph" switch will land, so when the probe resolves for a graph
+              // report the control is already in place and nothing pops in. The
+              // Download half stays fully usable throughout.
+              <div className="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-md bg-primary text-primary-foreground shadow">
+                <span className="flex h-full select-none items-center gap-1.5 pl-2.5 pr-2 text-xs font-medium opacity-90">
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" />
+                  + Graph
+                </span>
+                <span className="h-4 w-px shrink-0 bg-primary-foreground/25" aria-hidden />
+                <button
+                  type="button"
+                  onClick={download}
+                  disabled={downloading || nothingSelected}
+                  title={nothingSelected ? 'Tick at least one test to download' : undefined}
+                  className="flex h-full items-center gap-1.5 pl-2.5 pr-3 text-xs font-medium transition-colors hover:bg-black/10 disabled:pointer-events-none disabled:opacity-60"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {downloading ? 'Preparing…' : 'Download PDF'}
+                </button>
+              </div>
+            ) : graphCount > 0 ? (
+              // Split control: the "+ Graph" toggle lives INSIDE the Download
+              // button so it reads as "what this download includes". Left segment
+              // toggles whether the graph is stapled into the PDF; right segment
+              // triggers the download.
+              <div className="inline-flex h-8 shrink-0 items-center overflow-hidden rounded-md bg-primary text-primary-foreground shadow">
+                <label
+                  className={`flex h-full select-none items-center gap-1.5 pl-2.5 pr-2 text-xs font-medium transition-colors ${
+                    downloading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-black/10'
+                  }`}
+                  title={
+                    downloading
+                      ? 'Preparing the PDF — locked until it finishes.'
+                      : 'ON: append the attached graph pages after the report so the download is ONE merged file (report + graph), like the LIS printed report. OFF: download the report alone — the Graph button still saves the graph separately.'
+                  }
+                >
+                  <span className="relative inline-flex h-3.5 w-6 shrink-0 items-center">
+                    <input
+                      type="checkbox"
+                      checked={includeGraph}
+                      onChange={(e) => setIncludeGraph(e.target.checked)}
+                      disabled={downloading}
+                      className="peer sr-only"
+                    />
+                    <span className="absolute inset-0 rounded-full bg-primary-foreground/30 transition-colors peer-checked:bg-primary-foreground" />
+                    <span className="absolute left-0.5 h-2.5 w-2.5 rounded-full bg-primary-foreground shadow-sm transition-all peer-checked:translate-x-[0.625rem] peer-checked:bg-primary" />
+                  </span>
+                  + Graph
+                </label>
+                <span className="h-4 w-px shrink-0 bg-primary-foreground/25" aria-hidden />
+                <button
+                  type="button"
+                  onClick={download}
+                  disabled={downloading || nothingSelected}
+                  title={nothingSelected ? 'Tick at least one test to download' : undefined}
+                  className="flex h-full items-center gap-1.5 pl-2.5 pr-3 text-xs font-medium transition-colors hover:bg-black/10 disabled:pointer-events-none disabled:opacity-60"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {downloading ? 'Preparing…' : 'Download PDF'}
+                </button>
+              </div>
+            ) : (
               <Button
                 size="sm"
-                variant="outline"
                 className="gap-1.5"
-                onClick={downloadGraph}
-                disabled={graphBusy}
-                title="Download the graph attached to this report (e.g. Double/Quadruple Marker)"
+                onClick={download}
+                disabled={downloading || nothingSelected}
+                title={nothingSelected ? 'Tick at least one test to download' : undefined}
               >
-                <LineChart className="h-3.5 w-3.5" />
-                {graphBusy
-                  ? 'Preparing…'
-                  : graphCount > 1
-                    ? `Graph (${graphCount})`
-                    : 'Graph'}
+                <Download className="h-3.5 w-3.5" />
+                {downloading ? 'Preparing…' : 'Download PDF'}
               </Button>
             )}
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={download}
-              disabled={downloading || nothingSelected}
-              title={nothingSelected ? 'Tick at least one test to download' : undefined}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {downloading ? 'Preparing…' : 'Download PDF'}
-            </Button>
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close preview">
               <X className="h-4 w-4" />
             </Button>

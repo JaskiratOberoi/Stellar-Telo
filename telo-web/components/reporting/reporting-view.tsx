@@ -90,6 +90,10 @@ export function ReportingView({
   const [selectedSids, setSelectedSids] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
+  // Staple each report's LIS graph attachment (Double/Quadruple Marker, allergy
+  // panels, …) after its pages in the merged PDF. Reports without a graph are
+  // unaffected. Defaults ON — that's the report the lab actually issues.
+  const [includeGraphs, setIncludeGraphs] = useState(true);
 
   function runSearch() {
     setError(null);
@@ -170,7 +174,7 @@ export function ReportingView({
       const res = await fetch('/api/reporting/pdf/bulk', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, withGraph: includeGraphs }),
       });
       if (!res.ok) {
         throw new Error(`Could not generate PDF (HTTP ${res.status}).`);
@@ -511,15 +515,40 @@ export function ReportingView({
                 </span>
               )}
             </div>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={downloadBulk}
-              disabled={downloading || selectedCount > MAX_BULK}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {downloading ? 'Preparing…' : 'Download merged PDF'}
-            </Button>
+            <div className="flex items-center gap-3">
+              <label
+                className={`flex select-none items-center gap-2 text-xs font-medium text-foreground ${
+                  downloading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                }`}
+                title={
+                  downloading
+                    ? 'Preparing the merged PDF — locked until it finishes.'
+                    : "ON: each report's attached graph pages (e.g. Double/Quadruple Marker) follow its report inside the merged PDF, like the LIS printed report. Reports without a graph are unaffected."
+                }
+              >
+                <span className="relative inline-flex h-4 w-7 shrink-0 items-center">
+                  <input
+                    type="checkbox"
+                    checked={includeGraphs}
+                    onChange={(e) => setIncludeGraphs(e.target.checked)}
+                    disabled={downloading}
+                    className="peer sr-only"
+                  />
+                  <span className="absolute inset-0 rounded-full bg-foreground/20 transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-1 peer-focus-visible:ring-offset-card" />
+                  <span className="absolute left-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-3" />
+                </span>
+                Include graphs
+              </label>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={downloadBulk}
+                disabled={downloading || selectedCount > MAX_BULK}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {downloading ? 'Preparing…' : 'Download merged PDF'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

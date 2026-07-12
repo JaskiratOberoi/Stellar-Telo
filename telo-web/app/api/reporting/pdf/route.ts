@@ -5,8 +5,10 @@ import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
+import { appendAttachment } from '@/lib/report/mergePdfs';
 import { reportToken } from '@/lib/report/reportLink';
 import { buildReportFilename } from '@/lib/report/reportFilename';
+import { getSidGraphFile } from '@/db/read/reportGraph';
 
 export const dynamic = 'force-dynamic';
 // Headless Chromium needs the Node runtime (not Edge).
@@ -38,8 +40,9 @@ export async function POST(req: Request) {
   let split: unknown;
   let exclude: unknown;
   let headless: unknown;
+  let withGraph: unknown;
   try {
-    ({ sid, panel, date, patientName, profileName, split, exclude, headless } =
+    ({ sid, panel, date, patientName, profileName, split, exclude, headless, withGraph } =
       await req.json());
   } catch {
     return new NextResponse('Bad request', { status: 400 });
@@ -105,7 +108,21 @@ export async function POST(req: Request) {
     // them on the http://127.0.0.1 render origin throws "Invalid cookie fields",
     // failing the whole render. (The public /r/ softcopy route does the same.)
     const content = await renderFragmentToPdf(fragmentPath, null);
-    const merged = await mergeOntoLetterhead(content, { headless: headlessReport });
+    let merged: Uint8Array = await mergeOntoLetterhead(content, {
+      headless: headlessReport,
+    });
+    // "+ Graph": staple the LIS graph attachment (Double/Quadruple Marker,
+    // allergy panels, …) after the report pages, like the LIS printed report.
+    // No attachment on the SID → the plain report, silently.
+    if (withGraph === true || withGraph === '1' || withGraph === 'true') {
+      const graph = await getSidGraphFile(sid.trim());
+      if (graph) {
+        merged = await appendAttachment(merged, {
+          mime: graph.mime,
+          bytes: new Uint8Array(graph.bytes),
+        });
+      }
+    }
 
     return new NextResponse(new Uint8Array(merged), {
       status: 200,
