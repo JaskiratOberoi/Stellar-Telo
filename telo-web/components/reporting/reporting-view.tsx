@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, FileText, Lock, Search, X } from 'lucide-react';
 import {
   searchReports,
@@ -84,7 +84,14 @@ export function ReportingView({
   const [selected, setSelected] = useState<ReportSearchRow | null>(null);
   // Report the user tried to open while it's balance-locked → pop-up.
   const [lockedNotice, setLockedNotice] = useState<ReportSearchRow | null>(null);
-  const [pending, startTransition] = useTransition();
+  // In-flight search state, hand-managed (not useTransition) so Cancel can end
+  // it immediately. `searchSeq` identifies the latest search: Cancel (or a
+  // newer search) bumps it, orphaning any in-flight call — when the stale
+  // result eventually lands it's discarded. NB a server action can't be
+  // aborted mid-flight, so Cancel returns the UI instantly (previous results
+  // reappear) while the server finishes and gets ignored.
+  const [searching, setSearching] = useState(false);
+  const searchSeqRef = useRef(0);
 
   // ── Bulk selection + download ───────────────────────────────────────────
   const [selectedSids, setSelectedSids] = useState<Set<string>>(new Set());
@@ -102,7 +109,9 @@ export function ReportingView({
     setBulkError(null);
     const testCode = testId === '' ? '' : testCache.get(testId)?.code ?? '';
     const testName = testId === '' ? '' : testCache.get(testId)?.name ?? '';
-    startTransition(async () => {
+    const seq = ++searchSeqRef.current;
+    setSearching(true);
+    void (async () => {
       try {
         const result = await searchReports({
           from,
@@ -113,14 +122,25 @@ export function ReportingView({
           status,
           q,
         });
+        if (searchSeqRef.current !== seq) return; // cancelled / superseded
         setSearchedTestCode(testCode);
         setSearchedTestName(testName);
         setRows(result);
       } catch (e) {
+        if (searchSeqRef.current !== seq) return;
         setError(e instanceof Error ? e.message : 'Search failed.');
         setRows(null);
+      } finally {
+        if (searchSeqRef.current === seq) setSearching(false);
       }
-    });
+    })();
+  }
+
+  /** Abort the running search: the UI returns immediately (previous results
+   *  restored); the orphaned server call is discarded when it resolves. */
+  function cancelSearch() {
+    searchSeqRef.current++;
+    setSearching(false);
   }
 
   // Auto-load today's samples on first open, like the LIS worksheet.
@@ -294,11 +314,23 @@ export function ReportingView({
             ))}
           </select>
         </Field>
-        <div className="flex items-end sm:col-span-2 lg:col-span-4">
-          <Button type="submit" disabled={pending} className="gap-1.5">
+        <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
+          <Button type="submit" disabled={searching} className="gap-1.5">
             <Search className="h-4 w-4" />
-            {pending ? 'Searching…' : 'Search'}
+            {searching ? 'Searching…' : 'Search'}
           </Button>
+          {searching && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cancelSearch}
+              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5"
+              title="Stop waiting for this search and get the previous results back"
+            >
+              <X className="h-4 w-4" />
+              Cancel
+            </Button>
+          )}
         </div>
       </form>
 
@@ -312,8 +344,8 @@ export function ReportingView({
       {/* While a search runs the skeleton REPLACES the previous results — stale
           rows must not be scrollable/clickable mid-search (a click on an old row
           could open the wrong patient's report). */}
-      {pending && <ResultsSkeleton />}
-      {!pending && rows != null && (
+      {searching && <ResultsSkeleton onCancel={cancelSearch} />}
+      {!searching && rows != null && (
         <div className="rounded-lg border border-foreground/10">
           {rows.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
@@ -597,9 +629,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  * mirrors the real columns (select, client, PID, patient, SID, tests, reported,
  * status, report button) and carries a floating "Searching reports…" pill —
  * matching the report-preview loader — so it's obvious a fresh search is in
- * flight and the old rows are gone.
+ * flight and the old rows are gone. The pill carries a Cancel affordance
+ * (mirroring the Cancel button beside Search) for aborting a slow search.
  */
-function ResultsSkeleton() {
+function ResultsSkeleton({ onCancel }: { onCancel?: () => void }) {
   const bar = 'rounded bg-foreground/10';
   const dim = 'rounded bg-foreground/[0.06]';
   // Deterministic per-row width variation so the shimmer reads as real data.
@@ -654,6 +687,19 @@ function ResultsSkeleton() {
         <div className="flex items-center gap-2.5 rounded-full border border-foreground/10 bg-card px-4 py-2 shadow-lg">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
           <span className="text-xs font-medium text-foreground">Searching reports…</span>
+          {onCancel && (
+            <>
+              <span className="h-3.5 w-px bg-foreground/15" aria-hidden />
+              <button
+                type="button"
+                onClick={onCancel}
+                className="inline-flex items-center gap-1 text-xs font-medium text-destructive hover:underline"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
