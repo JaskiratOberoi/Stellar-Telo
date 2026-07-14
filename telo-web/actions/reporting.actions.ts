@@ -113,10 +113,17 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
     unit,
     abnormal,
     testNames: r.test_names_csv,
+    // Anchor for the report fragment's tight worksheet window. It MUST track the
+    // column the worksheet SP filters on — `S.modifieddate` (surfaced as
+    // `regd_at`) — not the sample-draw time. For a same-day sample the two
+    // coincide, but a delayed/rechecked report has its modifieddate bumped days
+    // after the draw; anchoring on sample_drawn then builds a ±window that never
+    // contains modifieddate, so the fragment's SP fetch returns nothing and the
+    // preview/PDF 404s. Prefer regd_at; fall back only if it's absent.
     dateHint:
-      ymdFrom(r.sample_drawn) ??
+      ymdFrom(r.regd_at) ??
       ymdFrom(r.last_modified_at) ??
-      ymdFrom(r.regd_at),
+      ymdFrom(r.sample_drawn),
     ready: r.results.length > 0 && r.results.every((t) => t.authorized),
     // Defaults; searchReports fills these in via computeReportLocks().
     locked: false,
