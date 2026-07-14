@@ -1,5 +1,9 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
+import { cached, redis } from '@/lib/cache';
+
+/** Redis key for the report-facing interpretation map (busted on upsert). */
+const INTERP_CACHE_KEY = 'telo:report:profile-interps';
 
 /**
  * Telo-owned, profile-level clinical-significance text (table
@@ -10,11 +14,13 @@ import { getPool, sql, withRetry } from '@/db/pool';
 /**
  * Map of profile_id → interpretation for every profile that has one. Resilient:
  * if the sidecar table hasn't been deployed yet, returns an empty map so the
- * report still renders.
+ * report still renders. Redis-cached (runs on every report render); the admin
+ * editor busts the cache on save so edits show immediately.
  */
 export async function getProfileInterpretations(): Promise<Record<number, string>> {
   try {
-    return await withRetry(async () => {
+    return await cached(INTERP_CACHE_KEY, 15 * 60, () =>
+      withRetry(async () => {
       const pool = await getPool();
       const r = await pool.request().query<{
         profile_id: number;
@@ -24,13 +30,14 @@ export async function getProfileInterpretations(): Promise<Record<number, string
         FROM dbo.telo_profile_interpretation
         WHERE interpretation IS NOT NULL AND LEN(CAST(interpretation AS NVARCHAR(MAX))) > 0
       `);
-      const map: Record<number, string> = {};
-      for (const x of r.recordset) {
-        const t = (x.interpretation ?? '').trim();
-        if (t) map[x.profile_id] = t;
-      }
-      return map;
-    });
+        const map: Record<number, string> = {};
+        for (const x of r.recordset) {
+          const t = (x.interpretation ?? '').trim();
+          if (t) map[x.profile_id] = t;
+        }
+        return map;
+      }),
+    );
   } catch {
     // Table not deployed yet (or transient) — degrade to no profile notes.
     return {};
@@ -96,4 +103,10 @@ export async function upsertProfileInterpretation(
           INSERT (profile_id, interpretation, updated_by) VALUES (@pid, @txt, @uid);
       `);
   });
+  // Bust the report-facing cache so the edit shows on the next render.
+  try {
+    await redis().del(INTERP_CACHE_KEY);
+  } catch {
+    /* best-effort — worst case the 15-min TTL ages it out */
+  }
 }

@@ -2,7 +2,7 @@ import 'server-only';
 import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { getMccScope } from '@/auth/scope';
 import { fetchMccUnitsByIds } from '@/db/read/mccUnits';
-import { getWorksheetReports } from '@/lib/listec';
+import { getSampleHeaders } from '@/db/read/sampleHeader';
 import type { TeloUser } from '@/types/auth';
 
 /**
@@ -69,15 +69,9 @@ export async function canAccessSidReport(
   if (allowed.size === 0) return false;
   const target = sid.trim();
   if (!target) return false;
-  // A SID resolves to one sample regardless of date — search a wide window.
-  const rows = await getWorksheetReports({
-    sid: target,
-    fromDate: '2015-01-01',
-    toDate: '2100-01-01',
-    pageSize: 20,
-  });
-  // `sid` may match as a prefix server-side — pin to the exact SID.
-  const exact = rows.filter((r) => (r.sid ?? '').trim() === target);
-  if (exact.length === 0) return false;
-  return exact.every((r) => allowed.has(norm(r.client_code)));
+  // One exact-match header read — NOT the worksheet SP, whose leading-wildcard
+  // SID filter over an unbounded window was a full samples-table scan per call.
+  const rows = await getSampleHeaders(target);
+  if (rows.length === 0) return false;
+  return rows.every((r) => allowed.has(norm(r.client_code)));
 }

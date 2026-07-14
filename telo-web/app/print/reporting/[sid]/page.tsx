@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getWorksheetReports } from '@/lib/listec';
+import { getSampleHeader } from '@/db/read/sampleHeader';
 import {
   resolveBusinessUnit,
   getSignersForBusinessUnit,
@@ -102,31 +102,11 @@ export default async function ReportingPrintFragment({
     }
   }
 
-  // Tight worksheet window around the sample's date when known (the SP crawls
-  // wide ranges); fall back to a broad window only if no hint.
-  const hint = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? new Date(sp.date) : null;
-  let fromDate = '2015-01-01';
-  let toDate: string;
-  if (hint && !Number.isNaN(hint.getTime())) {
-    const lo = new Date(hint);
-    lo.setDate(lo.getDate() - 3);
-    const hi = new Date(hint);
-    hi.setDate(hi.getDate() + 3);
-    fromDate = ymd(lo);
-    toDate = ymd(hi);
-  } else {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    toDate = ymd(tomorrow);
-  }
-
-  const rows = await getWorksheetReports({
-    fromDate,
-    toDate,
-    sid: decodedSid,
-    pageSize: 5,
-  });
-  const row = rows.find((r) => r.sid === decodedSid) ?? rows[0];
+  // Header/demographics via ONE exact-match read. (This used to go through the
+  // worksheet SP with a ±3-day window around the `date` hint — slow, and the
+  // window could miss a rechecked sample entirely. The `date` param is still
+  // accepted: old QR links carry it, and it still tightens qrDate below.)
+  const row = await getSampleHeader(decodedSid);
   if (!row) notFound();
 
   // Date hint for the public QR link (tightens the worksheet window on scan).
