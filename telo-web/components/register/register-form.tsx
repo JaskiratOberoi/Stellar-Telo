@@ -22,6 +22,7 @@ import {
   isValidGoldCardHolder,
 } from '@/lib/gold-card';
 import type { ScopedMcc } from '@/db/read/mccUnits';
+import { discountCapPct, discountCapLabel } from '@/lib/discountPolicy';
 import type { CatalogItemPublic } from '@/domain/catalog/catalog.types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -380,9 +381,13 @@ export function RegisterForm({
   const minPaid = effectiveTotal > 0 ? Math.round(effectiveTotal / 2) : 0;
   const belowMinPaid = effectiveTotal > 0 && paidSum < minPaid;
 
-  // Hard cap for "Discount": never more than 20% of the total bill. (Disabled
-  // entirely when a Gold Card is applied — the card IS the discount.)
-  const maxDiscount = effectiveTotal > 0 ? Math.round(effectiveTotal * 0.2) : 0;
+  // Hard cap for "Discount": a fraction of the total bill, per the selected
+  // client's policy (default 20%; MDCARE / MEDICARE locked to 10%). Disabled
+  // entirely when a Gold Card is applied — the card IS the discount.
+  const selectedCode = units.find((u) => u.id === mcc)?.code ?? null;
+  const discountPct = discountCapLabel(selectedCode); // whole-number %, for labels
+  const maxDiscount =
+    effectiveTotal > 0 ? Math.round(effectiveTotal * discountCapPct(selectedCode)) : 0;
   const aboveMaxDiscount =
     !goldApplied &&
     effectiveTotal > 0 &&
@@ -855,7 +860,7 @@ export function RegisterForm({
                 disabled={goldApplied}
                 onChange={upd('discountAmount')}
                 onBlur={() => {
-                  // Snap a too-large discount back down to the 20% cap.
+                  // Snap a too-large discount back down to the client's cap.
                   if (effectiveTotal <= 0) return;
                   const v = Number(f.discountAmount);
                   if (Number.isFinite(v) && v > maxDiscount) {
@@ -873,8 +878,8 @@ export function RegisterForm({
                   {goldApplied
                     ? 'Disabled — the Gold Card already applies 50% off.'
                     : aboveMaxDiscount
-                      ? `Max discount ₹${maxDiscount} (20%).`
-                      : `Up to ₹${maxDiscount} (20%).`}
+                      ? `Max discount ₹${maxDiscount} (${discountPct}%).`
+                      : `Up to ₹${maxDiscount} (${discountPct}%).`}
                 </p>
               )}
             </div>

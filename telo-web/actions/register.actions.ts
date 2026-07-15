@@ -26,6 +26,7 @@ import { MAX_PATIENTS_PER_MOBILE } from '@/lib/limits';
 import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
+import { discountCapPct, discountCapLabel } from '@/lib/discountPolicy';
 import {
   isValidGoldCardNumber,
   isValidGoldCardHolder,
@@ -579,10 +580,19 @@ export async function registerOrder(
         error: `At least ₹${minPaid} (50% of ₹${resolvedTotal}) must be collected now.`,
       };
     }
-    const maxDiscount = resolvedTotal > 0 ? Math.round(resolvedTotal * 0.2) : 0;
+    // Discount ceiling is per-client (default 20%; MDCARE / MEDICARE locked to
+    // 10%). Authoritative gate — mirrors the client cap so a tampered form can't
+    // post a discount above the client's contractual limit.
+    const orderClientCode = await clientCodeForMcc(f.mcc);
+    const maxDiscount =
+      resolvedTotal > 0
+        ? Math.round(resolvedTotal * discountCapPct(orderClientCode))
+        : 0;
     if (!gold && Number(discountAmount ?? 0) > maxDiscount) {
       return {
-        error: `Discount cannot exceed ₹${maxDiscount} (20% of ₹${resolvedTotal}).`,
+        error: `Discount cannot exceed ₹${maxDiscount} (${discountCapLabel(
+          orderClientCode,
+        )}% of ₹${resolvedTotal}).`,
       };
     }
 
