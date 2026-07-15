@@ -622,8 +622,15 @@ export async function registerOrder(
     // left `initial` NULL, which crashed the LIS report-download path. Pass the
     // chosen title (or a gender-derived default) as `initial` and keep `name`
     // clean. The SP applies the same `initial` fallback as a guard.
+    // 'Other' is the operator's explicit "no salutation" choice: pass an EMPTY
+    // (but non-NULL) initial so nothing prints before the name. The SP stores an
+    // explicit empty string verbatim and only applies the gender-derived
+    // fallback when initial is NULL (a truly-missing value), so the LIS report
+    // path — which dereferences a non-NULL initial — stays safe. Any real title
+    // is passed through; a blank/absent one still gets the Mr/Ms default.
     const genderInitial = f.gender === 2 ? 'Ms' : 'Mr';
-    const initial = (f.title && f.title.trim()) || genderInitial;
+    const initial =
+      f.title === 'Other' ? '' : (f.title && f.title.trim()) || genderInitial;
 
     const result = await createOrder({
       userId: user.uid,

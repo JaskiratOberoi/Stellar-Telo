@@ -106,11 +106,20 @@ BEGIN
        Keep the marker so Telo can identify its own orders. */
 
     /* Salutation kept in patient_master.initial (separate from name) — the LIS
-       report download dereferences it, so it must never be NULL. Falls back to
-       a gender-derived title when the form left it blank. */
+       report download dereferences it, so it must never be NULL (an empty
+       string is fine; the crash was NULL only).
+         - @initial IS NULL  -> truly missing: fall back to a gender-derived
+           title (the historic defensive behaviour).
+         - @initial = N''     -> the operator's explicit "Other" / no-salutation
+           choice: store an empty (non-NULL) initial so nothing prints before
+           the name. Must NOT be turned into Mr/Ms.
+         - otherwise          -> the chosen title, trimmed. */
     DECLARE @initialFinal NVARCHAR(10) =
-        COALESCE(NULLIF(LTRIM(RTRIM(@initial)), N''),
-                 CASE @gender WHEN 1 THEN N'Mr' WHEN 2 THEN N'Ms' ELSE N'Mr' END);
+        CASE
+            WHEN @initial IS NULL
+                THEN CASE @gender WHEN 1 THEN N'Mr' WHEN 2 THEN N'Ms' ELSE N'Mr' END
+            ELSE LTRIM(RTRIM(@initial))
+        END;
 
     /* ---- declared variable for SID-validation messaging ------------------- */
     DECLARE @extraTypes NVARCHAR(200), @dupVailids NVARCHAR(400);

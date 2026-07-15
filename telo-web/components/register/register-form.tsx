@@ -46,7 +46,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr', 'Other'];
+// 'Other' is the operator's "no salutation" choice — it is NOT stored as a
+// literal title. The server maps it to an empty `initial` (see NO_TITLE /
+// register.actions.ts) so nothing prints before the name; the preview below
+// treats it the same way.
+const NO_TITLE = 'Other';
+const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr', NO_TITLE];
 const initial: RegisterState = { error: null };
 const sel =
   'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
@@ -1438,7 +1443,7 @@ export function RegisterForm({
                   </span>
                   <span className="text-zinc-500">Patient</span>
                   <span>
-                    {f.title ? `${f.title} ` : ''}
+                    {f.title && f.title !== NO_TITLE ? `${f.title} ` : ''}
                     {f.name || '—'}
                     {f.age ? ` · ${f.age}` : ''}
                     {f.gender === '1'
