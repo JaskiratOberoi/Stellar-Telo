@@ -26,7 +26,7 @@ import { MAX_PATIENTS_PER_MOBILE } from '@/lib/limits';
 import { resolveRatesBatch } from '@/db/sp/resolveRate';
 import { createOrder } from '@/db/sp/createOrder';
 import { PAY_METHODS, type PayMethod } from '@/lib/payment-methods';
-import { discountCapPct, discountCapLabel } from '@/lib/discountPolicy';
+import { discountCapPct, discountCapLabel, discountableTotal } from '@/lib/discountPolicy';
 import {
   isValidGoldCardNumber,
   isValidGoldCardHolder,
@@ -582,17 +582,30 @@ export async function registerOrder(
     }
     // Discount ceiling is per-client (default 20%; MDCARE / MEDICARE locked to
     // 10%). Authoritative gate — mirrors the client cap so a tampered form can't
-    // post a discount above the client's contractual limit.
+    // post a discount above the client's contractual limit. For MDCARE/MEDICARE
+    // a set of floor-priced tests is non-discountable: their line value is
+    // removed from the base, so the cap is a % of the OTHER lines only (custom
+    // lines stay discountable). rateList is parallel to items; gold-halve to
+    // match resolvedTotal (moot when gold, which forces discount to 0).
     const orderClientCode = await clientCodeForMcc(f.mcc);
+    const discountLines = items.map((it, i) => ({
+      code: it.code,
+      amount: gold ? Math.round((rateList[i] ?? 0) / 2) : rateList[i] ?? 0,
+    }));
+    const discountBase = discountableTotal(orderClientCode, discountLines, resolvedTotal);
     const maxDiscount =
-      resolvedTotal > 0
-        ? Math.round(resolvedTotal * discountCapPct(orderClientCode))
+      discountBase > 0
+        ? Math.round(discountBase * discountCapPct(orderClientCode))
         : 0;
     if (!gold && Number(discountAmount ?? 0) > maxDiscount) {
+      const excluded = discountBase < resolvedTotal;
       return {
-        error: `Discount cannot exceed ₹${maxDiscount} (${discountCapLabel(
-          orderClientCode,
-        )}% of ₹${resolvedTotal}).`,
+        error:
+          maxDiscount === 0 && excluded
+            ? 'No discount is allowed — these tests are billed at fixed rates for this client.'
+            : `Discount cannot exceed ₹${maxDiscount} (${discountCapLabel(
+                orderClientCode,
+              )}% of the discountable ₹${discountBase}).`,
       };
     }
 

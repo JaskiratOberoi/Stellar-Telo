@@ -22,7 +22,7 @@ import {
   isValidGoldCardHolder,
 } from '@/lib/gold-card';
 import type { ScopedMcc } from '@/db/read/mccUnits';
-import { discountCapPct, discountCapLabel } from '@/lib/discountPolicy';
+import { discountCapPct, discountCapLabel, discountableTotal } from '@/lib/discountPolicy';
 import type { CatalogItemPublic } from '@/domain/catalog/catalog.types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -383,11 +383,21 @@ export function RegisterForm({
 
   // Hard cap for "Discount": a fraction of the total bill, per the selected
   // client's policy (default 20%; MDCARE / MEDICARE locked to 10%). Disabled
-  // entirely when a Gold Card is applied — the card IS the discount.
+  // entirely when a Gold Card is applied — the card IS the discount. For
+  // MDCARE/MEDICARE a set of floor-priced tests is non-discountable: their line
+  // value drops out of the base, so the cap is a % of the OTHER lines only
+  // (custom lines stay discountable). Mirrors the server gate exactly.
   const selectedCode = units.find((u) => u.id === mcc)?.code ?? null;
   const discountPct = discountCapLabel(selectedCode); // whole-number %, for labels
+  const discountLines = preview.lines.map((l) => ({
+    code: l.code,
+    amount: goldApplied ? Math.round((l.rate ?? 0) / 2) : l.rate ?? 0,
+  }));
+  const discountBase = discountableTotal(selectedCode, discountLines, effectiveTotal);
+  // Some listed (non-discountable) test is on this order → base < total.
+  const hasExcludedLines = effectiveTotal > 0 && discountBase < effectiveTotal;
   const maxDiscount =
-    effectiveTotal > 0 ? Math.round(effectiveTotal * discountCapPct(selectedCode)) : 0;
+    discountBase > 0 ? Math.round(discountBase * discountCapPct(selectedCode)) : 0;
   const aboveMaxDiscount =
     !goldApplied &&
     effectiveTotal > 0 &&
@@ -877,9 +887,15 @@ export function RegisterForm({
                 >
                   {goldApplied
                     ? 'Disabled — the Gold Card already applies 50% off.'
-                    : aboveMaxDiscount
-                      ? `Max discount ₹${maxDiscount} (${discountPct}%).`
-                      : `Up to ₹${maxDiscount} (${discountPct}%).`}
+                    : maxDiscount === 0 && hasExcludedLines
+                      ? 'No discount — these tests are billed at fixed rates for this client.'
+                      : aboveMaxDiscount
+                        ? `Max discount ₹${maxDiscount} (${discountPct}%${
+                            hasExcludedLines ? ' of discountable lines' : ''
+                          }).`
+                        : `Up to ₹${maxDiscount} (${discountPct}%${
+                            hasExcludedLines ? ' of discountable lines' : ''
+                          }).`}
                 </p>
               )}
             </div>
