@@ -1,6 +1,6 @@
 import 'server-only';
 import { lisUsertypeToTeloRole } from '@/auth/rbac';
-import { getMccScope } from '@/auth/scope';
+import { getReportMccScope } from '@/auth/scope';
 import { fetchMccUnitsByIds } from '@/db/read/mccUnits';
 import { getSampleHeaders } from '@/db/read/sampleHeader';
 import type { TeloUser } from '@/types/auth';
@@ -38,7 +38,10 @@ export async function reportClientCodeScope(
   user: TeloUser,
 ): Promise<Set<string> | null> {
   if (isUnrestrictedReporter(user)) return null;
-  const scope = await getMccScope(user.uid);
+  // Report scope honours the admin-assigned client-code mappings for every
+  // usertype — unlike the ordering scope (getMccScope), which locks CLIENT
+  // REPORTING (usertype 8) to its own centre and would drop the mappings.
+  const scope = await getReportMccScope(user.uid);
   if (scope.length === 0) return new Set();
   const units = await fetchMccUnitsByIds(scope);
   return new Set(units.map((u) => norm(u.code)).filter(Boolean));

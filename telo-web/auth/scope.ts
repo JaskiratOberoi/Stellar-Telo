@@ -1,6 +1,6 @@
 import 'server-only';
 import { cached, redis } from '@/lib/cache';
-import { fetchUserMccScope } from '@/db/read/userScope';
+import { fetchUserMccScope, fetchUserReportMccScope } from '@/db/read/userScope';
 import { AppError } from '@/lib/errors';
 
 /** Cache key for one user's MCC scope set. Kept in one place so the
@@ -9,12 +9,30 @@ function scopeKey(userId: number): string {
   return `telo:scope:${userId}`;
 }
 
+/** Cache key for one user's REPORT MCC scope set (assigned mappings ∪ own
+ * centre, regardless of usertype). Distinct from the ordering scope above. */
+function reportScopeKey(userId: number): string {
+  return `telo:reportscope:${userId}`;
+}
+
 /**
  * Per-user allowed MCC code set, redis-cached (10k+ global mapping rows are
  * never put in the JWT). Cache miss/Redis-down degrades to a live query.
  */
 export async function getMccScope(userId: number): Promise<number[]> {
   return cached(scopeKey(userId), 300, () => fetchUserMccScope(userId));
+}
+
+/**
+ * Per-user REPORT MCC scope, redis-cached. Honours admin-assigned sales-mcc
+ * mappings for every usertype (see fetchUserReportMccScope) — the ordering
+ * scope above intentionally does not. Busted by invalidateMccScope alongside
+ * the ordering key so admin scope edits take effect immediately.
+ */
+export async function getReportMccScope(userId: number): Promise<number[]> {
+  return cached(reportScopeKey(userId), 300, () =>
+    fetchUserReportMccScope(userId),
+  );
 }
 
 /**
@@ -29,7 +47,7 @@ export async function getMccScope(userId: number): Promise<number[]> {
 export async function invalidateMccScope(userId: number): Promise<void> {
   if (!Number.isInteger(userId)) return;
   try {
-    await redis().del(scopeKey(userId));
+    await redis().del(scopeKey(userId), reportScopeKey(userId));
   } catch {
     /* best-effort */
   }
