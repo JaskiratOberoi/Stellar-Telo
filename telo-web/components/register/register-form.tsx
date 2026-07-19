@@ -53,6 +53,17 @@ import {
 // treats it the same way.
 const NO_TITLE = 'Other';
 const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr', NO_TITLE];
+// Titles that imply a gender auto-fill the Gender dropdown when picked. The
+// operator can still override Gender manually afterwards. Gender-neutral titles
+// (Baby, Baby of, Dr, Other) are absent here so they leave Gender untouched.
+// Gender values match the <select> below: '1' Male, '2' Female.
+const TITLE_GENDER: Record<string, string> = {
+  Mr: '1',
+  Master: '1',
+  Mrs: '2',
+  Miss: '2',
+  Ms: '2',
+};
 const initial: RegisterState = { error: null };
 const sel =
   'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
@@ -571,7 +582,11 @@ export function RegisterForm({
                 suppressHydrationWarning
               className={sel}
                 value={f.title}
-                onChange={upd('title')}
+                onChange={(e) => {
+                  const title = e.target.value;
+                  const g = TITLE_GENDER[title];
+                  setF((s) => ({ ...s, title, ...(g ? { gender: g } : {}) }));
+                }}
               >
                 {TITLES.map((t) => (
                   <option key={t} value={t}>
