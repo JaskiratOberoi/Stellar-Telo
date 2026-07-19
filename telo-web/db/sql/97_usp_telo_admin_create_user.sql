@@ -39,7 +39,13 @@ BEGIN
                user_id = CAST(NULL AS INT);
         RETURN;
     END
-    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing',
+    -- NOTE: keep this list in sync with the TeloRole union (types/auth.ts),
+    -- the zod enum (actions/admin.actions.ts), and SP 98 (set_role). Omitting
+    -- b2c_billing / b2b_billing / client / client_reporting here made new
+    -- users of those roles unsavable with "Unknown Telo role" even though the
+    -- Admin panel offered them. DO deploy this SP whenever the set changes.
+    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
+                         N'b2b_billing', N'client', N'client_reporting',
                          N'technician', N'viewer')
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',

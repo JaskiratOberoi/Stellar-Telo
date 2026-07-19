@@ -1036,6 +1036,12 @@ function CreateUserPanel({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <form
         action={action}
+        // This form provisions credentials for SOMEONE ELSE. Without these
+        // guards the browser/password-manager autofills the signed-in admin's
+        // own email/username into the blank fields (that is how a new user
+        // silently inherited the admin's email). autoComplete off on the form
+        // + new-password on the secret field suppresses the whole cascade.
+        autoComplete="off"
         className="w-full max-w-md space-y-2.5 rounded-2xl border border-foreground/5 bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200"
       >
         <input type="hidden" name="mccIdsCsv" value={pickedMccIds.join(',')} />
@@ -1058,7 +1064,13 @@ function CreateUserPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label htmlFor="username">Username *</Label>
-            <Input id="username" name="username" required maxLength={50} />
+            <Input
+              id="username"
+              name="username"
+              required
+              maxLength={50}
+              autoComplete="off"
+            />
           </div>
           <div className="space-y-0.5">
             <Label htmlFor="password">Password *</Label>
@@ -1068,6 +1080,7 @@ function CreateUserPanel({
               required
               minLength={12}
               maxLength={72}
+              autoComplete="new-password"
             />
           </div>
         </div>
@@ -1075,17 +1088,34 @@ function CreateUserPanel({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="space-y-0.5">
             <Label htmlFor="firstName">First name *</Label>
-            <Input id="firstName" name="firstName" required maxLength={100} />
+            <Input
+              id="firstName"
+              name="firstName"
+              required
+              maxLength={100}
+              autoComplete="off"
+            />
           </div>
           <div className="space-y-0.5">
             <Label htmlFor="lastName">Last name</Label>
-            <Input id="lastName" name="lastName" maxLength={100} />
+            <Input
+              id="lastName"
+              name="lastName"
+              maxLength={100}
+              autoComplete="off"
+            />
           </div>
         </div>
 
         <div className="space-y-0.5">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" maxLength={100} />
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            maxLength={100}
+            autoComplete="off"
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
