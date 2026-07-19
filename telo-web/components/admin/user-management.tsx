@@ -681,7 +681,9 @@ function EditUserForm({
         ) : (
           <>
             {pickedMccIds.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              // Capped + internally scrollable — a long scope must not grow
+              // the modal past the viewport (mirrors the onboarding modal).
+              <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-foreground/5 bg-foreground/[0.02] p-1.5">
                 {pickedMccIds.map((id) => {
                   const m = mccLabels.get(id);
                   return (
@@ -1162,7 +1164,11 @@ function CreateUserPanel({
           ) : (
             <>
               {pickedMccIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+                // Cap the chip list and let it scroll internally. It is the
+                // only unbounded-height element in the modal; without this cap
+                // a long client-code scope grows the modal past the viewport
+                // and pushes the search box + footer off-screen.
+                <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-foreground/5 bg-foreground/[0.02] p-1.5">
                   {pickedMccIds.map((id) => {
                     const m = mccLabels.get(id);
                     return (
