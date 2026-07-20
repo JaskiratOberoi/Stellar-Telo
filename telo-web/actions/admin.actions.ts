@@ -145,6 +145,7 @@ const teloRoleSchema = z.enum([
   'b2b_billing',
   'client',
   'client_reporting',
+  'report_admin',
   'technician',
   'viewer',
 ]);

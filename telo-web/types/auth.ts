@@ -11,6 +11,7 @@ export type TeloRole =
   | 'b2b_billing' // Client, but only the B2B "Patient Orders" tab (LIS clients, e.g. DL0002)
   | 'client'
   | 'client_reporting' // Client home dashboard + Reporting (view/print own-client reports) only
+  | 'report_admin' // Reporting for EVERY client code (view/print), and nothing else
   | 'technician'
   | 'viewer';
 

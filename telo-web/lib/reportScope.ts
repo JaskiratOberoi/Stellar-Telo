@@ -21,10 +21,12 @@ import type { TeloUser } from '@/types/auth';
  *     verifies the SID's client_code before anything is rendered/streamed.
  */
 
-/** Roles that legitimately see EVERY client's reports (no per-client scoping). */
+/** Roles that legitimately see EVERY client's reports (no per-client scoping).
+ *  `report_admin` is the reporting-only equivalent of this: all client codes,
+ *  but none of super_admin/admin's other access. */
 function isUnrestrictedReporter(user: TeloUser): boolean {
   const role = user.teloRole ?? lisUsertypeToTeloRole(user.usertypeId);
-  return role === 'super_admin' || role === 'admin';
+  return role === 'super_admin' || role === 'admin' || role === 'report_admin';
 }
 
 const norm = (c: string | null | undefined) => (c ?? '').trim().toUpperCase();

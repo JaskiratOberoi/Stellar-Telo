@@ -45,6 +45,7 @@ const ROLES: { value: TeloRole; label: string; hint: string }[] = [
   { value: 'b2b_billing', label: 'B2B Billing', hint: 'Client — B2B "Patient Orders" tab only' },
   { value: 'client', label: 'Client', hint: 'Billing + own Sales & Accounts' },
   { value: 'client_reporting', label: 'Client Reporting', hint: 'Client home + Reporting (own reports, view/print)' },
+  { value: 'report_admin', label: 'Reporting (all clients)', hint: 'Reporting for EVERY client code — nothing else' },
   { value: 'technician', label: 'Technician', hint: 'Accession SIDs only' },
   { value: 'viewer', label: 'Viewer', hint: 'Read-only' },
 ];
@@ -619,8 +620,12 @@ function EditUserForm({
 
   const effectiveRole =
     user.teloRole ?? lisUsertypeToTeloRole(user.lisUsertypeId);
+  // report_admin reports on every client code and can't order, so a per-client
+  // MCC scope is meaningless — hide the picker like the other unrestricted roles.
   const scopeIsUnrestricted =
-    effectiveRole === 'super_admin' || effectiveRole === 'admin';
+    effectiveRole === 'super_admin' ||
+    effectiveRole === 'admin' ||
+    effectiveRole === 'report_admin';
 
   return (
     <form action={action} className="space-y-3 py-2">
@@ -1032,7 +1037,10 @@ function CreateUserPanel({
     setPickedMccIds((p) => p.filter((x) => x !== id));
   }
 
-  const scopeIsUnrestricted = teloRole === 'super_admin' || teloRole === 'admin';
+  const scopeIsUnrestricted =
+    teloRole === 'super_admin' ||
+    teloRole === 'admin' ||
+    teloRole === 'report_admin';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">

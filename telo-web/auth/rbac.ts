@@ -151,6 +151,12 @@ export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
   // code(s) for every non-admin role (see lib/reportScope.ts) — so a client's
   // reporting staff can only see/print their OWN centre's reports.
   client_reporting: ['report:view'],
+  // Reporting operator with NO client-code restriction — view/print reports for
+  // EVERY client code and nothing else. Same single cap as client_reporting;
+  // the difference is scope: lib/reportScope.ts treats report_admin as an
+  // unrestricted reporter (null scope), so it never per-client-filters. Grants
+  // no orders/billing/accounts/user-management access.
+  report_admin: ['report:view'],
   technician: [
     // Strictly the New Order worklist — open existing orders to add SIDs.
     // No dashboard:view → revenue KPIs are hidden and / lands on /orders/new.

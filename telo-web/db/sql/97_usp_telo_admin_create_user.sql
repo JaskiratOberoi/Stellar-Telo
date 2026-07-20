@@ -46,7 +46,7 @@ BEGIN
     -- Admin panel offered them. DO deploy this SP whenever the set changes.
     IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
                          N'b2b_billing', N'client', N'client_reporting',
-                         N'technician', N'viewer')
+                         N'report_admin', N'technician', N'viewer')
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'Unknown Telo role',

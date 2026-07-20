@@ -80,9 +80,13 @@ export default async function ShopLayout({
       ? '/home'
       : hasCapability(user.caps, 'dashboard:view')
         ? '/dashboard'
-        : canB2c
-          ? '/orders/new'
-          : '/orders/b2b';
+        : // Reporting-only roles (report_admin) have no orders/dashboard —
+          // land them straight on the Reporting tab, not an order worklist.
+          hasCapability(user.caps, 'report:view')
+          ? '/reporting'
+          : canB2c
+            ? '/orders/new'
+            : '/orders/b2b';
 
   return (
     <div className="relative min-h-screen bg-background">

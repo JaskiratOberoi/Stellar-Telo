@@ -26,7 +26,8 @@ export default async function DashboardPage() {
   // Technicians don't see revenue KPIs — their home is the New Order
   // worklist. The login flow points everyone at /dashboard; we bounce them
   // here so any deep-link (URL bar, bookmark, "Back to home") also works.
-  if (!hasCapability(user.caps, 'dashboard:view')) redirect('/orders/new');
+  if (!hasCapability(user.caps, 'dashboard:view'))
+    redirect(hasCapability(user.caps, 'report:view') ? '/reporting' : '/orders/new');
 
   const [stats, scope] = await Promise.all([
     getDashboardStats(),
