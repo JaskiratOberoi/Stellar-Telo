@@ -67,7 +67,11 @@ export default async function B2bOrderWorklistPage({
             receives the sample.
           </p>
         </div>
-        <PendingRegistrationsList initial={registrationFeed} variant="b2b" />
+        <PendingRegistrationsList
+          initial={registrationFeed}
+          variant="b2b"
+          canAccession={hasCapability(user.caps, 'order:accession')}
+        />
       </div>
     </div>
   );

@@ -6,9 +6,18 @@ import { isRedirectError } from 'next/dist/client/components/redirect-error';
 import { currentUser } from '@/auth/session';
 import { getMccScope } from '@/auth/scope';
 import { requireCapabilityForMcc } from '@/auth/guards';
-import { getOrder, fetchPatientTestItems, type OrderDetail } from '@/db/read/orders';
+import {
+  getOrder,
+  fetchPatientTestItems,
+  listPendingRegistrations,
+  type OrderDetail,
+} from '@/db/read/orders';
 import { previewSampleGroups, type SampleGroup } from '@/db/sp/previewSampleGroups';
 import { addSids } from '@/db/sp/addSids';
+import { accessionSamples } from '@/db/sp/accessionSamples';
+import { hasCapability } from '@/auth/rbac';
+import { audit } from '@/lib/audit';
+import { revalidatePath } from 'next/cache';
 import { AppError } from '@/lib/errors';
 
 /** A required sample group + the SID already accessioned for it (if any). */
@@ -117,4 +126,92 @@ export async function submitSids(
   }
 
   redirect('/orders/new');
+}
+
+export interface RegisterSamplesResult {
+  ok: boolean;
+  error: string | null;
+  registered: number;
+  skipped: number;
+}
+
+/**
+ * Telo-side "Register" — the LIS Accession screen's action, for the samples
+ * listed in the Pending accessioning table.
+ *
+ * Writes the empty result skeleton and moves each sample to 'Sample Registered'
+ * so it reaches the worksheet. See db/sql/68_usp_telo_accession_samples.sql.
+ *
+ * Scope is fail-closed: the submitted SIDs are intersected with the pending set
+ * the caller can actually see (listPendingRegistrations is scope-filtered), so
+ * a hand-crafted request cannot register another centre's samples. Capability
+ * is re-checked per MCC, mirroring submitSids.
+ */
+export async function registerSamplesAction(
+  vailids: string[],
+  kind: 'new' | 'b2b' = 'b2b',
+): Promise<RegisterSamplesResult> {
+  try {
+    const user = await currentUser();
+    if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
+    if (!hasCapability(user.caps, 'order:accession')) {
+      return { ok: false, error: 'You cannot accession samples.', registered: 0, skipped: 0 };
+    }
+    const wanted = Array.from(
+      new Set((vailids ?? []).map((v) => (v ?? '').toString().trim()).filter(Boolean)),
+    ).slice(0, 200);
+    if (wanted.length === 0) {
+      return { ok: false, error: 'Select at least one sample.', registered: 0, skipped: 0 };
+    }
+
+    // Only SIDs the caller can currently see as pending are eligible.
+    const scope = await getMccScope(user.uid);
+    const pending = await listPendingRegistrations(scope, kind);
+    const allowed = new Set(pending.map((p) => p.vailid));
+    const target = wanted.filter((v) => allowed.has(v));
+    if (target.length === 0) {
+      return {
+        ok: false,
+        error: 'None of those samples are pending accessioning in your centres.',
+        registered: 0,
+        skipped: 0,
+      };
+    }
+    // Re-check the capability against each sample's own MCC.
+    for (const mcc of new Set(
+      pending.filter((p) => target.includes(p.vailid)).map((p) => p.mccId),
+    )) {
+      if (mcc != null) await requireCapabilityForMcc('order:accession', mcc);
+    }
+
+    const res = await accessionSamples({
+      userId: user.uid,
+      username: user.username,
+      vailids: target,
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: res.message || 'Could not register the samples.',
+        registered: 0,
+        skipped: 0,
+      };
+    }
+    audit({
+      kind: 'sample.accessioned',
+      actor: user.uid,
+      registered: res.registered,
+      skipped: res.skipped,
+    });
+    revalidatePath(kind === 'b2b' ? '/orders/b2b' : '/orders/new');
+    return { ok: true, error: null, registered: res.registered, skipped: res.skipped };
+  } catch (e) {
+    if (e instanceof AppError) return { ok: false, error: e.message, registered: 0, skipped: 0 };
+    return {
+      ok: false,
+      error: 'Something went wrong registering the samples.',
+      registered: 0,
+      skipped: 0,
+    };
+  }
 }

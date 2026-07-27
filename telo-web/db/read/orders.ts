@@ -149,6 +149,8 @@ export interface PendingRegistration {
   patientName: string | null;
   /** MCCUnitCode (e.g. "DL0223") — the human client code, not the numeric id. */
   mccCode: string | null;
+  /** tbl_med_mcc_unit_master.id — the scope/capability key. */
+  mccId: number | null;
   billId: number | null;
   billNumber: number | null;
   sampleTypeName: string | null;
@@ -767,6 +769,7 @@ export async function listPendingRegistrations(
       patientId: number;
       patientName: string | null;
       mccCode: string | null;
+      mccId: number | null;
       billId: number | null;
       billNumber: number | null;
       sampleTypeName: string | null;
@@ -789,7 +792,7 @@ export async function listPendingRegistrations(
         s.sample_status AS statusCode,
         st.status AS statusName,
         t.patientId, t.patientName,
-        u.MCCUnitCode AS mccCode,
+        u.MCCUnitCode AS mccCode, t.mccId,
         t.billId, t.billNumber,
         sm.Sampletype AS sampleTypeName,
         s.testcodes AS testCodes,
@@ -813,6 +816,7 @@ export async function listPendingRegistrations(
       patientName: x.patientName ? x.patientName.trim() : null,
       // MCCUnitCode carries legacy trailing spaces — trim for display.
       mccCode: x.mccCode ? x.mccCode.trim() : null,
+      mccId: x.mccId ?? null,
       billId: x.billId ?? null,
       billNumber: x.billNumber ?? null,
       sampleTypeName: x.sampleTypeName ? x.sampleTypeName.trim() : null,

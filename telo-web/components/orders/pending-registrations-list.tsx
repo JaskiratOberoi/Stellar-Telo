@@ -6,9 +6,11 @@ import {
   getPendingRegistrations,
   type PendingRegistrationsFeed,
 } from '@/actions/orders.actions';
+import { registerSamplesAction } from '@/actions/accession.actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fmtIST } from '@/lib/datetime';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -27,14 +29,20 @@ import {
 export function PendingRegistrationsList({
   initial,
   variant = 'new',
+  canAccession = false,
 }: {
   initial: PendingRegistrationsFeed;
   /** Drives the order type fetched and the accession back-link. */
   variant?: 'new' | 'b2b';
+  /** Caller holds `order:accession` — shows the Register controls. */
+  canAccession?: boolean;
 }) {
   const [feed, setFeed] = useState<PendingRegistrationsFeed>(initial);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [registering, setRegistering] = useState(false);
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const detailHref = (billId: number) =>
     variant === 'b2b' ? `/orders/new/${billId}?from=b2b` : `/orders/new/${billId}`;
@@ -43,10 +51,54 @@ export function PendingRegistrationsList({
     setBusy(true);
     try {
       setFeed(await getPendingRegistrations(variant));
+      setPicked(new Set());
     } finally {
       setBusy(false);
     }
   }, [variant]);
+
+  const toggle = useCallback((vailid: string) => {
+    setPicked((p) => {
+      const next = new Set(p);
+      if (next.has(vailid)) next.delete(vailid);
+      else next.add(vailid);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Register the ticked samples. This is a REAL write to the shared LIS — it
+   * generates each sample's result skeleton and moves it to 'Sample Registered'
+   * — so it is confirmed first and cannot be undone from Telo.
+   */
+  const register = useCallback(async () => {
+    const vailids = [...picked];
+    if (vailids.length === 0) return;
+    const ok = window.confirm(
+      `Register ${vailids.length} sample${vailids.length === 1 ? '' : 's'} to the worksheet?\n\n` +
+        `This writes to the LIS and cannot be undone from Telo.`,
+    );
+    if (!ok) return;
+    setRegistering(true);
+    setMsg(null);
+    try {
+      const res = await registerSamplesAction(vailids, variant);
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: res.error ?? 'Could not register the samples.' });
+        return;
+      }
+      setMsg({
+        kind: 'ok',
+        text:
+          `Registered ${res.registered} sample${res.registered === 1 ? '' : 's'}` +
+          (res.skipped > 0 ? ` · ${res.skipped} skipped (already accessioned)` : '') +
+          ' — now on the worksheet.',
+      });
+      await refresh();
+    } finally {
+      setRegistering(false);
+    }
+  }, [picked, variant, refresh]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -80,11 +132,35 @@ export function PendingRegistrationsList({
             {feed.samples.length} pending accessioning · updated{' '}
             {fmtIST(feed.fetchedAt, 'time')} IST
           </span>
+          {canAccession && (
+            <Button
+              size="sm"
+              onClick={register}
+              disabled={registering || picked.size === 0}
+            >
+              {registering
+                ? 'Registering…'
+                : `Register${picked.size > 0 ? ` (${picked.size})` : ''}`}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={refresh} disabled={busy}>
             {busy ? 'Refreshing…' : 'Refresh'}
           </Button>
         </div>
       </div>
+
+      {msg && (
+        <p
+          className={cn(
+            'rounded-md border px-3 py-2 text-sm',
+            msg.kind === 'ok'
+              ? 'border-secondary/30 bg-secondary/10 text-secondary'
+              : 'border-destructive/30 bg-destructive/10 text-destructive',
+          )}
+        >
+          {msg.text}
+        </p>
+      )}
 
       {/* Mobile (<sm): one card per sample. */}
       <div className="space-y-2 sm:hidden">
@@ -136,6 +212,24 @@ export function PendingRegistrationsList({
         <Table>
           <TableHeader>
             <TableRow>
+              {canAccession && (
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all pending samples"
+                    className="h-4 w-4 cursor-pointer accent-primary"
+                    suppressHydrationWarning
+                    checked={rows.length > 0 && rows.every((s) => picked.has(s.vailid))}
+                    onChange={(e) =>
+                      setPicked(
+                        e.target.checked
+                          ? new Set(rows.map((s) => s.vailid))
+                          : new Set(),
+                      )
+                    }
+                  />
+                </TableHead>
+              )}
               <TableHead className="w-36">SID</TableHead>
               <TableHead className="w-40">Allotted</TableHead>
               <TableHead>Patient</TableHead>
@@ -148,7 +242,7 @@ export function PendingRegistrationsList({
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-muted-foreground">
+                <TableCell colSpan={canAccession ? 8 : 7} className="text-muted-foreground">
                   {empty}
                 </TableCell>
               </TableRow>
@@ -156,8 +250,23 @@ export function PendingRegistrationsList({
               rows.map((s) => (
                 <TableRow
                   key={s.sampleId}
-                  className="group transition-transform hover:-translate-y-px"
+                  className={cn(
+                    'group transition-transform hover:-translate-y-px',
+                    picked.has(s.vailid) && 'bg-primary/5',
+                  )}
                 >
+                  {canAccession && (
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select sample ${s.vailid}`}
+                        className="h-4 w-4 cursor-pointer accent-primary"
+                        suppressHydrationWarning
+                        checked={picked.has(s.vailid)}
+                        onChange={() => toggle(s.vailid)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="font-mono text-xs font-medium">
                     {s.vailid}
                   </TableCell>
