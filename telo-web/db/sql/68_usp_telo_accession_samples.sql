@@ -383,7 +383,7 @@ BEGIN
         DECLARE @ci INT = 1, @cn INT = (SELECT COUNT(*) FROM @charges);
         DECLARE @cPt INT, @cMcc INT, @cSub NVARCHAR(50), @cAmt INT,
                 @cTname NVARCHAR(100), @cPat NVARCHAR(50), @cPid INT,
-                @bal INT, @now DATETIME;
+                @bal INT, @closing INT, @now DATETIME;
         WHILE @ci <= @cn
         BEGIN
             SELECT @cPt = patientTestId, @cMcc = acctMcc, @cSub = subCode,
@@ -403,17 +403,20 @@ BEGIN
                 SELECT @bal = ISNULL(currentbalance, 0)
                 FROM dbo.tbl_med_mcc_account_master WHERE mcccode = @cMcc;
                 SET @now = GETDATE();
+                /* T-SQL forbids an expression as an EXEC argument — the
+                   closing balance must be materialised first. */
+                SET @closing = @bal - @cAmt;
 
                 EXEC dbo.sp_mcc_test_account_101
                      @USERID = @userId, @MCCID = @cMcc, @TDATE = @now,
                      @CBALANCE = @bal, @TESTCHARGES = @cAmt,
-                     @CLOSINGBALANCE = @bal - @cAmt,
+                     @CLOSINGBALANCE = @closing,
                      @tname = @cTname,
                      @vailid = @cPat,       -- LIS stores the PATIENT NAME here
                      @patientid = @cPid, @SUBFRANCHISE = @cSub;
 
                 UPDATE dbo.tbl_med_mcc_account_master
-                SET currentbalance = @bal - @cAmt
+                SET currentbalance = @closing
                 WHERE mcccode = @cMcc;
 
                 UPDATE dbo.tbl_med_mcc_patient_tests
