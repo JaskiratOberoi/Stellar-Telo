@@ -51,6 +51,17 @@ import {
 // literal title. The server maps it to an empty `initial` (see NO_TITLE /
 // register.actions.ts) so nothing prints before the name; the preview below
 // treats it the same way.
+// Shared column template for the B2B "Selected" table (Test · MRP · Client
+// rate · Profit% · remove). The header, the rows and the total are SEPARATE
+// grids, so the tracks must be fixed widths — with `auto` each grid sized its
+// own columns to its own content ("Client rate" vs "₹75") and the numbers did
+// not line up under their headings. Keep all three in step.
+//
+// Both variants are spelled out in full: Tailwind scans for literal class
+// names, so a runtime-built `sm:${...}` would never be generated.
+const B2B_COLS = 'grid-cols-[1fr_4.5rem_5.5rem_4.5rem_4.5rem]';
+const B2B_COLS_SM = 'sm:grid-cols-[1fr_4.5rem_5.5rem_4.5rem_4.5rem]';
+
 const NO_TITLE = 'Other';
 const TITLES = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master', 'Baby', 'Baby of', 'Dr', NO_TITLE];
 // Titles that imply a gender auto-fill the Gender dropdown when picked. The
@@ -1110,7 +1121,9 @@ export function RegisterForm({
             </div>
             {isB2b && picked.length > 0 && (
               // Header only on sm+ — on mobile each row carries its own labels.
-              <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-x-3 border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid">
+              <div
+                className={`hidden ${B2B_COLS} gap-x-3 border-b border-foreground/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid`}
+              >
                 <span>Test</span>
                 <span className="text-right">MRP</span>
                 <span className="text-right">Client rate</span>
@@ -1138,7 +1151,7 @@ export function RegisterForm({
                 return (
                   <div
                     key={`${it.kind}-${it.id}`}
-                    className="border-b border-foreground/5 px-3 py-2 text-sm last:border-0 sm:grid sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-center sm:gap-x-3"
+                    className={`border-b border-foreground/5 px-3 py-2 text-sm last:border-0 sm:grid ${B2B_COLS_SM} sm:items-center sm:gap-x-3`}
                   >
                     <span className="block min-w-0">
                       <span className="font-mono text-xs">{it.code}</span>{' '}
@@ -1248,41 +1261,62 @@ export function RegisterForm({
                 </span>
               </div>
             ))}
-            <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
-              <span>
-                Total
-                {isB2b
-                  ? ' (patient pays MRP)'
-                  : goldApplied
-                    ? ' (Gold Card · 50% off)'
-                    : ''}
-              </span>
-              <span className="flex items-center gap-3">
-                {isB2b &&
-                  (() => {
-                    const sumMrp = preview.lines.reduce((s, l) => s + (l.mrp ?? 0), 0);
-                    const sumCr = preview.lines.reduce(
-                      (s, l) => s + (l.clientRate ?? 0),
-                      0,
-                    );
-                    const agg =
-                      sumMrp > 0 ? Math.round(((sumMrp - sumCr) / sumMrp) * 100) : 0;
-                    return (
-                      <span className="text-xs font-normal text-emerald-400">
+            {isB2b && picked.length > 0 ? (
+              // Same tracks as the header/rows so the totals land directly
+              // under MRP, Client rate and Profit%. Mobile keeps the simple
+              // left/right split (the columns only exist at sm+).
+              <div
+                className={`flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold sm:grid ${B2B_COLS_SM} sm:gap-x-3`}
+              >
+                <span>Total (patient pays MRP)</span>
+                {(() => {
+                  const sumMrp = preview.lines.reduce((s, l) => s + (l.mrp ?? 0), 0);
+                  const sumCr = preview.lines.reduce(
+                    (s, l) => s + (l.clientRate ?? 0),
+                    0,
+                  );
+                  const agg =
+                    sumMrp > 0 ? Math.round(((sumMrp - sumCr) / sumMrp) * 100) : 0;
+                  return (
+                    <>
+                      {/* The patient bill IS the MRP column's total, so it
+                          belongs under MRP rather than in a trailing cell. */}
+                      <span className="tabular-nums sm:text-right">
+                        ₹{effectiveTotal}
+                      </span>
+                      <span className="hidden tabular-nums font-normal text-muted-foreground sm:block sm:text-right">
+                        ₹{sumCr}
+                      </span>
+                      <span className="text-xs font-normal text-emerald-400 sm:text-right sm:text-sm">
                         {agg}% profit
                       </span>
-                    );
-                  })()}
-                {goldApplied && preview.total !== effectiveTotal && (
-                  <span className="text-xs font-normal text-muted-foreground line-through">
-                    ₹{preview.total}
-                  </span>
-                )}
-                <span className={goldApplied ? 'text-amber-300' : undefined}>
-                  ₹{effectiveTotal}
+                      <span aria-hidden className="hidden sm:block" />
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-2 text-sm font-semibold">
+                <span>
+                  Total
+                  {isB2b
+                    ? ' (patient pays MRP)'
+                    : goldApplied
+                      ? ' (Gold Card · 50% off)'
+                      : ''}
                 </span>
-              </span>
-            </div>
+                <span className="flex items-center gap-3">
+                  {goldApplied && preview.total !== effectiveTotal && (
+                    <span className="text-xs font-normal text-muted-foreground line-through">
+                      ₹{preview.total}
+                    </span>
+                  )}
+                  <span className={goldApplied ? 'text-amber-300' : undefined}>
+                    ₹{effectiveTotal}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
 
           {groups.length > 0 && (() => {
