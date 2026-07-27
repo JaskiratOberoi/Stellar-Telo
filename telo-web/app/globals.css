@@ -3,65 +3,62 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── Light theme (DEFAULT) ───────────────────────────────────────────────
-     Noble purple on a cool, faintly violet-tinted neutral. `next-themes`
-     (attribute="class", defaultTheme="light") leaves :root in force when the
-     user picks light and adds `.dark` for dark — so :root holds the light
-     palette and `.dark` overrides below. Keep the variable NAMES identical to
-     the dark block so every Tailwind colour token (bg, text, border, …) flips
-     for free. */
+  /* ── Telo 2.0 "Porcelain" (light, DEFAULT) ──────────────────────────────
+     Electric-indigo brand on a cool porcelain neutral, teal-emerald success.
+     `next-themes` (attribute="class", defaultTheme="light") leaves :root in
+     force for light and adds `.dark` for dark — variable NAMES are identical
+     in both blocks so every Tailwind token flips for free.
+     `--brand-2` is the violet second stop for brand gradients (buttons, the
+     wordmark, KPI numbers) — always used via hsl(var(--brand-2)). */
   :root {
-    --background: 240 33% 98%; /* #F7F7FB cool off-white */
-    --foreground: 240 14% 12%; /* #1B1B22 near-black, faint violet */
-    --card: 0 0% 100%; /* white cards lift off the bg */
-    --card-foreground: 240 14% 12%;
+    --background: 230 40% 97%; /* porcelain with a faint indigo cast */
+    --foreground: 234 30% 11%; /* ink navy */
+    --card: 0 0% 100%;
+    --card-foreground: 234 30% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 14% 12%;
-    /* Noble purple — slightly deeper + more saturated than the dark value so
-       white text stays legible on it against a light page. */
-    --primary: 238 33% 44%;
+    --popover-foreground: 234 30% 11%;
+    --primary: 243 66% 55%; /* electric indigo */
     --primary-foreground: 0 0% 100%;
-    /* Success green — darkened from the dark theme so "Paid"/"Available" read
-       clearly as white-on-green against light surfaces. */
-    --secondary: 142 58% 38%;
+    --brand-2: 268 65% 58%; /* violet gradient stop */
+    --secondary: 163 72% 32%; /* teal-emerald success */
     --secondary-foreground: 0 0% 100%;
-    --muted: 240 24% 95%; /* #EEEEF4 chips, subtle fills */
-    --muted-foreground: 240 7% 42%; /* #66666F secondary text */
-    --accent: 238 33% 44%;
+    --muted: 231 32% 94%;
+    --muted-foreground: 233 12% 42%;
+    --accent: 243 66% 55%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 70% 52%;
+    --destructive: 356 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 18% 89%; /* #DEDEE7 hairlines */
-    --input: 240 24% 96%;
-    --ring: 238 33% 44%;
-    --radius: 0.875rem;
+    --border: 231 26% 88%;
+    --input: 231 32% 96%;
+    --ring: 243 66% 55%;
+    --radius: 1rem;
   }
 
-  /* ── Dark theme (opt-in via the top-right toggle) ────────────────────────
-     The app's original palette, unchanged. */
+  /* ── Telo 2.0 "Ink" (dark, opt-in via the top-right toggle) ─────────────
+     Deep navy-ink surfaces (never pure black) with a luminous indigo brand
+     and mint success. */
   .dark {
-    --background: 0 0% 6%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 9%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 238 25% 43%;
+    --background: 235 28% 7%;
+    --foreground: 228 30% 96%;
+    --card: 234 24% 10%;
+    --card-foreground: 228 30% 96%;
+    --popover: 234 24% 10%;
+    --popover-foreground: 228 30% 96%;
+    --primary: 243 84% 68%;
     --primary-foreground: 0 0% 100%;
-    /* Success/secondary — vivid green so "Paid", "Available", etc. read as
-       success rather than warning (mustard was being misread as caution). */
-    --secondary: 142 60% 48%;
-    --secondary-foreground: 0 0% 6%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 218 11% 65%;
-    --accent: 238 25% 43%;
+    --brand-2: 270 80% 70%;
+    --secondary: 160 66% 45%;
+    --secondary-foreground: 234 28% 7%;
+    --muted: 234 20% 14%;
+    --muted-foreground: 230 12% 66%;
+    --accent: 243 84% 68%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 75% 59%;
+    --destructive: 356 78% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 16%;
-    --input: 0 0% 10%;
-    --ring: 238 25% 43%;
-    --radius: 0.875rem;
+    --border: 234 18% 17%;
+    --input: 234 22% 12%;
+    --ring: 243 84% 68%;
+    --radius: 1rem;
   }
 }
 
@@ -71,24 +68,157 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; /* Inter alternates */
+  }
+  /* Headings and KPI numerals carry the display face app-wide. */
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+  /* Thin, theme-aware scrollbars (WebKit + Firefox). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--foreground) / 0.18);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ── Motion system ─────────────────────────────────────────────────────────
+   One easing, one rise curve, applied through three utilities:
+   - `.stagger`      → direct children enter bottom-up, 70ms apart (page sections)
+   - `.rows-stagger` → table rows cascade in, 30ms apart (on the Table wrapper)
+   - `.hover-lift`   → cards float up 2px with a deeper tinted shadow
+   All of it collapses to nothing under prefers-reduced-motion. */
+@keyframes tl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @layer utilities {
-  /* White highlight card — KPI tiles, selected-row states. Stays white in
-     both themes (it's a "light card" by definition); in light mode a hairline
-     border + soft violet shadow makes it read as elevated against the already
-     pale page, while dark mode keeps the dramatic black drop shadow. */
+  .stagger > * {
+    animation: tl-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 70ms; }
+  .stagger > *:nth-child(3) { animation-delay: 140ms; }
+  .stagger > *:nth-child(4) { animation-delay: 210ms; }
+  .stagger > *:nth-child(5) { animation-delay: 280ms; }
+  .stagger > *:nth-child(6) { animation-delay: 350ms; }
+  .stagger > *:nth-child(7) { animation-delay: 420ms; }
+  .stagger > *:nth-child(n + 8) { animation-delay: 480ms; }
+
+  .rows-stagger tbody tr {
+    animation: tl-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .rows-stagger tbody tr:nth-child(1) { animation-delay: 40ms; }
+  .rows-stagger tbody tr:nth-child(2) { animation-delay: 70ms; }
+  .rows-stagger tbody tr:nth-child(3) { animation-delay: 100ms; }
+  .rows-stagger tbody tr:nth-child(4) { animation-delay: 130ms; }
+  .rows-stagger tbody tr:nth-child(5) { animation-delay: 160ms; }
+  .rows-stagger tbody tr:nth-child(6) { animation-delay: 190ms; }
+  .rows-stagger tbody tr:nth-child(7) { animation-delay: 220ms; }
+  .rows-stagger tbody tr:nth-child(8) { animation-delay: 250ms; }
+  .rows-stagger tbody tr:nth-child(n + 9) { animation-delay: 280ms; }
+
+  .hover-lift {
+    transition:
+      transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stagger > *,
+    .rows-stagger tbody tr {
+      animation: none;
+    }
+    .hover-lift,
+    .hover-lift:hover {
+      transform: none;
+      transition: none;
+    }
+  }
+}
+
+@layer utilities {
+  /* Brand gradient text — the wordmark and hero numerals. */
+  .text-gradient-brand {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--primary)),
+      hsl(var(--brand-2))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Frosted surface — nav bar, floating chrome. */
+  .glass {
+    background: hsl(var(--card) / 0.72);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid hsl(var(--foreground) / 0.06);
+  }
+
+  /* Gradient hairline along a card's top edge — subtle "lit" feel. */
+  .card-sheen {
+    position: relative;
+  }
+  .card-sheen::before {
+    content: '';
+    position: absolute;
+    inset: 0 12% auto 12%;
+    height: 1px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--primary) / 0.5),
+      hsl(var(--brand-2) / 0.4),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  /* White highlight card — KPI tiles, selected-row states. Stays light in
+     both themes; tinted indigo shadow lifts it off the porcelain page. */
   .card-light {
     background-color: #ffffff;
-    color: #0f0f0f;
-    border-radius: 1rem;
+    color: #101018;
+    border-radius: 1.25rem;
     border: 1px solid hsl(var(--border));
-    box-shadow: 0 10px 30px -14px rgba(79, 70, 140, 0.25);
+    box-shadow:
+      0 1px 2px rgba(23, 23, 46, 0.04),
+      0 12px 32px -14px hsl(var(--primary) / 0.28);
   }
   .dark .card-light {
-    border-color: transparent;
-    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+    background-color: hsl(234 24% 12%);
+    color: hsl(228 30% 96%);
+    border-color: hsl(var(--foreground) / 0.08);
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.55);
   }
 
   /* Tan accent card — single emphasised KPI per page */
@@ -140,13 +270,13 @@
      html.print-lab  → show only [data-invoice="lab"]
      html.print-bill → show only [data-invoice="bill"]
      Default (no class) → same as print-lab for plain window.print() calls.  */
-  [data-invoice="bill"] {
+  [data-invoice='bill'] {
     display: none !important;
   }
-  html.print-bill [data-invoice="lab"] {
+  html.print-bill [data-invoice='lab'] {
     display: none !important;
   }
-  html.print-bill [data-invoice="bill"] {
+  html.print-bill [data-invoice='bill'] {
     display: block !important;
   }
 

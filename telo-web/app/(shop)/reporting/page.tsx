@@ -4,6 +4,7 @@ import { hasCapability } from '@/auth/rbac';
 import { getLookups } from '@/lib/listec';
 import { reportClientCodeScope } from '@/lib/reportScope';
 import { ReportingView } from '@/components/reporting/reporting-view';
+import { PageHeader } from '@/components/ui/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,14 +40,12 @@ export default async function ReportingPage() {
     scope && scope.size === 1 ? [...scope][0] : null;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Reporting</h1>
-        <p className="text-sm text-muted-foreground">
-          Search lab results, preview the report, and download it on the Noble
-          letterhead.
-        </p>
-      </div>
+    <div className="stagger space-y-6">
+      <PageHeader
+        eyebrow="Results"
+        title="Reporting"
+        description="Search lab results, preview the report, and download it on the Noble letterhead."
+      />
       <ReportingView
         businessUnits={lookups.businessUnits ?? []}
         statuses={releasableStatuses}

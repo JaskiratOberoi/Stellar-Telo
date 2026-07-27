@@ -32,7 +32,7 @@ export default function HomePage() {
         {/* Wordmark + tagline */}
         <div className="animate-fade-in-up space-y-3 [animation-delay:60ms]">
           <div className="flex items-start justify-center gap-2">
-            <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text pb-1 text-6xl font-bold tracking-tight text-transparent sm:text-7xl">
+            <h1 className="text-gradient-brand pb-1 text-6xl font-extrabold tracking-tight sm:text-7xl">
               Telo
             </h1>
             <VersionBadge className="mt-2 sm:mt-3" />

@@ -99,7 +99,7 @@ export default async function ShopLayout({
         cartCount={cartCount}
         homeHref={homeHref}
       />
-      <main className="container relative z-10 py-6 print:p-0 print:max-w-none">
+      <main className="container relative z-10 py-8 print:p-0 print:max-w-none">
         {children}
       </main>
       {/* Global FAB — register a new order from anywhere. Self-gates on

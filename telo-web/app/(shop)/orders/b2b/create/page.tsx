@@ -7,6 +7,7 @@ import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { fetchMrpOnly } from '@/db/read/teloUsers';
 import { getCart } from '@/db/cartStore';
 import { RegisterForm } from '@/components/register/register-form';
+import { PageHeader } from '@/components/ui/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,18 +33,20 @@ export default async function B2bOrderCreatePage() {
   ]);
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-xl font-bold tracking-tight">B2B order</h1>
-          <p className="text-sm text-muted-foreground">
-            Patient bill is at MRP; client rate &amp; margin shown for reference
-          </p>
-        </div>
-        <Link href="/orders/b2b" className="shrink-0 text-sm underline">
-          ← Worklist
-        </Link>
-      </div>
+    <div className="stagger space-y-4">
+      <PageHeader
+        eyebrow="B2B channel"
+        title="B2B order"
+        description="Patient bill is at MRP; client rate & margin shown for reference"
+        actions={
+          <Link
+            href="/orders/b2b"
+            className="rounded-lg border border-foreground/10 bg-card/60 px-3 py-1.5 text-sm text-muted-foreground shadow-sm transition-colors hover:border-primary/30 hover:text-foreground"
+          >
+            ← Worklist
+          </Link>
+        }
+      />
       <RegisterForm units={units} initialItems={cart.items} mode="b2b" />
     </div>
   );

@@ -89,7 +89,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
   const maxRev = Math.max(1, ...s.trend.map((t) => t.revenue));
 
   return (
-    <div className="space-y-4">
+    <div className="stagger space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -164,27 +164,41 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         </div>
       </div>
 
-      {/* KPI tiles */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          variant="accent"
-          label="Revenue"
-          value={inr(s.revenue)}
-          hint={`${s.bills} bill${s.bills === 1 ? '' : 's'}`}
-        />
+      {/* KPI bento — revenue hero (2 cols) + three supporting tiles */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {/* Hero: the day's revenue on the brand gradient. */}
+        <div className="hover-lift relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-primary to-[hsl(var(--brand-2))] p-5 text-white shadow-glow-lg sm:col-span-2 lg:row-span-1">
+          {/* soft radial highlight */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/15 blur-2xl"
+          />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">
+            Revenue
+          </p>
+          <p className="mt-2 animate-fade-in-up font-display text-4xl font-extrabold leading-none tracking-tight">
+            {inr(s.revenue)}
+          </p>
+          <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium backdrop-blur-sm">
+            {s.bills} bill{s.bills === 1 ? '' : 's'}
+          </p>
+        </div>
         <KpiCard
           variant="light"
+          className="hover-lift"
           label="Collected"
           value={inr(s.collected)}
         />
         <KpiCard
           variant="light"
+          className="hover-lift"
           label="Outstanding"
           value={inr(s.outstanding)}
           hint={s.discount ? `${inr(s.discount)} discount` : undefined}
         />
         <KpiCard
           variant="light"
+          className="hover-lift"
           label="Patients billed"
           value={s.patients.toLocaleString('en-IN')}
         />
@@ -212,7 +226,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
       {/* Charts row */}
       <div className="grid gap-3 lg:grid-cols-2">
         {/* Revenue trend bar chart */}
-        <div className="rounded-xl border border-foreground/5 bg-card p-4">
+        <div className="card-sheen hover-lift rounded-2xl border border-foreground/5 bg-card p-4 shadow-card">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Revenue · 7 days ending {date}
           </p>
@@ -243,7 +257,7 @@ export function DashboardLive({ initial }: { initial: DayStats }) {
         </div>
 
         {/* Samples by status */}
-        <div className="rounded-xl border border-foreground/5 bg-card p-4">
+        <div className="card-sheen hover-lift rounded-2xl border border-foreground/5 bg-card p-4 shadow-card">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Samples by status
           </p>

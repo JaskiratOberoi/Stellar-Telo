@@ -3,19 +3,21 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors duration-200',
+  'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200',
   {
     variants: {
       variant: {
+        // Tinted pills (colour-on-tint) rather than solid chips — reads
+        // lighter across dense tables.
         default:
-          'border-transparent bg-primary text-primary-foreground',
+          'border-primary/20 bg-primary/10 text-primary',
         secondary:
           'border-transparent bg-secondary text-secondary-foreground',
-        outline: 'border-foreground/10 text-foreground',
+        outline: 'border-foreground/15 text-foreground',
         destructive:
-          'border-transparent bg-destructive/20 text-destructive',
+          'border-destructive/20 bg-destructive/10 text-destructive',
         success:
-          'border-transparent bg-secondary text-secondary-foreground',
+          'border-secondary/25 bg-secondary/10 text-secondary',
         muted:
           'border-transparent bg-muted text-muted-foreground',
       },

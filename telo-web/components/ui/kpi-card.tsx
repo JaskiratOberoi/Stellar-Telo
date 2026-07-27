@@ -47,7 +47,7 @@ export function KpiCard({
       <p className="text-xs font-medium uppercase tracking-wide opacity-60">
         {label}
       </p>
-      <p className="animate-fade-in-up text-2xl font-bold leading-none tracking-tight">
+      <p className="animate-fade-in-up font-display text-2xl font-bold leading-none tracking-tight">
         {value}
         {trendIcon && (
           <span className={cn('ml-1 text-sm font-normal', trendColor)}>

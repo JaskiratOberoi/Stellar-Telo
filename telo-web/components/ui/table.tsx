@@ -5,7 +5,7 @@ const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto rounded-lg border border-foreground/5">
+  <div className="rows-stagger relative w-full overflow-auto rounded-xl border border-foreground/5 bg-card shadow-card">
     <table
       ref={ref}
       className={cn('w-full caption-bottom text-sm', className)}
@@ -21,7 +21,10 @@ const TableHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <thead
     ref={ref}
-    className={cn('bg-muted/40 [&_tr]:border-b [&_tr]:border-foreground/5', className)}
+    className={cn(
+      'bg-gradient-to-b from-muted/70 to-muted/30 [&_tr]:border-b [&_tr]:border-foreground/5',
+      className,
+    )}
     {...props}
   />
 ));
@@ -46,7 +49,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b border-foreground/5 transition-colors hover:bg-foreground/[0.03] data-[state=selected]:bg-foreground/[0.06]',
+      'border-b border-foreground/5 transition-colors hover:bg-primary/[0.04] data-[state=selected]:bg-primary/[0.08]',
       className,
     )}
     {...props}
@@ -61,7 +64,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-10 px-2 text-left align-middle text-xs font-medium text-muted-foreground uppercase tracking-wide',
+      'h-10 px-2 text-left align-middle text-[11px] font-semibold text-muted-foreground uppercase tracking-wider',
       className,
     )}
     {...props}

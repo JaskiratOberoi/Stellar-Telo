@@ -31,7 +31,7 @@ export function StatCard({
       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <p className={cn('mt-1 text-2xl font-bold tracking-tight', valueColor)}>
+      <p className={cn('mt-1 font-display text-2xl font-bold tracking-tight', valueColor)}>
         {value}
       </p>
       {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}

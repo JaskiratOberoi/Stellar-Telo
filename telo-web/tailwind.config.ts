@@ -18,14 +18,36 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
+        // Wired to next/font CSS variables set on <html> in app/layout.tsx.
         sans: [
-          '"Helvetica Neue"',
-          'Helvetica',
-          'Arial',
+          'var(--font-body)',
           'ui-sans-serif',
           'system-ui',
           'sans-serif',
         ],
+        display: [
+          'var(--font-display)',
+          'var(--font-body)',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          'var(--font-mono)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'monospace',
+        ],
+      },
+      boxShadow: {
+        // Tinted elevation scale — replaces flat grey shadows everywhere.
+        card: '0 1px 2px rgba(23, 23, 46, 0.04), 0 8px 24px -12px rgba(37, 36, 90, 0.12)',
+        'card-hover':
+          '0 2px 4px rgba(23, 23, 46, 0.05), 0 16px 40px -12px rgba(37, 36, 90, 0.2)',
+        glow: '0 0 0 1px hsl(var(--primary) / 0.12), 0 4px 20px -4px hsl(var(--primary) / 0.45)',
+        'glow-lg':
+          '0 0 0 1px hsl(var(--primary) / 0.15), 0 8px 40px -8px hsl(var(--primary) / 0.55)',
       },
       colors: {
         border: 'hsl(var(--border))',
@@ -110,6 +132,18 @@ const config: Config = {
           '60%': { transform: 'translateX(-3px)' },
           '80%': { transform: 'translateX(2px)' },
         },
+        // Slow hue-drift for the aurora backdrop layers.
+        aurora: {
+          '0%, 100%': {
+            transform: 'translate(0, 0) rotate(0deg) scale(1)',
+          },
+          '33%': {
+            transform: 'translate(4%, -6%) rotate(8deg) scale(1.08)',
+          },
+          '66%': {
+            transform: 'translate(-5%, 4%) rotate(-6deg) scale(0.95)',
+          },
+        },
       },
       animation: {
         'fade-in-up': 'fade-in-up 0.3s ease-out both',
@@ -118,6 +152,7 @@ const config: Config = {
         'card-in': 'card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both',
         shimmer: 'shimmer 5s linear infinite',
         shake: 'shake 0.4s ease-in-out',
+        aurora: 'aurora 24s ease-in-out infinite',
       },
     },
   },

@@ -3,6 +3,7 @@ import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { getPendingAccessions } from '@/actions/orders.actions';
 import { PendingAccessionsList } from '@/components/orders/pending-accessions-list';
+import { PageHeader } from '@/components/ui/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,15 +24,16 @@ export default async function NewOrderWorklistPage({
   const highlightBillId = Number.isInteger(createdId) ? createdId : undefined;
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">New order</h1>
-        <p className="text-sm text-muted-foreground">
-          {canCreate
+    <div className="stagger space-y-4">
+      <PageHeader
+        eyebrow="B2C channel"
+        title="New order"
+        description={
+          canCreate
             ? 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes, or use the New Order button to register a new order.'
-            : 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes.'}
-        </p>
-      </div>
+            : 'Registered orders still awaiting Sample IDs. Open one to accession its barcodes.'
+        }
+      />
       <PendingAccessionsList
         initial={feed}
         highlightBillId={highlightBillId}

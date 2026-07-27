@@ -25,6 +25,16 @@ interface ShopNavProps {
   homeHref?: string;
 }
 
+/** First letters of the first two words — the avatar chip's initials. */
+function initialsOf(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
 export function ShopNav({
   userName,
   roleName,
@@ -56,22 +66,23 @@ export function ShopNav({
     const href = showBadge ? '/orders/new/create' : n.href;
     // Disable prefetch for heavy admin / order routes — see note below.
     const heavyRoute = n.href === '/admin' || isOrdersLink;
+    const active = isActive(n.href);
     return (
       <Link
         key={n.href}
         href={href}
         prefetch={heavyRoute ? false : undefined}
-        aria-current={isActive(n.href) ? 'page' : undefined}
+        aria-current={active ? 'page' : undefined}
         onClick={() => setOpen(false)}
         // Tag only the desktop link so the cart fly-chip targets a visible node
         // (the FAB is the mobile fallback).
         data-cart-target={isOrdersLink && variant === 'bar' ? '' : undefined}
         className={cn(
-          'relative rounded-md transition-all duration-150',
-          variant === 'bar' ? 'px-3 py-1.5' : 'px-3 py-2.5 text-[15px]',
-          isActive(n.href)
-            ? 'bg-primary/15 text-foreground font-medium'
-            : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
+          'relative rounded-full transition-all duration-150',
+          variant === 'bar' ? 'px-3.5 py-1.5' : 'rounded-lg px-3 py-2.5 text-[15px]',
+          active
+            ? 'bg-primary/10 font-semibold text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.15)]'
+            : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
         )}
       >
         {n.label}
@@ -91,48 +102,65 @@ export function ShopNav({
     );
   }
 
+  const brand = (
+    <Link
+      href={homeHref}
+      className="group flex shrink-0 items-center gap-2 rounded-lg px-1.5 py-1"
+    >
+      {/* Gradient glyph tile */}
+      <span className="flex h-7 w-7 items-center justify-center rounded-[0.6rem] bg-gradient-to-br from-primary to-[hsl(var(--brand-2))] font-display text-sm font-bold text-white shadow-glow transition-transform duration-200 group-hover:scale-105">
+        T
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="font-display text-lg font-bold tracking-tight text-foreground">
+          Telo
+        </span>
+        <VersionBadge />
+      </span>
+    </Link>
+  );
+
+  const userChip = (
+    <span className="flex min-w-0 items-center gap-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-[hsl(var(--brand-2)/0.2)] text-[10px] font-bold text-primary ring-1 ring-primary/20">
+        {initialsOf(userName)}
+      </span>
+      <span className="hidden min-w-0 flex-col leading-tight xl:flex">
+        <span className="max-w-[11rem] truncate text-xs font-semibold">
+          {userName}
+        </span>
+        {roleName && (
+          <span className="text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+            {roleName}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+
   return (
-    <header className="sticky top-0 z-40 border-b border-foreground/5 bg-card/80 backdrop-blur-sm print:hidden">
-      <div className="container flex h-14 items-center justify-between gap-2">
+    <header className="sticky top-0 z-40 px-2 pt-2 sm:px-4 sm:pt-3 print:hidden">
+      {/* Floating glass bar */}
+      <div className="glass container flex h-14 items-center justify-between gap-2 rounded-2xl shadow-card">
         {/* Brand + desktop links */}
-        <div className="flex min-w-0 items-center gap-1">
-          <Link
-            href={homeHref}
-            className={cn(
-              'shrink-0 rounded-md px-2 py-1.5 font-semibold tracking-tight transition-colors sm:px-3',
-              pathname === homeHref
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-primary">Telo</span>
-              <VersionBadge />
-            </span>
-          </Link>
+        <div className="flex min-w-0 items-center gap-2">
+          {brand}
 
-          <span className="mx-1 hidden h-4 w-px bg-foreground/10 md:inline-block" />
+          <span className="mx-1 hidden h-5 w-px bg-foreground/10 md:inline-block" />
 
-          <nav className="hidden items-center gap-1 text-sm font-medium md:flex">
+          <nav className="hidden items-center gap-0.5 text-sm font-medium md:flex">
             {links.map((n) => renderLink(n, 'bar'))}
           </nav>
         </div>
 
-        {/* Right cluster: user/role + sign out (desktop), hamburger (mobile) */}
-        <div className="flex items-center gap-2 text-sm sm:gap-3">
-          <span className="hidden items-center gap-1.5 text-muted-foreground lg:flex">
-            <span className="max-w-[12rem] truncate">{userName}</span>
-            {roleName && (
-              <span className="rounded border border-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                {roleName}
-              </span>
-            )}
-          </span>
+        {/* Right cluster: user chip + theme + sign out (desktop), hamburger (mobile) */}
+        <div className="flex items-center gap-1.5 text-sm sm:gap-2.5">
+          <span className="hidden lg:flex">{userChip}</span>
           {/* Light/dark toggle — visible on every screen size. */}
           <ThemeToggle />
 
           <form action={signOutAction} className="hidden md:block">
-            <Button variant="outline" size="sm" type="submit">
+            <Button variant="ghost" size="sm" type="submit" className="text-muted-foreground">
               Sign out
             </Button>
           </form>
@@ -142,24 +170,29 @@ export function ShopNav({
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground md:hidden"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — floats below the bar as its own glass sheet */}
       {open && (
-        <div className="border-t border-foreground/5 bg-card/95 backdrop-blur-sm md:hidden">
-          <nav className="container flex flex-col gap-0.5 py-2 text-sm font-medium">
+        <div className="glass container mt-2 rounded-2xl shadow-card md:hidden">
+          <nav className="flex flex-col gap-0.5 px-2 py-2 text-sm font-medium">
             {links.map((n) => renderLink(n, 'drawer'))}
           </nav>
-          <div className="container flex items-center justify-between border-t border-foreground/5 py-3">
-            <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-              <span className="max-w-[55vw] truncate">{userName}</span>
+          <div className="flex items-center justify-between border-t border-foreground/5 px-3 py-3">
+            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-[hsl(var(--brand-2)/0.2)] text-[10px] font-bold text-primary ring-1 ring-primary/20">
+                {initialsOf(userName)}
+              </span>
+              <span className="max-w-[40vw] truncate text-xs font-semibold text-foreground">
+                {userName}
+              </span>
               {roleName && (
-                <span className="shrink-0 rounded border border-foreground/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="shrink-0 rounded-full border border-foreground/10 px-2 py-0.5 text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
                   {roleName}
                 </span>
               )}

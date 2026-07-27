@@ -80,7 +80,7 @@ export default function LoginPage() {
           <div className="max-w-md space-y-8">
             <div className="animate-card-in [animation-delay:100ms] motion-reduce:animate-none">
               <span className="inline-flex items-start gap-2">
-                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.4)] motion-reduce:animate-none">
+                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text font-display text-6xl font-bold tracking-tight text-transparent drop-shadow-[0_0_35px_hsl(var(--primary)/0.4)] motion-reduce:animate-none">
                   Telo
                 </span>
                 <VersionBadge className="mt-1.5" />
@@ -129,7 +129,7 @@ export default function LoginPage() {
             {/* Compact brand header (mobile only) */}
             <div className="mb-10 animate-card-in text-center lg:hidden motion-reduce:animate-none">
               <span className="inline-flex items-start justify-center gap-1.5">
-                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text text-4xl font-bold tracking-tight text-transparent drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
+                <span className="animate-shimmer bg-gradient-to-r from-primary via-indigo-300 to-secondary bg-[length:200%_auto] bg-clip-text font-display text-4xl font-bold tracking-tight text-transparent drop-shadow-[0_0_25px_hsl(var(--primary)/0.45)] motion-reduce:animate-none">
                   Telo
                 </span>
                 <VersionBadge className="mt-1" />

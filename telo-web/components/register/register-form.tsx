@@ -582,7 +582,12 @@ export function RegisterForm({
 
       <Card>
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-base">Patient &amp; sample</CardTitle>
+          <CardTitle className="flex items-center gap-2.5 text-base">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[hsl(var(--brand-2))] font-display text-[11px] font-bold text-white shadow-glow">
+              1
+            </span>
+            Patient &amp; sample
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2.5 p-4 pt-0">
           <div className="space-y-0.5">
@@ -1044,9 +1049,16 @@ export function RegisterForm({
         </CardContent>
       </Card>
 
-      <Card>
+      {/* Sticky on desktop so the running total + register button stay in
+          view while the operator scrolls the (taller) patient column. */}
+      <Card className="lg:sticky lg:top-24 lg:self-start">
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-base">Tests &amp; profiles</CardTitle>
+          <CardTitle className="flex items-center gap-2.5 text-base">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[hsl(var(--brand-2))] font-display text-[11px] font-bold text-white shadow-glow">
+              2
+            </span>
+            Tests &amp; profiles
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2.5 p-4 pt-0">
           {initialItems.length > 0 && picked.length > 0 && picked.every(p => initialItems.some(i => i.id === p.id && i.kind === p.kind)) && (
