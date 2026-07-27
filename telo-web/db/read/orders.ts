@@ -137,6 +137,26 @@ export interface PendingAccession {
   balance: number;
 }
 
+/** A sample that HAS its SID but is still 'Sample Sent' — i.e. the barcode is
+ *  allotted but the LIS has not registered/received it yet, so it cannot
+ *  appear on the worksheet. See listPendingRegistrations. */
+export interface PendingRegistration {
+  sampleId: number;
+  vailid: string;
+  statusCode: number | null;
+  statusName: string | null;
+  patientId: number;
+  patientName: string | null;
+  /** MCCUnitCode (e.g. "DL0223") — the human client code, not the numeric id. */
+  mccCode: string | null;
+  billId: number | null;
+  billNumber: number | null;
+  sampleTypeName: string | null;
+  testCodes: string | null;
+  testNames: string | null;
+  addedAt: string | null;
+}
+
 function scopeParams(
   req: sql.Request,
   scope: number[],
@@ -696,6 +716,109 @@ export async function listPendingAccessions(
       haveGroups: Number(x.haveGroups ?? 0),
       total: Number(x.total ?? 0),
       balance: Number(x.balance ?? 0),
+    }));
+  }));
+}
+
+/**
+ * Telo samples that HAVE a Sample ID but are still awaiting accessioning in
+ * the LIS — the second half of the worklist.
+ *
+ * Every sample Telo writes (both `usp_telo_create_order` and
+ * `usp_telo_add_sids`) starts at `sample_status = 1` ("Sample Sent"), exactly
+ * like a native LIS registration. The LIS's own receive/accession step is what
+ * advances it to 2 ("Sample Registered") and beyond. The worksheet SP filters
+ * `sample_status > 1`, so anything still at 1 is invisible on the worksheet —
+ * which is precisely the queue this lists: barcode allotted, not yet received.
+ *
+ * `< 2` rather than `= 1` so a NULL/0 status (bad legacy row) surfaces here
+ * instead of silently vanishing from both worklists.
+ *
+ * Driven from the telo bill set (same shape as listPendingAccessions) so the
+ * scope + kind filters and the query plan stay consistent between the two.
+ */
+export async function listPendingRegistrations(
+  scope: number[],
+  /** Which order type to list — mirrors listPendingAccessions. */
+  kind: 'new' | 'b2b' | 'all' = 'all',
+  limit = 500,
+): Promise<PendingRegistration[]> {
+  const ids = scope.filter((n) => Number.isInteger(n));
+  if (ids.length === 0) return [];
+  const unrestricted = ids.length > 1000;
+  return traceDb('orders.listPendingRegistrations', () => withRetry(async () => {
+    const pool = await getPool();
+    const req = pool.request();
+    req.input('lim', sql.Int, Math.min(Math.max(limit, 1), 1000));
+    const scopeClause = unrestricted
+      ? ''
+      : `AND b.mcc_code IN (${scopeParams(req, ids)})`;
+    const kindClause =
+      kind === 'b2b'
+        ? `AND b.id IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+        : kind === 'new'
+          ? `AND b.id NOT IN (SELECT bill_id FROM dbo.telo_order_kind WHERE kind = 'b2b')`
+          : '';
+    const r = await req.query<{
+      sampleId: number;
+      vailid: string;
+      statusCode: number | null;
+      statusName: string | null;
+      patientId: number;
+      patientName: string | null;
+      mccCode: string | null;
+      billId: number | null;
+      billNumber: number | null;
+      sampleTypeName: string | null;
+      testCodes: string | null;
+      testNames: string | null;
+      addedAt: Date | null;
+    }>(`
+      WITH telo AS (
+        SELECT b.id AS billId, b.bill_number AS billNumber,
+               TRY_CONVERT(INT, b.medid) AS patientId,
+               b.patientname AS patientName, b.mcc_code AS mccId
+        FROM dbo.tbl_billing_patient_detail b
+        WHERE b.addedby LIKE 'telo:%'
+          AND TRY_CONVERT(INT, b.medid) IS NOT NULL
+          ${scopeClause}
+          ${kindClause}
+      )
+      SELECT TOP (@lim)
+        s.id AS sampleId, s.vailid,
+        s.sample_status AS statusCode,
+        st.status AS statusName,
+        t.patientId, t.patientName,
+        u.MCCUnitCode AS mccCode,
+        t.billId, t.billNumber,
+        sm.Sampletype AS sampleTypeName,
+        s.testcodes AS testCodes,
+        s.testnames AS testNames,
+        s.addeddate AS addedAt
+      FROM telo t
+      JOIN dbo.tbl_med_mcc_patient_samples s ON s.patient_id = t.patientId
+      LEFT JOIN dbo.tbl_med_mcc_patient_samples_status_master st
+        ON st.id = s.sample_status
+      LEFT JOIN dbo.tbl_med_mcc_unit_master u ON u.id = t.mccId
+      LEFT JOIN dbo.tbl_med_sample_master sm ON sm.id = s.sampleid
+      WHERE ISNULL(s.sample_status, 0) < 2
+      ORDER BY s.id DESC
+    `);
+    return r.recordset.map((x) => ({
+      sampleId: x.sampleId,
+      vailid: (x.vailid ?? '').trim(),
+      statusCode: x.statusCode ?? null,
+      statusName: x.statusName ? x.statusName.trim() : null,
+      patientId: x.patientId,
+      patientName: x.patientName ? x.patientName.trim() : null,
+      // MCCUnitCode carries legacy trailing spaces — trim for display.
+      mccCode: x.mccCode ? x.mccCode.trim() : null,
+      billId: x.billId ?? null,
+      billNumber: x.billNumber ?? null,
+      sampleTypeName: x.sampleTypeName ? x.sampleTypeName.trim() : null,
+      testCodes: x.testCodes ? x.testCodes.trim() : null,
+      testNames: x.testNames ? x.testNames.trim() : null,
+      addedAt: x.addedAt ? x.addedAt.toISOString() : null,
     }));
   }));
 }

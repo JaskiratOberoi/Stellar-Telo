@@ -8,10 +8,12 @@ import {
   listRegistrations,
   listSampleAccessions,
   listPendingAccessions,
+  listPendingRegistrations,
   type OrderSummary,
   type RegistrationSummary,
   type SampleAccessionSummary,
   type PendingAccession,
+  type PendingRegistration,
 } from '@/db/read/orders';
 
 export type OrdersView = 'bills' | 'registrations' | 'samples';
@@ -107,6 +109,35 @@ export async function getPendingAccessions(
     orders,
     scopeCount: scope.length,
     canViewBill,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+export interface PendingRegistrationsFeed {
+  samples: PendingRegistration[];
+  scopeCount: number;
+  fetchedAt: string;
+}
+
+/**
+ * Samples whose barcode is allotted but which the LIS has not yet registered
+ * ("Sample Sent"). These are invisible on the worksheet until the lab receives
+ * them — this is the queue that makes that wait visible instead of silent.
+ * Scope-aware; carries no monetary fields, so no bill:view gating is needed.
+ */
+export async function getPendingRegistrations(
+  /** 'new' (default) excludes B2B orders; 'b2b' lists only B2B orders. */
+  kind: 'new' | 'b2b' = 'new',
+): Promise<PendingRegistrationsFeed> {
+  const user = await currentUser();
+  if (!user) {
+    return { samples: [], scopeCount: 0, fetchedAt: new Date().toISOString() };
+  }
+  const scope = await getMccScope(user.uid);
+  const samples = await listPendingRegistrations(scope, kind);
+  return {
+    samples,
+    scopeCount: scope.length,
     fetchedAt: new Date().toISOString(),
   };
 }
