@@ -39,10 +39,16 @@ export async function searchPatients(
     req.input('lim', sql.Int, Math.min(Math.max(limit, 1), 100));
 
     // Bind the scope as individual parameters (bounded, no string concat).
-    const params = scope.map((code, i) => {
-      req.input(`m${i}`, sql.Int, code);
-      return `@m${i}`;
-    });
+    // An unrestricted role resolves to EVERY centre — binding one parameter per
+    // id would exceed SQL Server's 2100-parameter ceiling, and at that breadth
+    // the IN filter is a no-op. Same guard as db/read/orders.ts.
+    const unrestricted = scope.length > 1000;
+    const params = unrestricted
+      ? []
+      : scope.map((code, i) => {
+          req.input(`m${i}`, sql.Int, code);
+          return `@m${i}`;
+        });
 
     const r = await req.query<{
       pid: number;
@@ -59,7 +65,7 @@ export async function searchPatients(
         p.mobile_number AS mobile, p.mcc_code AS mccCode,
         p.MRNID AS mrnId, p.addeddate AS registeredAt
       FROM dbo.tbl_med_mcc_patient_master p
-      WHERE p.mcc_code IN (${params.join(',')})
+      WHERE ${unrestricted ? '1 = 1' : `p.mcc_code IN (${params.join(',')})`}
         AND (
           p.name LIKE @term
           OR p.mobile_number LIKE @term

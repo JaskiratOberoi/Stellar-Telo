@@ -180,13 +180,19 @@ export async function fetchScopedClients(
   const ids = scopeIds.filter((n) => Number.isInteger(n));
   if (ids.length === 0) return [];
   const own = ownIds.filter((n) => Number.isInteger(n) && ids.includes(n));
+  // An unrestricted role resolves to EVERY centre, and binding one parameter
+  // per id blows SQL Server's 2100-parameter ceiling. At that breadth the IN
+  // filter is a no-op anyway, so skip it — same guard as db/read/orders.ts.
+  const unrestricted = ids.length > 1000;
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
-    const params = ids.map((id, i) => {
-      req.input(`u${i}`, sql.Int, id);
-      return `@u${i}`;
-    });
+    const params = unrestricted
+      ? []
+      : ids.map((id, i) => {
+          req.input(`u${i}`, sql.Int, id);
+          return `@u${i}`;
+        });
     void own; // see below: no IsActive filter, so the own-centre override is moot
     const r = await req.query<{
       id: number;
@@ -199,7 +205,7 @@ export async function fetchScopedClients(
              u.BusinessUnitCode AS buId, b.BusinessUnitName AS buName
       FROM dbo.tbl_med_mcc_unit_master u
       LEFT JOIN dbo.tbl_med_business_unit_master b ON b.id = u.BusinessUnitCode
-      WHERE u.id IN (${params.join(',')})
+      ${unrestricted ? '' : `WHERE u.id IN (${params.join(',')})`}
       ORDER BY u.MCCUnitName
     `);
     return r.recordset.map((x) => ({
@@ -263,14 +269,20 @@ export async function fetchScopedMccUnits(
   if (ids.length === 0) return [];
   // Only honour own-ids that are actually in scope.
   const own = ownIds.filter((n) => Number.isInteger(n) && ids.includes(n));
+  // An unrestricted role resolves to EVERY centre, and binding one parameter
+  // per id blows SQL Server's 2100-parameter ceiling. At that breadth the IN
+  // filter is a no-op anyway, so skip it — same guard as db/read/orders.ts.
+  const unrestricted = ids.length > 1000;
 
   return withRetry(async () => {
     const pool = await getPool();
     const req = pool.request();
-    const params = ids.map((id, i) => {
-      req.input(`u${i}`, sql.Int, id);
-      return `@u${i}`;
-    });
+    const params = unrestricted
+      ? []
+      : ids.map((id, i) => {
+          req.input(`u${i}`, sql.Int, id);
+          return `@u${i}`;
+        });
     void own; // see below: no IsActive filter, so the own-centre override is moot
     const r = await req.query<{
       id: number;
@@ -279,7 +291,7 @@ export async function fetchScopedMccUnits(
     }>(`
       SELECT id, MCCUnitCode AS code, MCCUnitName AS name
       FROM dbo.tbl_med_mcc_unit_master
-      WHERE id IN (${params.join(',')})
+      ${unrestricted ? '' : `WHERE id IN (${params.join(',')})`}
       ORDER BY MCCUnitName
     `);
     return r.recordset.map((x) => ({
