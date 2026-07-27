@@ -71,8 +71,25 @@ export async function getMccCentreByCode(
 }
 
 /**
- * Every active MCC unit. Returned to admin/user-management so a Super Admin
- * can assign a client-code scope when onboarding a new user. ~1.7k rows —
+ * ⚠️ `tbl_med_mcc_unit_master.IsActive` IS NOT A LIVENESS FLAG for client codes
+ * in this deployment, and NOTHING here may filter on it.
+ *
+ * More than half the network (1,735 of 3,571 codes) carries IsActive = 0, yet
+ * 841 of those placed orders in the last 90 days — including some of the very
+ * busiest clients (DL0416, DL0214, SAMARPAN). The LIS knows this: both client
+ * pickers in MedCis (Utilities.FillCombo "PCC") carry an explicitly
+ * commented-out `//where c.IsActive == true`, and PatientWorkOrder's
+ * GetMCCCompletionList has no IsActive filter at all — while the test/profile
+ * autocompletes right beside it DO filter on IsActive. The omission is
+ * deliberate.
+ *
+ * Telo used to filter on it, which silently hid half the client list from the
+ * New Order autocomplete. Do not reintroduce the filter.
+ */
+
+/**
+ * Every MCC unit. Returned to admin/user-management so a Super Admin can
+ * assign a client-code scope when onboarding a new user. ~3.5k rows —
  * acceptable to ship in the admin overview payload (the search picker filters
  * client-side).
  */
@@ -84,7 +101,6 @@ export async function fetchAllActiveMccs(): Promise<ScopedMcc[]> {
       .query<{ id: number; code: string; name: string | null }>(`
         SELECT id, MCCUnitCode AS code, MCCUnitName AS name
         FROM dbo.tbl_med_mcc_unit_master
-        WHERE IsActive = 1
         ORDER BY MCCUnitName
       `);
     return r.recordset.map((x) => ({
@@ -96,9 +112,10 @@ export async function fetchAllActiveMccs(): Promise<ScopedMcc[]> {
 }
 
 /**
- * Search active MCC units by code or name. Returns up to `limit` rows ordered
- * by name. Used by the admin picker so we never have to ship the full ~1.7k
- * MCC list to the browser just to power an autocomplete.
+ * Search MCC units by code or name — the New Order / admin client-code
+ * autocomplete. Returns up to `limit` rows ordered by name. Mirrors the LIS's
+ * GetMCCCompletionList (PatientWorkOrder.aspx.cs), which matches on code OR
+ * name and does NOT filter on IsActive — see the note above fetchAllActiveMccs.
  *
  * `excludeIds` lets the caller hide MCCs already chosen as chips so the
  * dropdown shows only unselected options.
@@ -137,7 +154,7 @@ export async function searchMccUnits(
     const r = await req.query<{ id: number; code: string; name: string | null }>(
       `SELECT TOP (@lim) id, MCCUnitCode AS code, MCCUnitName AS name
          FROM dbo.tbl_med_mcc_unit_master
-        WHERE IsActive = 1 ${exclusion} AND ${where}
+        WHERE ${where} ${exclusion}
         ORDER BY MCCUnitName`,
     );
     return r.recordset.map((x) => ({
@@ -150,8 +167,11 @@ export async function searchMccUnits(
 
 /**
  * Like fetchScopedMccUnits but also resolves each centre's Business Unit, for
- * the Client-Accounts filter bar (BU narrows the client switcher). Same
- * scope + own-inactive-override semantics as fetchScopedMccUnits.
+ * the Client-Accounts filter bar (BU narrows the client switcher).
+ *
+ * `ownIds` is retained for call-site compatibility but is now a no-op: nothing
+ * filters on IsActive, so an "own centre flagged inactive" override has nothing
+ * left to override.
  */
 export async function fetchScopedClients(
   scopeIds: number[],
@@ -167,13 +187,7 @@ export async function fetchScopedClients(
       req.input(`u${i}`, sql.Int, id);
       return `@u${i}`;
     });
-    const ownParams = own.map((id, i) => {
-      req.input(`o${i}`, sql.Int, id);
-      return `@o${i}`;
-    });
-    const activeClause = ownParams.length
-      ? `(u.IsActive = 1 OR u.id IN (${ownParams.join(',')}))`
-      : `u.IsActive = 1`;
+    void own; // see below: no IsActive filter, so the own-centre override is moot
     const r = await req.query<{
       id: number;
       code: string;
@@ -185,7 +199,7 @@ export async function fetchScopedClients(
              u.BusinessUnitCode AS buId, b.BusinessUnitName AS buName
       FROM dbo.tbl_med_mcc_unit_master u
       LEFT JOIN dbo.tbl_med_business_unit_master b ON b.id = u.BusinessUnitCode
-      WHERE u.id IN (${params.join(',')}) AND ${activeClause}
+      WHERE u.id IN (${params.join(',')})
       ORDER BY u.MCCUnitName
     `);
     return r.recordset.map((x) => ({
@@ -236,11 +250,10 @@ export async function fetchMccUnitsByIds(
  * id (the mapping table's mcc_code); Listec's /api/mcc-units keys by code, so
  * we read id/code/name straight from tbl_med_mcc_unit_master here.
  *
- * Inactive units are normally hidden (decommissioned centres). `ownIds` lists
- * units to surface even when `IsActive = 0` — used for the caller's OWN centre
- * (their PCC_Id / sub_pcc_id, or the specific MCC of an order being viewed), so
- * a client whose centre the LIS keeps flagged inactive can still see and order
- * for it. Other users' inactive mapped centres stay hidden, exactly as before.
+ * No IsActive filter — it is not a liveness flag for client codes (see the note
+ * above fetchAllActiveMccs). `ownIds` is retained for call-site compatibility
+ * but is now a no-op: it existed to surface the caller's own centre when the
+ * LIS had it flagged inactive, and there is no longer a filter to escape.
  */
 export async function fetchScopedMccUnits(
   scopeIds: number[],
@@ -258,13 +271,7 @@ export async function fetchScopedMccUnits(
       req.input(`u${i}`, sql.Int, id);
       return `@u${i}`;
     });
-    const ownParams = own.map((id, i) => {
-      req.input(`o${i}`, sql.Int, id);
-      return `@o${i}`;
-    });
-    const activeClause = ownParams.length
-      ? `(IsActive = 1 OR id IN (${ownParams.join(',')}))`
-      : `IsActive = 1`;
+    void own; // see below: no IsActive filter, so the own-centre override is moot
     const r = await req.query<{
       id: number;
       code: string;
@@ -272,7 +279,7 @@ export async function fetchScopedMccUnits(
     }>(`
       SELECT id, MCCUnitCode AS code, MCCUnitName AS name
       FROM dbo.tbl_med_mcc_unit_master
-      WHERE id IN (${params.join(',')}) AND ${activeClause}
+      WHERE id IN (${params.join(',')})
       ORDER BY MCCUnitName
     `);
     return r.recordset.map((x) => ({

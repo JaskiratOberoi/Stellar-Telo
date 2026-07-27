@@ -40,9 +40,12 @@ export async function fetchUserMccScope(userId: number): Promise<number[]> {
           (SELECT usertypeid FROM dbo.tbl_med_user_master WHERE id = @uid);
 
         IF @ut IN (${UNRESTRICTED_USERTYPES.join(',')})
+          -- No IsActive filter: it is not a liveness flag for client codes (the
+          -- LIS ignores it too — see db/read/mccUnits.ts). Filtering here kept
+          -- ~1.7k live client codes out of every admin's scope, so the New
+          -- Order picker could not offer them even once it listed them.
           SELECT id AS mcc_code
-          FROM dbo.tbl_med_mcc_unit_master
-          WHERE IsActive = 1;
+          FROM dbo.tbl_med_mcc_unit_master;
         ELSE IF @ut IN (${CLIENT_USERTYPES.join(',')})
           -- Client: own centre only — ignore sales-mcc mappings.
           SELECT u.PCC_Id AS mcc_code FROM dbo.tbl_med_user_master u
