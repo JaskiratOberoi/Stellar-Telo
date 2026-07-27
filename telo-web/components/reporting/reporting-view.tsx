@@ -5,12 +5,14 @@ import { Download, FileText, Lock, Search, X } from 'lucide-react';
 import {
   searchReports,
   searchReportTests,
+  searchReportClients,
   type ReportSearchRow,
 } from '@/actions/reporting.actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { RemoteCombobox } from '@/components/ui/remote-combobox';
+import { SuggestInput } from '@/components/ui/suggest-input';
 import {
   Table,
   TableBody,
@@ -288,9 +290,17 @@ export function ReportingView({
           />
         </Field>
         <Field label="Client code">
-          <Input
+          <SuggestInput
             value={clientCode}
-            onChange={(e) => setClientCode(e.target.value)}
+            onChange={(v) => setClientCode(v)}
+            search={async (query) => {
+              const rows = await searchReportClients(query);
+              return rows.map((c) => ({
+                value: c.code,
+                label: c.name ?? c.code,
+                hint: c.code,
+              }));
+            }}
             placeholder="e.g. HLD0512"
             disabled={locked}
             readOnly={locked}

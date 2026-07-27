@@ -9,6 +9,8 @@ import {
   reportClientCodeScope,
   filterRowsByReportScope,
 } from '@/lib/reportScope';
+import { getReportMccScope } from '@/auth/scope';
+import { searchMccUnits, fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { computeReportLocks } from '@/lib/reportLock';
 
 export interface ReportSearchFilters {
@@ -354,4 +356,44 @@ export async function searchReportTests(q: string): Promise<ReportTestOption[]> 
     code: i.code,
     name: i.kind === 'test' ? i.name : `${i.name} · ${i.kind}`,
   }));
+}
+
+/** One client (MCC) suggestion for the Reporting client-code filter. */
+export interface ReportClientOption {
+  code: string;
+  name: string | null;
+}
+
+/**
+ * Type-ahead over client (MCC) codes for the Reporting client-code filter.
+ * Gated to `report:view` and SCOPED exactly like the report search itself:
+ * unrestricted reporters (super_admin / admin / report_admin) search the full
+ * active MCC list; a scoped user (e.g. client_reporting) only ever sees their
+ * own assigned client code(s). Returns at most 20 matches.
+ */
+export async function searchReportClients(q: string): Promise<ReportClientOption[]> {
+  const user = await requireSession();
+  if (!hasCapability(user.caps, 'report:view')) return [];
+  const query = (q ?? '').trim();
+  const allowed = await reportClientCodeScope(user);
+
+  // Unrestricted: search every active client code.
+  if (allowed === null) {
+    const rows = await searchMccUnits(query, { limit: 20 });
+    return rows.map((u) => ({ code: u.code, name: u.name }));
+  }
+  if (allowed.size === 0) return [];
+
+  // Scoped: only the caller's own centres (small set — filter in memory).
+  const scope = await getReportMccScope(user.uid);
+  const units = await fetchScopedMccUnits(scope, scope);
+  const needle = query.toLowerCase();
+  const filtered = needle
+    ? units.filter(
+        (u) =>
+          u.code.toLowerCase().includes(needle) ||
+          (u.name ?? '').toLowerCase().includes(needle),
+      )
+    : units;
+  return filtered.slice(0, 20).map((u) => ({ code: u.code, name: u.name }));
 }
