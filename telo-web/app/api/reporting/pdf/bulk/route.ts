@@ -3,6 +3,7 @@ import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { canAccessSidReport, reportClientCodeScope } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
+import { audit } from '@/lib/audit';
 import { renderFragmentsToPdfs } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { appendAttachment, concatPdfs } from '@/lib/report/mergePdfs';
@@ -119,6 +120,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // Every gate passed for this final set — audit the bulk pull (SID list
+  // truncated to keep the details payload bounded).
+  audit({
+    kind: 'report.pdf_bulk',
+    actor: user.uid,
+    count: items.length,
+    sids: items.map((it) => it.sid).join(',').slice(0, 400),
+  });
 
   const stamp = new Date()
     .toISOString()

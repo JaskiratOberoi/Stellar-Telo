@@ -37,6 +37,9 @@ const NAV: NavItem[] = [
   // href: '/admin' so the active-link indicator covers /admin/users AND
   // /admin/invoice (ShopNav uses pathname.startsWith(href)).
   { href: '/admin', label: 'Admin', cap: 'user:manage' },
+  // Top-level /audit (not /admin/audit) so the Admin tab's startsWith active
+  // check doesn't light up for it too.
+  { href: '/audit', label: 'Audit trail', cap: 'user:manage' },
 ];
 
 export default async function ShopLayout({

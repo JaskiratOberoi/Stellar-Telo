@@ -3,6 +3,7 @@ import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
+import { audit } from '@/lib/audit';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { appendAttachment } from '@/lib/report/mergePdfs';
@@ -65,6 +66,8 @@ export async function POST(req: Request) {
       { status: 423 },
     );
   }
+  // Every gate passed — this download WILL render. Audit who pulled which SID.
+  audit({ kind: 'report.pdf', actor: user.uid, sid: sid.trim() });
   const panelId = typeof panel === 'string' && panel.trim() ? panel.trim() : '';
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';
   const splitParam = split === true || split === '1' || split === 'true' ? '&split=1' : '';

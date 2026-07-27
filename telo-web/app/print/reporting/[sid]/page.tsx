@@ -4,6 +4,7 @@ import { hasCapability } from '@/auth/rbac';
 import { verifyReportToken } from '@/lib/report/reportLink';
 import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
+import { audit } from '@/lib/audit';
 import { LabReport } from '@/components/reporting/tsh-report';
 import { assembleLabReportData } from '@/lib/report/assembleReportData';
 
@@ -79,6 +80,10 @@ export default async function ReportingPrintFragment({
         </div>
       );
     }
+    // All gates passed on the session path — audit the view. (The token path
+    // is the patient-side QR/softcopy open: no Telo actor, and the PDF that
+    // minted the token was already audited as report.pdf.)
+    audit({ kind: 'report.viewed', actor: user.uid, sid: decodedSid });
   }
 
   const data = await assembleLabReportData({
