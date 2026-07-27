@@ -15,6 +15,10 @@ export interface AccessionResult {
   message: string | null;
   registered: number;
   skipped: number;
+  /** Patient-test rows billed to the client account this run. */
+  charged: number;
+  /** Total ₹ deducted from the client account(s) this run. */
+  chargeTotal: number;
   outcomes: AccessionOutcome[];
 }
 
@@ -61,6 +65,8 @@ export async function accessionSamples(input: {
         message: string | null;
         registered: number;
         skipped: number;
+        charged: number;
+        charge_total: number;
       }>,
       Array<{ vailid: string; outcome: string; result_rows: number }>,
     ];
@@ -72,6 +78,8 @@ export async function accessionSamples(input: {
       message: status?.message ?? null,
       registered: Number(status?.registered ?? 0),
       skipped: Number(status?.skipped ?? 0),
+      charged: Number(status?.charged ?? 0),
+      chargeTotal: Number(status?.charge_total ?? 0),
       outcomes: (sets[1] ?? []).map((x) => ({
         vailid: (x.vailid ?? '').trim(),
         outcome: x.outcome === 'registered' ? 'registered' : 'skipped',

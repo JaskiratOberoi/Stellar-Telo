@@ -76,7 +76,8 @@ export function PendingRegistrationsList({
     if (vailids.length === 0) return;
     const ok = window.confirm(
       `Register ${vailids.length} sample${vailids.length === 1 ? '' : 's'} to the worksheet?\n\n` +
-        `This writes to the LIS and cannot be undone from Telo.`,
+        `This also bills each test to the client's account at their contracted ` +
+        `rate. It writes to the LIS and cannot be undone from Telo.`,
     );
     if (!ok) return;
     setRegistering(true);
@@ -92,7 +93,10 @@ export function PendingRegistrationsList({
         text:
           `Registered ${res.registered} sample${res.registered === 1 ? '' : 's'}` +
           (res.skipped > 0 ? ` · ${res.skipped} skipped (already accessioned)` : '') +
-          ' — now on the worksheet.',
+          ' — now on the worksheet.' +
+          (res.charged > 0
+            ? ` Billed ₹${res.chargeTotal} to the client account (${res.charged} test${res.charged === 1 ? '' : 's'}).`
+            : ''),
       });
       await refresh();
     } finally {

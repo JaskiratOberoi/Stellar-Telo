@@ -53,7 +53,8 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM @vailids)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = N'No Sample IDs supplied', registered = 0, skipped = 0;
+               message = N'No Sample IDs supplied', registered = 0, skipped = 0,
+               charged = 0, charge_total = 0;
         SELECT * FROM @out;
         RETURN;
     END
@@ -82,7 +83,8 @@ BEGIN
     BEGIN
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
                message = N'Nothing to register — already accessioned or not found',
-               registered = 0, skipped = (SELECT COUNT(*) FROM @out);
+               registered = 0, skipped = (SELECT COUNT(*) FROM @out),
+               charged = 0, charge_total = 0;
         SELECT * FROM @out;
         RETURN;
     END
@@ -295,6 +297,132 @@ BEGIN
         FROM dbo.tbl_med_mcc_patient_master p
         JOIN (SELECT DISTINCT patient_id FROM @work) w ON w.patient_id = p.id;
 
+        /* ═══ ④ Client-account charges — port of CheckTransCash ═══════════
+           Registering is ALSO when the referring client is billed: each test
+           on the sample is charged at that client's contracted rate, written
+           to the tbl_med_mcc_test_transactions ledger via the LIS's own
+           sp_mcc_test_account_101, and deducted from their running balance.
+           Omitting this would put samples on the worksheet for free — silent
+           lost revenue — so it lives in the SAME transaction as the status
+           flip: either both happen or neither does.
+
+           `amount_checked` on the patient's test row is the charge-once latch
+           (the LIS filters on `amount_checked == null`), so a test is never
+           billed twice even across re-runs or multi-sample orders. */
+        DECLARE @charges TABLE (
+            seq INT IDENTITY(1,1) PRIMARY KEY,
+            patientTestId INT, acctMcc INT, subCode NVARCHAR(50),
+            amount INT, tname NVARCHAR(100), patName NVARCHAR(50), patientId INT
+        );
+
+        INSERT INTO @charges (patientTestId, acctMcc, subCode, amount, tname, patName, patientId)
+        SELECT DISTINCT pt.id, acct.acctMcc, acct.subCode, rate.amount,
+               LEFT(ISNULL(pt.test_name, ''), 100), LEFT(ISNULL(p.name, ''), 49), p.id
+        FROM @work w
+        JOIN dbo.tbl_med_mcc_patient_master p ON p.id = w.patient_id
+        CROSS APPLY (
+            /* Sub-franchise: when a user maps this centre as its sub_pcc, the
+               money comes off the PARENT's account (LIS: mccAccount keyed on
+               objSubFrUserMaster.PCC_Id), and the child's code is recorded. */
+            SELECT TOP 1
+                   acctMcc = ISNULL(su.PCC_Id, p.mcc_code),
+                   subCode = CASE WHEN su.PCC_Id IS NULL THEN N''
+                                  ELSE LEFT(ISNULL(cu.MCCUnitCode, N''), 50) END
+            FROM (SELECT 1 AS x) d
+            OUTER APPLY (
+                SELECT TOP 1 u.PCC_Id FROM dbo.tbl_med_user_master u
+                WHERE u.sub_pcc_id = p.mcc_code AND u.PCC_Id IS NOT NULL
+                ORDER BY u.id
+            ) su
+            LEFT JOIN dbo.tbl_med_mcc_unit_master cu ON cu.id = p.mcc_code
+        ) acct
+        JOIN dbo.tbl_med_mcc_patient_tests pt
+          ON pt.patient_id = w.patient_id
+         AND pt.amount_checked IS NULL
+         AND (
+              /* Direct test / profile match this sample by code. A master's
+                 CSV carries its CHILD codes, so it can only be matched by
+                 kind — same as the LIS, which ignores the code there. */
+              (pt.test_type IN ('t', 'Test') AND EXISTS (
+                  SELECT 1 FROM @items i WHERE i.vailid = w.vailid
+                    AND i.ttype = 't' AND i.code = pt.test_code))
+           OR (pt.test_type IN ('p', 'Profile') AND EXISTS (
+                  SELECT 1 FROM @items i WHERE i.vailid = w.vailid
+                    AND i.ttype = 'p' AND i.code = pt.test_code))
+           OR (pt.test_type = 'Master' AND EXISTS (
+                  SELECT 1 FROM @items i WHERE i.vailid = w.vailid
+                    AND i.ttype IN ('mt', 'mp')))
+         )
+        CROSS APPLY (
+            /* An MCC special rate always wins over the rate list, and the rate
+               list is keyed on the ACCOUNT centre's RateType. */
+            SELECT amount = ISNULL(
+                (SELECT TOP 1 sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
+                  WHERE sr.mcccode = p.mcc_code AND sr.testid = pt.test_id
+                    AND sr.testtype = CASE WHEN pt.test_type IN ('t','Test') THEN 'T'
+                                           WHEN pt.test_type IN ('p','Profile') THEN 'P'
+                                           ELSE 'M' END
+                  ORDER BY sr.id),
+                CASE
+                  WHEN pt.test_type IN ('t','Test') THEN
+                    (SELECT TOP 1 r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
+                      WHERE r.TestCode = pt.test_id AND r.RateTypeId = au.RateType ORDER BY r.id)
+                  WHEN pt.test_type IN ('p','Profile') THEN
+                    (SELECT TOP 1 r.Price FROM dbo.tbl_med_profile_rates_with_pcc_types r
+                      WHERE r.profilecode = pt.test_id AND r.RateTypeId = au.RateType ORDER BY r.id)
+                  ELSE
+                    (SELECT TOP 1 r.Price FROM dbo.tbl_med_master_profile_rates_with_pcc_types r
+                      WHERE r.master_profile_code = pt.test_id AND r.RateTypeId = au.RateType ORDER BY r.id)
+                END)
+            FROM dbo.tbl_med_mcc_unit_master au WHERE au.id = acct.acctMcc
+        ) rate
+        WHERE rate.amount IS NOT NULL;   -- no configured rate -> charge nothing
+
+        /* Post each charge against a RUNNING balance, so the ledger's
+           opening/closing columns chain exactly as the LIS's do. */
+        DECLARE @ci INT = 1, @cn INT = (SELECT COUNT(*) FROM @charges);
+        DECLARE @cPt INT, @cMcc INT, @cSub NVARCHAR(50), @cAmt INT,
+                @cTname NVARCHAR(100), @cPat NVARCHAR(50), @cPid INT,
+                @bal INT, @now DATETIME;
+        WHILE @ci <= @cn
+        BEGIN
+            SELECT @cPt = patientTestId, @cMcc = acctMcc, @cSub = subCode,
+                   @cAmt = amount, @cTname = tname, @cPat = patName, @cPid = patientId
+            FROM @charges WHERE seq = @ci;
+
+            /* Re-assert the latch inside the loop: never double-charge. */
+            IF EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_patient_tests
+                       WHERE id = @cPt AND amount_checked IS NULL)
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_account_master
+                               WHERE mcccode = @cMcc)
+                    INSERT INTO dbo.tbl_med_mcc_account_master
+                        (mcccode, currentbalance, totaldeposited)
+                    VALUES (@cMcc, 0, 0);
+
+                SELECT @bal = ISNULL(currentbalance, 0)
+                FROM dbo.tbl_med_mcc_account_master WHERE mcccode = @cMcc;
+                SET @now = GETDATE();
+
+                EXEC dbo.sp_mcc_test_account_101
+                     @USERID = @userId, @MCCID = @cMcc, @TDATE = @now,
+                     @CBALANCE = @bal, @TESTCHARGES = @cAmt,
+                     @CLOSINGBALANCE = @bal - @cAmt,
+                     @tname = @cTname,
+                     @vailid = @cPat,       -- LIS stores the PATIENT NAME here
+                     @patientid = @cPid, @SUBFRANCHISE = @cSub;
+
+                UPDATE dbo.tbl_med_mcc_account_master
+                SET currentbalance = @bal - @cAmt
+                WHERE mcccode = @cMcc;
+
+                UPDATE dbo.tbl_med_mcc_patient_tests
+                SET amount_checked = 1, updateddate = GETDATE()
+                WHERE id = @cPt;
+            END
+            SET @ci += 1;
+        END
+
         INSERT INTO @out (vailid, outcome, result_rows)
         SELECT w.vailid, 'registered',
                (SELECT COUNT(*) FROM dbo.tbl_med_mcc_patient_test_result r
@@ -306,14 +434,17 @@ BEGIN
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
                message = CAST(NULL AS NVARCHAR(400)),
                registered = (SELECT COUNT(*) FROM @out WHERE outcome = 'registered'),
-               skipped    = (SELECT COUNT(*) FROM @out WHERE outcome = 'skipped');
+               skipped    = (SELECT COUNT(*) FROM @out WHERE outcome = 'skipped'),
+               charged      = @cn,
+               charge_total = ISNULL((SELECT SUM(amount) FROM @charges), 0);
         SELECT * FROM @out;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK;
         SELECT ok = CAST(0 AS BIT), error_code = 'INTERNAL',
                message = LEFT(ERROR_MESSAGE(), 400), registered = 0,
-               skipped = (SELECT COUNT(*) FROM @out);
+               skipped = (SELECT COUNT(*) FROM @out),
+               charged = 0, charge_total = 0;
         SELECT * FROM @out;
     END CATCH
 END

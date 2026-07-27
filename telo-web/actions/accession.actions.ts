@@ -133,6 +133,9 @@ export interface RegisterSamplesResult {
   error: string | null;
   registered: number;
   skipped: number;
+  /** Tests billed to the client account, and the total ₹ deducted. */
+  charged: number;
+  chargeTotal: number;
 }
 
 /**
@@ -155,13 +158,13 @@ export async function registerSamplesAction(
     const user = await currentUser();
     if (!user) throw new AppError('UNAUTHENTICATED', 'Sign in required');
     if (!hasCapability(user.caps, 'order:accession')) {
-      return { ok: false, error: 'You cannot accession samples.', registered: 0, skipped: 0 };
+      return { ok: false, error: 'You cannot accession samples.', registered: 0, skipped: 0, charged: 0, chargeTotal: 0 };
     }
     const wanted = Array.from(
       new Set((vailids ?? []).map((v) => (v ?? '').toString().trim()).filter(Boolean)),
     ).slice(0, 200);
     if (wanted.length === 0) {
-      return { ok: false, error: 'Select at least one sample.', registered: 0, skipped: 0 };
+      return { ok: false, error: 'Select at least one sample.', registered: 0, skipped: 0, charged: 0, chargeTotal: 0 };
     }
 
     // Only SIDs the caller can currently see as pending are eligible.
@@ -175,6 +178,8 @@ export async function registerSamplesAction(
         error: 'None of those samples are pending accessioning in your centres.',
         registered: 0,
         skipped: 0,
+        charged: 0,
+        chargeTotal: 0,
       };
     }
     // Re-check the capability against each sample's own MCC.
@@ -195,6 +200,8 @@ export async function registerSamplesAction(
         error: res.message || 'Could not register the samples.',
         registered: 0,
         skipped: 0,
+        charged: 0,
+        chargeTotal: 0,
       };
     }
     audit({
@@ -202,16 +209,27 @@ export async function registerSamplesAction(
       actor: user.uid,
       registered: res.registered,
       skipped: res.skipped,
+      charged: res.charged,
+      chargeTotal: res.chargeTotal,
     });
     revalidatePath(kind === 'b2b' ? '/orders/b2b' : '/orders/new');
-    return { ok: true, error: null, registered: res.registered, skipped: res.skipped };
+    return {
+      ok: true,
+      error: null,
+      registered: res.registered,
+      skipped: res.skipped,
+      charged: res.charged,
+      chargeTotal: res.chargeTotal,
+    };
   } catch (e) {
-    if (e instanceof AppError) return { ok: false, error: e.message, registered: 0, skipped: 0 };
+    if (e instanceof AppError) return { ok: false, error: e.message, registered: 0, skipped: 0, charged: 0, chargeTotal: 0 };
     return {
       ok: false,
       error: 'Something went wrong registering the samples.',
       registered: 0,
       skipped: 0,
+      charged: 0,
+      chargeTotal: 0,
     };
   }
 }

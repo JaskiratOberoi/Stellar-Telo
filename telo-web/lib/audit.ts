@@ -32,7 +32,7 @@ type AuditEvent =
   | { kind: 'bill.booking.cancel.blocked'; actor: number; billId: number; cancelled: number; blocked: number }
   | { kind: 'mcc.payment.recorded'; actor: number; mcc: number; amount: number; mode: number }
   | { kind: 'bill.tests.edited'; actor: number; billId: number; itemCount: number; customCount: number; balance: number | null }
-  | { kind: 'sample.accessioned'; actor: number; registered: number; skipped: number }
+  | { kind: 'sample.accessioned'; actor: number; registered: number; skipped: number; charged: number; chargeTotal: number }
   // CCAvenue online client payment: a client started a payment, and the gateway
   // callback outcome (status + whether a wallet credit was posted this call).
   | { kind: 'mcc.online_payment.initiated'; actor: number; mcc: number; amount: number; orderId: string }
