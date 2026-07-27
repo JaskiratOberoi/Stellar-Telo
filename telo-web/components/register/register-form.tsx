@@ -248,6 +248,10 @@ export function RegisterForm({
   const [, startSearch] = useTransition();
   const [, startPreview] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Generation counter for catalogue searches. The debounce timer alone can't
+  // stop an ALREADY-DISPATCHED request from resolving later and re-opening the
+  // results list over a box we just cleared on pick — bump this to disown it.
+  const searchSeq = useRef(0);
 
   // Two-step submit: clicking the primary button enters "review" mode (a
   // summary panel + Back/Confirm buttons), so the operator can verify or
@@ -314,6 +318,7 @@ export function RegisterForm({
       return;
     }
     const mccArg = mcc === '' ? null : Number(mcc);
+    const seq = ++searchSeq.current;
     timer.current = setTimeout(() => {
       startSearch(async () => {
         // Custom tests are client-scoped, so only search them once a Client
@@ -322,6 +327,7 @@ export function RegisterForm({
           searchCatalogAction(q),
           mccArg != null ? searchCustomTestsAction(q, mccArg) : Promise.resolve([]),
         ]);
+        if (searchSeq.current !== seq) return; // superseded or cleared on pick
         setResults(cat);
         setCustomResults(custom);
       });
@@ -455,17 +461,30 @@ export function RegisterForm({
     );
   }
 
+  /** Clear the search box (and its result list) after a pick, so the operator
+   *  gets visible confirmation the item landed in Selected and can type the
+   *  next test straight away without deleting the previous query. */
+  function clearSearch() {
+    searchSeq.current++; // disown any in-flight search for the old query
+    if (timer.current) clearTimeout(timer.current);
+    setQ('');
+    setResults([]);
+    setCustomResults([]);
+  }
+
   function add(i: CatalogItemPublic) {
     setPicked((p) =>
       p.some((x) => x.id === i.id && x.kind === i.kind)
         ? p
         : [...p, { id: i.id, kind: i.kind, code: i.code, name: i.name }],
     );
+    clearSearch();
   }
   function addCustom(t: CustomTestPublic) {
     setCustomPicked((p) =>
       p.some((x) => x.id === t.id) ? p : [...p, { ...t, qty: 1 }],
     );
+    clearSearch();
   }
   function removeCustom(id: number) {
     setCustomPicked((p) => p.filter((x) => x.id !== id));
@@ -1287,10 +1306,16 @@ export function RegisterForm({
                       <span className="hidden tabular-nums font-normal text-muted-foreground sm:block sm:text-right">
                         ₹{sumCr}
                       </span>
-                      <span className="text-xs font-normal text-emerald-400 sm:text-right sm:text-sm">
-                        {agg}% profit
+                      {/* The bare % stays in the Profit column so it lines up
+                          with the per-test figures; the word "profit" sits in
+                          the trailing (remove) column instead of widening the
+                          cell and shoving the number left. */}
+                      <span className="tabular-nums text-emerald-400 sm:text-right">
+                        {agg}%
                       </span>
-                      <span aria-hidden className="hidden sm:block" />
+                      <span className="text-xs font-normal text-emerald-400 sm:text-left">
+                        profit
+                      </span>
                     </>
                   );
                 })()}
