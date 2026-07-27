@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, X, LineChart } from 'lucide-react';
+import { Download, X, LineChart, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { buildReportFilename } from '@/lib/report/reportFilename';
 
@@ -61,6 +61,7 @@ export function ReportPreview({
     );
   }, [previewLoading, split, headless, sid]);
   const [downloading, setDownloading] = useState(false);
+  const [smartBusy, setSmartBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Graph attachment (LIS): some tests (Double/Quadruple Marker, allergy panels)
   // have a graph PDF stapled to the report in the LIS. We expose it as a separate
@@ -182,6 +183,39 @@ export function ReportPreview({
       setError(e instanceof Error ? e.message : 'Graph download failed.');
     } finally {
       setGraphBusy(false);
+    }
+  }
+
+  async function downloadSmart() {
+    setError(null);
+    setSmartBusy(true);
+    try {
+      const res = await fetch('/api/reporting/smart-pdf', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sid, date, patientName, profileName }),
+      });
+      if (res.status === 423) {
+        throw new Error('Reports are on hold while a balance is outstanding.');
+      }
+      if (!res.ok) {
+        throw new Error(`Could not generate the Smart Report (HTTP ${res.status}).`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // PatientName_SID_ProfileName_Smart.pdf — mirrors the server filename.
+      const base = buildReportFilename({ patientName, sid, profileName }).replace(/\.pdf$/i, '');
+      a.download = `${base}_Smart.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Smart Report download failed.');
+    } finally {
+      setSmartBusy(false);
     }
   }
 
@@ -377,6 +411,17 @@ export function ReportPreview({
                 {downloading ? 'Preparing…' : 'Download PDF'}
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={downloadSmart}
+              disabled={smartBusy}
+              title="Download the patient-friendly Smart Report (wellness format with patient-friendly explanations and visual gauges)"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {smartBusy ? 'Preparing…' : 'Smart Report'}
+            </Button>
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close preview">
               <X className="h-4 w-4" />
             </Button>

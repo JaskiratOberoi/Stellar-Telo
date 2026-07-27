@@ -1,0 +1,1200 @@
+/**
+ * Smart Report knowledge base: groups LIS tests into patient-friendly body-system
+ * categories and supplies patient-friendly descriptions for the most common
+ * analytes. Matching is by test code first (exact, uppercased), then by test
+ * name (regex), then by LIS department as a category fallback. A test we don't
+ * recognise still prints — it lands in its department's fallback category with
+ * no description — so the Smart Report never drops a result.
+ *
+ * Descriptions are deliberately educational and non-alarming: they say what the
+ * test measures and what high/low results *can* mean, and the report's footer
+ * directs the patient back to their doctor. Keep that tone when editing.
+ *
+ * The high/low interpretations are sourced from authoritative consumer-health
+ * references (Mayo Clinic, MedlinePlus/NIH, Cleveland Clinic, testing.com, NHS)
+ * and phrased in plain, hedged language ("can mean", "may") — never a diagnosis.
+ * When adding an analyte, ground its high/low the same way and keep it ≤ ~28
+ * words. British spellings throughout.
+ */
+
+export interface SmartCategory {
+  id: string;
+  /** Section title, e.g. "Heart & Cholesterol". */
+  title: string;
+  /** One-line patient-friendly intro under the section title. */
+  tagline: string;
+  /** A warm 2–3 sentence "what this body system does and why it matters",
+   *  shown on the chapter's system-intro card (à la Quest's organ pages). */
+  about?: string;
+}
+
+export interface TestInfo {
+  /** Patient-friendly display name (the LIS name prints alongside). */
+  name?: string;
+  categoryId: string;
+  /** What the test measures / why it matters (1–2 sentences). */
+  what?: string;
+  /** What a higher-than-range result can mean. */
+  high?: string;
+  /** What a lower-than-range result can mean. */
+  low?: string;
+  /** Optional per-test "what you can do" guidance, shown when the result is
+   *  out of range. Direction-agnostic — used when neither adviceHigh/adviceLow
+   *  applies (e.g. electrolytes, whose action is the same either way). Falls
+   *  back to the category-level advice when absent. */
+  advice?: string;
+  /** Per-test "what you can do" for a HIGH result — set when the action for a
+   *  high value differs from the category default (e.g. HDL, where high is good). */
+  adviceHigh?: string;
+  /** Per-test "what you can do" for a LOW result. */
+  adviceLow?: string;
+  /** Optional per-test affirming note for a HEALTHY (in-range) result; falls
+   *  back to the body-system "keep it up" note. */
+  adviceOk?: string;
+}
+
+/**
+ * Encouraging, non-prescriptive "what you can do" guidance per body system,
+ * shown under an out-of-range result when the test has no more specific advice.
+ * Deliberately gentle and lifestyle-first; the report always points back to the
+ * patient's doctor for anything clinical.
+ */
+export const CATEGORY_ADVICE: Record<string, string> = {
+  heart:
+    'Small, steady habits help most: more fibre and healthy fats (nuts, oats, olive oil), regular brisk walks, less fried and processed food, and not smoking. Your doctor will advise if anything more is needed.',
+  diabetes:
+    'Cutting back on sugar and refined carbs, staying active, and keeping a healthy weight can move these numbers a lot — often before any medicine is needed. Your doctor can guide the next step.',
+  kidney:
+    'Staying well hydrated, keeping blood pressure and sugar in check, and not overusing painkillers all support your kidneys. Your doctor will decide if this needs a closer look.',
+  liver:
+    'Limiting alcohol, eating lighter, staying active, and reaching a healthy weight often bring liver numbers back down. Your doctor may suggest a repeat test.',
+  thyroid:
+    'Thyroid results are best interpreted by your doctor, who may repeat the test or start a simple, effective treatment if needed.',
+  blood:
+    'Iron-rich foods (leafy greens, beans, lean meat), or B12 and folate where advised, often help. Your doctor can find the cause and suggest the right fix.',
+  vitamins:
+    'These usually respond well to diet, safe sun exposure, or a short course of supplements. Your doctor can advise the right dose.',
+  hormones:
+    'Hormone results are read in the context of your symptoms — your doctor will guide any next steps.',
+  infection:
+    'A screening result like this is followed up by your doctor with a confirmatory test before any conclusion is drawn.',
+  urine:
+    'Staying hydrated and following up with your doctor on anything flagged is the best next step.',
+  other:
+    'Please review this result with your doctor, who can put it in the context of your overall health.',
+};
+
+/**
+ * Direction-aware "what you can do" guidance per body system — a HIGH and a LOW
+ * result usually call for opposite actions. Web-sourced (Mayo, MedlinePlus/NIH,
+ * Cleveland Clinic, NHS, AHA, ADA). Used as the fallback when a test has no
+ * direction-specific line of its own.
+ */
+export const CATEGORY_ADVICE_DIR: Record<string, { high?: string; low?: string }> = {
+  heart: {
+    high: 'A heart-healthy routine helps: more fibre, vegetables and healthy fats, less fried and processed food, regular brisk activity, and steady weight. Your doctor will guide any treatment.',
+    low: 'Low lipid levels are usually not a concern and often need no action. Keep up your balanced diet, and your doctor will review if anything looks unusual.',
+  },
+  diabetes: {
+    high: 'Small steps help a lot: more whole grains and vegetables, less sugary food and drink, regular activity, and reaching a healthy weight. Your doctor will guide next steps.',
+    low: 'Try not to skip meals, and keep a quick sugar source handy for shaky or dizzy moments. If this happens often, your doctor can help find why.',
+  },
+  kidney: {
+    high: 'Support your kidneys by staying well hydrated, easing back on salt, keeping blood pressure and sugar in check, and being cautious with over-the-counter painkillers. Your doctor will advise.',
+    low: 'Lower waste levels are generally reassuring and rarely need action. Keep drinking enough water and eating well, and your doctor will follow up if needed.',
+  },
+  liver: {
+    high: 'Being kind to your liver helps: limit or avoid alcohol, reach a healthy weight, eat more whole foods, and check any supplements with your doctor, who will guide you.',
+    low: 'Lower liver enzymes are generally not a worry and need no special action. Keep up balanced eating and limited alcohol, and your doctor will review if needed.',
+  },
+  thyroid: {
+    high: 'Thyroid results are mainly managed with your doctor’s guidance rather than diet alone. Meanwhile, eat balanced meals, use iodised salt, avoid heavy supplement doses, and rest well.',
+    low: 'Thyroid levels are best guided by your doctor rather than food alone. In the meantime, eat balanced meals with enough iodine, stay active, sleep well, and avoid extreme supplements.',
+  },
+  blood: {
+    high: 'Raised red-cell counts can sometimes reflect dehydration or smoking, so drink enough water and avoid tobacco. Your doctor will check what’s behind it and advise next steps.',
+    low: 'To support healthy blood, include iron-rich foods like leafy greens, beans and lean meat, paired with vitamin-C foods to boost absorption. Your doctor will find the cause.',
+  },
+  vitamins: {
+    high: 'High vitamin levels often come from supplements. It’s worth reviewing what you take with your doctor and easing off high doses, since more isn’t always better.',
+    low: 'A varied diet rich in fruits, vegetables, whole grains and lean proteins helps top up most vitamins. Ask your doctor whether a supplement would suit you.',
+  },
+};
+
+/**
+ * The advice engine: picks the "what you can do" line that fits the actual
+ * result — its direction (high vs low) and, for a marked deviation, adds a
+ * gentle nudge to review it sooner. Priority: the test's own direction-specific
+ * line → the test's direction-agnostic line → the body-system direction line →
+ * the body-system default. All content is web-sourced (see above).
+ */
+export function composeAdvice(opts: {
+  info: TestInfo | null;
+  categoryId: string;
+  /** Which side of the range the value fell on (from the gauge), or null. */
+  direction: 'high' | 'low' | null;
+  /** How far outside the range — 'marked' adds a review-sooner nudge. */
+  severity?: 'mild' | 'moderate' | 'marked' | null;
+}): string | null {
+  const { info, categoryId, direction, severity } = opts;
+  let base: string | null = null;
+  if (direction === 'high') base = info?.adviceHigh ?? null;
+  else if (direction === 'low') base = info?.adviceLow ?? null;
+  if (!base) base = info?.advice ?? null;
+  if (!base && direction) base = CATEGORY_ADVICE_DIR[categoryId]?.[direction] ?? null;
+  if (!base) base = CATEGORY_ADVICE[categoryId] ?? null;
+  if (!base) return null;
+  if (severity === 'marked') {
+    base +=
+      ' As this sits well outside the usual range, it’s worth going over with your doctor sooner rather than later.';
+  }
+  return base;
+}
+
+/**
+ * A short, affirming "keep it up" note shown under a HEALTHY (in-range) result —
+ * so the report offers encouragement everywhere, not only where something needs
+ * attention. Per body system; gentle, lifestyle-first, never a medical claim.
+ */
+export const CATEGORY_ADVICE_OK: Record<string, string> = {
+  heart: 'Your heart and cholesterol numbers look good — keep up the fibre, healthy fats and regular activity that protect them.',
+  diabetes: 'Your blood-sugar control looks healthy — keep up balanced meals, regular movement and a steady weight.',
+  kidney: 'Your kidney markers look healthy — keep well hydrated and stay on top of blood pressure and sugar.',
+  liver: 'Your liver numbers look healthy — balanced eating and going easy on alcohol keep them that way.',
+  thyroid: 'Your thyroid balance looks healthy — a balanced diet with enough iodine and good sleep help keep it steady.',
+  blood: 'Your blood counts look healthy — a varied diet with iron, B12 and folate keeps them in good shape.',
+  vitamins: 'This is in a healthy range — a varied, balanced diet and sensible sunlight help keep it there.',
+  hormones: 'This looks healthy — balanced habits, good sleep and managing stress help keep your hormones steady.',
+  infection: 'No sign of a problem here — routine hygiene and keeping up with your doctor’s advice keep it that way.',
+  urine: 'This looks healthy — staying well hydrated helps keep it that way.',
+  other: 'This result looks healthy — keep up the balanced habits that support it.',
+};
+
+/** The "keep it up" note for a healthy result: the test's own note if set, else
+ *  the body-system note, else a gentle generic line. */
+export function healthyNote(info: TestInfo | null, categoryId: string): string {
+  return (
+    info?.adviceOk ??
+    CATEGORY_ADVICE_OK[categoryId] ??
+    'This is in a healthy range — keep up the balanced eating, activity and habits that support it.'
+  );
+}
+
+export const SMART_CATEGORIES: SmartCategory[] = [
+  {
+    id: 'heart',
+    title: 'Heart & Cholesterol',
+    tagline:
+      'Fats (lipids) in your blood that influence long-term heart and blood-vessel health.',
+    about:
+      'Your heart pumps blood through a vast network of vessels, and cholesterol and other fats ride along in that blood. In the right balance they’re essential; in excess they can slowly build up in artery walls over years. These tests show that balance — a picture of your longer-term heart and blood-vessel health.',
+  },
+  {
+    id: 'diabetes',
+    title: 'Blood Sugar',
+    tagline: 'How your body regulates glucose — the key screen for diabetes and pre-diabetes.',
+    about:
+      'Your pancreas releases insulin, the hormone that lets your body turn the sugar (glucose) from food into energy. When that system is under strain, sugar starts to build up in the blood. These tests show how well your body is keeping glucose in a healthy range — the key screen for pre-diabetes and diabetes.',
+  },
+  {
+    id: 'kidney',
+    title: 'Kidney Health',
+    tagline:
+      'Waste products and salts your kidneys filter out of the blood — a picture of how well they are working.',
+    about:
+      'Your kidneys are two fist-sized filters that clean your blood around the clock, removing waste and excess water as urine while balancing the body’s salts and minerals. They also help control blood pressure and prompt the making of red blood cells. These tests show how well they’re filtering.',
+  },
+  {
+    id: 'liver',
+    title: 'Liver Health',
+    tagline:
+      'Enzymes and proteins made by the liver that show how well it is processing, storing and cleaning.',
+    about:
+      'Your liver is the body’s processing plant — it breaks down food, filters out toxins, stores energy and makes proteins that help your blood clot. When liver cells are irritated they release enzymes into the blood. These tests measure those enzymes and proteins to show how well it’s working.',
+  },
+  {
+    id: 'thyroid',
+    title: 'Thyroid',
+    tagline:
+      'Hormones from the thyroid gland in your neck that set the pace of your metabolism, energy and weight.',
+    about:
+      'Your thyroid is a small butterfly-shaped gland in your neck that sets the pace of your metabolism — how your body uses energy. Its hormones quietly influence your weight, energy, mood, heart rate and temperature. These tests show whether it’s running at the right pace.',
+  },
+  {
+    id: 'blood',
+    title: 'Blood Counts & Anaemia',
+    tagline:
+      'The cells in your blood — red cells that carry oxygen, white cells that fight infection, platelets that clot.',
+    about:
+      'Your blood is a living tissue: red cells carry oxygen to every part of you, white cells fight infection, and platelets clump together to stop bleeding. A complete blood count checks the numbers, size and balance of these cells — a broad view of your overall health and a screen for anaemia.',
+  },
+  {
+    id: 'vitamins',
+    title: 'Vitamins, Minerals & Bone',
+    tagline: 'Nutrients and minerals your body needs for bones, nerves and energy.',
+    about:
+      'Vitamins and minerals are the small but essential nutrients your body uses to build bone, carry oxygen, steady your nerves and release energy from food. Even a mild shortfall can leave you tired or run-down. These tests show whether your levels are where they should be.',
+  },
+  {
+    id: 'hormones',
+    title: 'Hormones',
+    tagline: 'Chemical messengers that regulate growth, reproduction and mood.',
+    about:
+      'Hormones are your body’s chemical messengers — released by glands and carried in the blood to regulate growth, reproduction, stress, sleep and mood. They work in a finely tuned balance. These tests measure key hormones and how that balance sits.',
+  },
+  {
+    id: 'infection',
+    title: 'Infection & Immunity',
+    tagline: 'Markers of inflammation and screens for common infections.',
+    about:
+      'Your immune system defends you against infection, and certain markers in the blood rise when it’s active or when inflammation is present anywhere in the body. These tests screen for that inflammation and for specific infections, so anything flagged can be followed up.',
+  },
+  {
+    id: 'urine',
+    title: 'Urine Analysis',
+    tagline: 'A physical and chemical check of your urine — a window on kidneys, sugar control and infection.',
+    about:
+      'Urine carries away the waste and excess water your kidneys filter out of your blood. A quick physical and chemical check of it — colour, concentration, protein, sugar and signs of infection — offers a useful window on your kidneys, sugar control and urinary health.',
+  },
+  {
+    id: 'other',
+    title: 'Other Tests',
+    tagline: 'Additional investigations that were part of this sample.',
+    about:
+      'These are additional investigations that were included with your sample. Each is shown with your result and its reference range, so you and your doctor can review them together.',
+  },
+];
+
+const CATEGORY_IDS = new Set(SMART_CATEGORIES.map((c) => c.id));
+
+/** LIS department name → fallback category for unrecognised tests. */
+const DEPARTMENT_FALLBACK: [RegExp, string][] = [
+  [/haemat|hemat/i, 'blood'],
+  [/micro/i, 'infection'],
+  [/sero|immuno/i, 'infection'],
+  [/urine|clinical\s*path/i, 'urine'],
+  [/endocrin|hormon/i, 'hormones'],
+];
+
+/* ------------------------------------------------------------------ */
+/* Per-test knowledge                                                  */
+/* ------------------------------------------------------------------ */
+
+interface Matcher {
+  /** Uppercased exact test codes. */
+  codes?: string[];
+  /** Tested against the test's display name. */
+  name: RegExp;
+  info: TestInfo;
+}
+
+/**
+ * Order matters: first match wins, so keep more specific patterns (e.g. "HDL
+ * CHOLESTEROL", "FREE T3") above generic ones ("CHOLESTEROL", "T3").
+ */
+const MATCHERS: Matcher[] = [
+  /* ---------------- Heart & Cholesterol ---------------- */
+  {
+    name: /\bHDL\b/i,
+    info: {
+      name: 'HDL — “Good” Cholesterol',
+      categoryId: 'heart',
+      what:
+        'HDL carries excess cholesterol away from your arteries back to the liver. Higher values are protective for the heart.',
+      low: 'Low HDL reduces this protection and is linked with higher heart risk. Regular exercise, healthy fats and not smoking help raise it.',
+      high: 'A high HDL is generally a good sign and usually needs no action.',
+      adviceHigh: "Good news: a higher “good” cholesterol is generally protective for your heart and needs no action. Keep up the active habits and healthy fats that support it.",
+      adviceLow: "Regular activity, not smoking, and healthy fats like olive oil, nuts and oily fish can gently lift your good cholesterol. Your doctor will guide the bigger picture.",
+    },
+  },
+  {
+    name: /\bLDL\b/i,
+    info: {
+      name: 'LDL — “Bad” Cholesterol',
+      categoryId: 'heart',
+      what:
+        'LDL deposits cholesterol in artery walls. It is the main lipid target for lowering heart-attack and stroke risk.',
+      high:
+        'High LDL builds up in arteries over years. Diet changes, exercise and — when advised — medication bring it down effectively.',
+      low: 'Low LDL is generally desirable.',
+    },
+  },
+  {
+    name: /\bVLDL\b/i,
+    info: {
+      name: 'VLDL Cholesterol',
+      categoryId: 'heart',
+      what: 'VLDL mainly carries triglycerides through the blood; it is estimated from your triglyceride level.',
+      high: 'High VLDL usually mirrors high triglycerides and responds to the same lifestyle changes.',
+      low: "A low VLDL is usually a good sign, linked to lower triglycerides and reduced heart-disease risk. Very low levels are only rarely tied to nutrition or liver issues.",
+    },
+  },
+  {
+    name: /TRIGLYCERIDE/i,
+    info: {
+      name: 'Triglycerides',
+      categoryId: 'heart',
+      what:
+        'The most common fat in blood — extra calories, especially from sugar, refined carbs and alcohol, are stored as triglycerides.',
+      high:
+        'Often related to diet, weight, alcohol or uncontrolled blood sugar. Very high levels can also affect the pancreas. Usually improves well with lifestyle changes.',
+      low: 'Low triglycerides are rarely a concern.',
+    },
+  },
+  {
+    name: /CHOL\s*\/\s*HDL|CHOLESTEROL\s*\/\s*HDL|CHO\s*:\s*HDL|RISK\s*RATIO/i,
+    info: {
+      name: 'Total Cholesterol : HDL Ratio',
+      categoryId: 'heart',
+      what: 'Compares total cholesterol to protective HDL — a compact indicator of overall lipid balance.',
+      high: 'A high ratio means the balance is tilted away from protective HDL; the fix is the same as for high LDL/low HDL.',
+      low: "A low ratio is reassuring: it means your protective HDL is handling the cholesterol load well, and generally reflects a lower risk of heart disease.",
+    },
+  },
+  {
+    name: /LDL\s*\/\s*HDL/i,
+    info: {
+      name: 'LDL : HDL Ratio',
+      categoryId: 'heart',
+      what: 'Compares “bad” to “good” cholesterol; lower ratios are better for the heart.',
+      high: 'A high ratio suggests the lipid balance favours artery deposits.',
+      low: "A low ratio is a favourable sign: it means less 'bad' LDL relative to your protective HDL, and generally reflects a lower cardiovascular risk.",
+    },
+  },
+  {
+    name: /\bNON[-\s]?HDL/i,
+    info: {
+      name: 'Non-HDL Cholesterol',
+      categoryId: 'heart',
+      what: 'All the cholesterol that is not HDL — every particle type that can deposit in arteries, in one number.',
+      high: 'Treated much like high LDL: diet, activity, weight and — when advised — medication.',
+      low: "A low non-HDL is generally good for heart health and rarely causes symptoms. Only very low levels occasionally reflect nutrition, thyroid or liver issues worth checking.",
+    },
+  },
+  {
+    codes: ['CHOL'],
+    name: /CHOLESTEROL/i,
+    info: {
+      name: 'Total Cholesterol',
+      categoryId: 'heart',
+      what:
+        'The overall amount of cholesterol in your blood — a waxy substance your body needs, but too much of it silently narrows arteries.',
+      high:
+        'Raised cholesterol usually causes no symptoms; it is picked up only on testing. Diet, exercise and sometimes medication bring it down.',
+      low: 'Low cholesterol is rarely a problem in adults.',
+    },
+  },
+  {
+    name: /\bAPO(?:LIPO)?PROTEIN\s*B|\bAPO[-\s]?B\b/i,
+    info: {
+      name: 'Apolipoprotein B',
+      categoryId: 'heart',
+      what: 'Counts the number of artery-depositing cholesterol particles — a precise marker of heart risk.',
+      high: 'More particles available to enter artery walls; managed like high LDL.',
+      low: "A low ApoB usually means fewer cholesterol-carrying particles and a lower heart-disease risk. Very low levels are only occasionally linked to nutrition, liver or genetic factors.",
+    },
+  },
+  {
+    name: /\bAPO(?:LIPO)?PROTEIN\s*A|\bAPO[-\s]?A1?\b/i,
+    info: {
+      name: 'Apolipoprotein A1',
+      categoryId: 'heart',
+      what: 'The main protein of protective HDL particles.',
+      low: 'Low values track with low HDL — less protective clearance of cholesterol.',
+      high: "A high ApoA1 is a good thing: it's the main protein in protective 'good' HDL cholesterol and often reflects a lower cardiovascular risk.",
+      adviceHigh: "A higher level of this “good-cholesterol” protein is reassuring and linked to lower heart risk. No action needed; simply keep up your active, heart-healthy habits.",
+      adviceLow: "This protein carries your “good” cholesterol, so a low level mirrors low HDL. Regular activity, not smoking, and healthy fats can help lift it, with your doctor’s guidance.",
+    },
+  },
+  {
+    name: /LIPOPROTEIN\s*\(?\s*a\s*\)?|\bLP\s*\(?A\)?\b/i,
+    info: {
+      name: 'Lipoprotein(a)',
+      categoryId: 'heart',
+      what:
+        'An inherited cholesterol particle. Levels are set mostly by your genes and stay fairly constant through life.',
+      high:
+        'A raised Lp(a) adds to lifetime heart risk. It doesn’t respond much to diet — knowing it helps your doctor manage the other, controllable risks more actively.',
+      low: "A low Lp(a) is reassuring. This largely inherited particle raises heart risk only when high, so a low level simply means one less risk factor.",
+    },
+  },
+  {
+    name: /HOMOCYST/i,
+    info: {
+      name: 'Homocysteine',
+      categoryId: 'heart',
+      what: 'An amino acid; high levels can irritate blood-vessel lining and are linked with B-vitamin deficiency.',
+      high: 'Often improves with vitamin B12 / folate supplementation — your doctor may check those levels.',
+      low: "A low homocysteine is generally harmless and often simply reflects good B-vitamin and folate levels. It is not typically a cause for concern.",
+    },
+  },
+  {
+    name: /\bHS[-\s]?CRP|HIGH\s*SENSITIVITY\s*C[-\s]?REACTIVE/i,
+    info: {
+      name: 'hs-CRP (Heart-risk Inflammation)',
+      categoryId: 'heart',
+      what:
+        'A very sensitive measure of low-grade inflammation used to refine heart-risk estimates.',
+      high:
+        'Suggests background inflammation. Any recent infection or injury can raise it too, so your doctor reads it in context.',
+      low: "A low hs-CRP is a good sign: it points to low inflammation in your blood vessels and is linked to a lower risk of heart disease.",
+    },
+  },
+  {
+    name: /\bCPK\b|CREATINE\s*(PHOSPHO)?KINASE|\bCK[-\s]?(MB|NAC|TOTAL)?\b/i,
+    info: {
+      name: 'Creatine Kinase (CK)',
+      categoryId: 'heart',
+      what: 'An enzyme from muscle, including heart muscle, released when muscle is stressed or injured.',
+      high: 'Can follow intense exercise, injections, muscle injury, or heart-muscle strain — interpreted with your symptoms.',
+      low: "A low CK is almost always harmless. It usually just reflects lower muscle mass from age or being less active, rather than any medical problem.",
+    },
+  },
+  {
+    name: /TROPONIN/i,
+    info: {
+      name: 'Troponin',
+      categoryId: 'heart',
+      what: 'A protein released only from injured heart muscle — the key blood test in suspected heart attack.',
+      high: 'Any raised troponin deserves prompt medical review.',
+      low: "Low or undetectable troponin is exactly what you want: it means no sign of recent heart-muscle damage. Healthy people normally have very low levels.",
+    },
+  },
+
+  /* ---------------- Blood Sugar ---------------- */
+  {
+    name: /HBA1C|GLYCOSYLATED\s*H(A)?EMOGLOBIN|GLYCATED/i,
+    info: {
+      name: 'HbA1c — 3-Month Average Sugar',
+      categoryId: 'diabetes',
+      what:
+        'Shows your average blood sugar over the past ~3 months by measuring sugar attached to red blood cells. It cannot be skewed by one good or bad day.',
+      high:
+        'Values 5.7–6.4% suggest pre-diabetes; 6.5% or more suggests diabetes. Small, steady changes in diet and activity move this number.',
+      low: 'A low HbA1c on treatment may mean sugars are dipping too low at times — discuss with your doctor.',
+    },
+  },
+  {
+    name: /FASTING.*(GLUCOSE|SUGAR)|(GLUCOSE|SUGAR).*FASTING|\bFBS\b/i,
+    info: {
+      name: 'Fasting Blood Sugar',
+      categoryId: 'diabetes',
+      what: 'Your blood glucose after an overnight fast — the standard first screen for diabetes.',
+      high:
+        '100–125 mg/dL suggests pre-diabetes and 126+ suggests diabetes (confirmed on repeat testing). Lifestyle change at this stage is very effective.',
+      low: 'Low fasting sugar can cause shakiness, sweating or dizziness; mention any such episodes to your doctor.',
+    },
+  },
+  {
+    name: /POST\s*PRANDIAL|\bPP(BS)?\b.*(GLUCOSE|SUGAR)|(GLUCOSE|SUGAR).*\bPP\b/i,
+    info: {
+      name: 'Post-meal Blood Sugar',
+      categoryId: 'diabetes',
+      what: 'Blood glucose about two hours after a meal — shows how well your body clears sugar after eating.',
+      high: 'Values of 200+ mg/dL suggest diabetes; 140–199 suggests reduced glucose tolerance.',
+      low: "A low post-meal reading is usually harmless. Occasionally blood sugar dips a few hours after eating (reactive hypoglycaemia), which can cause hunger or shakiness.",
+    },
+  },
+  {
+    name: /RANDOM.*(GLUCOSE|SUGAR)|(GLUCOSE|SUGAR).*RANDOM|\bRBS\b/i,
+    info: {
+      name: 'Random Blood Sugar',
+      categoryId: 'diabetes',
+      what: 'Blood glucose taken at any time of day, without fasting.',
+      high: 'A random value of 200+ mg/dL with symptoms suggests diabetes and should be followed up with fasting tests.',
+      low: "A low reading means blood sugar was on the lower side when tested, often simply from a gap since eating. Marked lows can cause hunger or shakiness.",
+    },
+  },
+  {
+    name: /GLUCOSE|SUGAR/i,
+    info: {
+      name: 'Blood Glucose',
+      categoryId: 'diabetes',
+      what: 'The sugar circulating in your blood — your body’s main fuel.',
+      high: 'Persistently high glucose points towards pre-diabetes or diabetes.',
+      low: 'Low glucose can cause weakness, sweating and confusion.',
+    },
+  },
+  {
+    name: /INSULIN/i,
+    info: {
+      name: 'Insulin',
+      categoryId: 'diabetes',
+      what: 'The hormone that moves sugar from blood into cells.',
+      high:
+        'High fasting insulin often means the body is resisting insulin’s action (insulin resistance) — an early, reversible stage on the path to diabetes.',
+      low: "When blood sugar is normal, low fasting insulin is often a good sign of efficient insulin use. Its meaning depends on your glucose readings alongside it.",
+    },
+  },
+
+  /* ---------------- Kidney Health ---------------- */
+  {
+    name: /\bEGFR\b|ESTIMATED\s*GFR|GLOMERULAR\s*FILTRATION/i,
+    info: {
+      name: 'eGFR — Kidney Filtration Rate',
+      categoryId: 'kidney',
+      what:
+        'An estimate of how much blood your kidneys clean each minute — the single best number for overall kidney function.',
+      low: 'A lower eGFR means the kidneys are filtering more slowly. It is followed over time, and your doctor looks for treatable causes.',
+      high: "A high or normal eGFR is reassuring: it means your kidneys are filtering waste efficiently. Labs often simply report anything above 90 as 'normal'.",
+      adviceHigh: "A higher filtering score is generally a good sign your kidneys are working well, and needs no action. Keep hydrated and enjoy your balanced, low-salt eating.",
+      adviceLow: "This reflects kidney filtering, so a lower number deserves attention. Keeping blood pressure and sugar steady, easing salt, and being careful with painkillers helps. Your doctor will guide care.",
+    },
+  },
+  {
+    name: /CREATININE/i,
+    info: {
+      name: 'Creatinine',
+      categoryId: 'kidney',
+      what:
+        'A waste product from normal muscle activity that healthy kidneys remove steadily. It is a core marker of kidney function.',
+      high:
+        'A raised creatinine can mean the kidneys are clearing waste less efficiently, but dehydration, a high-protein meal or heavy exercise can nudge it up too.',
+      low: 'Low creatinine is usually harmless and can simply reflect lower muscle mass.',
+    },
+  },
+  {
+    name: /\bUREA\b|BLOOD\s*UREA|\bBUN\b/i,
+    info: {
+      name: 'Urea',
+      categoryId: 'kidney',
+      what: 'A waste product from breaking down protein, filtered out by the kidneys.',
+      high: 'Can rise with reduced kidney function, dehydration or a high-protein diet.',
+      low: 'Often of little concern; can follow a low-protein diet or liver conditions.',
+    },
+  },
+  {
+    name: /URIC\s*ACID/i,
+    info: {
+      name: 'Uric Acid',
+      categoryId: 'kidney',
+      what: 'A waste product from the breakdown of purines in food and cells.',
+      high:
+        'High uric acid can crystallise in joints and cause gout, and adds to kidney-stone risk. Diet, alcohol and some medicines influence it.',
+      low: 'Low uric acid is rarely a problem.',
+      adviceHigh: "Easing back on red meat, organ meats, shellfish, beer and sugary drinks, while staying hydrated and at a healthy weight, can lower uric acid. Your doctor will advise further.",
+      adviceLow: "Low uric acid usually causes no symptoms and rarely needs action. There’s nothing special to change; your doctor will follow up if it points to anything worth exploring.",
+    },
+  },
+
+  /* ---------------- Liver Health ---------------- */
+  {
+    name: /\bSGPT\b|\bALT\b|ALANINE\s*(AMINO)?TRANSAMINASE/i,
+    info: {
+      name: 'ALT (SGPT)',
+      categoryId: 'liver',
+      what: 'An enzyme found mainly in liver cells; it leaks into the blood when the liver is irritated.',
+      high:
+        'Raised ALT is a sensitive sign of liver stress — from fatty liver, alcohol, some medicines or infections. Often reversible once the cause is addressed.',
+      low: "A low ALT is usually not a concern and generally just reflects healthy liver cells with little sign of inflammation.",
+    },
+  },
+  {
+    name: /\bSGOT\b|\bAST\b|ASPARTATE\s*(AMINO)?TRANSAMINASE/i,
+    info: {
+      name: 'AST (SGOT)',
+      categoryId: 'liver',
+      what: 'An enzyme from the liver and also muscle; read together with ALT to gauge liver stress.',
+      high: 'Can rise with liver conditions, and also after muscle exertion or injury.',
+      low: "A low AST is generally not worrying; it usually means little sign of stress on the liver or muscle cells.",
+    },
+  },
+  {
+    name: /ALKALINE\s*PHOSPHAT|\bALP\b|\bSAP\b/i,
+    info: {
+      name: 'Alkaline Phosphatase (ALP)',
+      categoryId: 'liver',
+      what: 'An enzyme from the liver’s bile ducts and from bone.',
+      high:
+        'Can point to a bile-flow problem in the liver, or to active bone turnover (normal in growing children and after fractures).',
+      low: "A low ALP is uncommon and usually harmless; it can sometimes reflect low zinc, magnesium, or reduced protein intake.",
+    },
+  },
+  {
+    name: /\bGGT\b|GAMMA\s*GLUTAMYL/i,
+    info: {
+      name: 'GGT',
+      categoryId: 'liver',
+      what: 'A liver enzyme especially sensitive to alcohol and bile-duct problems.',
+      high: 'Often raised by alcohol or bile-flow issues; helps interpret a high ALP.',
+      low: "A low or normal GGT is reassuring; it makes underlying liver or bile-flow problems less likely.",
+    },
+  },
+  {
+    name: /BILIRUBIN.*(TOTAL)?|TOTAL\s*BILIRUBIN/i,
+    info: {
+      name: 'Bilirubin',
+      categoryId: 'liver',
+      what:
+        'A yellow-orange pigment made when old red blood cells are recycled; the liver clears it into bile.',
+      high:
+        'High bilirubin can tint the skin and eyes yellow (jaundice). Causes range from harmless inherited variants to liver or bile-duct conditions.',
+      low: "A low bilirubin is uncommon but usually harmless, often just an incidental finding on routine blood work with no symptoms.",
+    },
+  },
+  {
+    name: /ALBUMIN/i,
+    info: {
+      name: 'Albumin',
+      categoryId: 'liver',
+      what: 'The main protein the liver makes; it keeps fluid inside blood vessels and carries nutrients.',
+      low: 'Low albumin can reflect poor nutrition, liver or kidney conditions, or ongoing inflammation.',
+      high: "A high albumin most often simply reflects mild dehydration concentrating the blood, and usually settles once you are rehydrated.",
+      advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
+    },
+  },
+  {
+    name: /GLOBULIN/i,
+    info: {
+      name: 'Globulin',
+      categoryId: 'liver',
+      what: 'A family of blood proteins involved in immunity and transport.',
+      high: 'Can rise with chronic infection or inflammation.',
+      low: 'Low levels may relate to immune or liver conditions.',
+      advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
+    },
+  },
+  {
+    name: /TOTAL\s*PROTEIN|SERUM\s*PROTEIN/i,
+    info: {
+      name: 'Total Protein',
+      categoryId: 'liver',
+      what: 'All the protein in your blood (mainly albumin and globulin) — a broad marker of nutrition and liver/immune health.',
+      high: "A high total protein often just reflects dehydration concentrating the blood; sometimes it accompanies ongoing inflammation or infection.",
+      low: "A low total protein can mean the body is not absorbing or making enough protein, or is losing it, as with liver, kidney, or digestive issues.",
+      advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
+    },
+  },
+
+  /* ---------------- Thyroid ---------------- */
+  {
+    name: /\bTSH\b|THYROID\s*STIMULATING/i,
+    info: {
+      name: 'TSH — Thyroid Control Hormone',
+      categoryId: 'thyroid',
+      what:
+        'A hormone from the brain that tells the thyroid how hard to work. It is the most sensitive first check for thyroid problems.',
+      high:
+        'A high TSH usually means an underactive thyroid (hypothyroidism) — the gland needs more prompting. Can cause tiredness, weight gain and feeling cold.',
+      low:
+        'A low TSH usually means an overactive thyroid (hyperthyroidism). Can cause palpitations, weight loss and anxiety.',
+    },
+  },
+  {
+    name: /FREE\s*T3|\bFT3\b/i,
+    info: {
+      name: 'Free T3',
+      categoryId: 'thyroid',
+      what: 'The active, unbound form of the thyroid hormone T3 that regulates metabolism.',
+      high: 'Often accompanies an overactive thyroid.',
+      low: 'Can accompany an underactive thyroid.',
+    },
+  },
+  {
+    name: /FREE\s*T4|\bFT4\b/i,
+    info: {
+      name: 'Free T4',
+      categoryId: 'thyroid',
+      what: 'The active, unbound form of the main thyroid hormone T4.',
+      high: 'Often accompanies an overactive thyroid.',
+      low: 'Can accompany an underactive thyroid.',
+    },
+  },
+  {
+    name: /\bT3\b|TRIIODOTHYRONINE/i,
+    info: {
+      name: 'Total T3',
+      categoryId: 'thyroid',
+      what: 'A thyroid hormone that helps set your metabolic rate and energy.',
+      high: "A high T3 can mean an overactive thyroid (hyperthyroidism), where the gland makes more hormone than the body needs.",
+      low: "A low T3 can reflect an underactive thyroid (hypothyroidism), or simply the body's response to another illness.",
+    },
+  },
+  {
+    name: /\bT4\b|THYROXINE/i,
+    info: {
+      name: 'Total T4',
+      categoryId: 'thyroid',
+      what: 'The main thyroid hormone controlling metabolism, heart rate and body temperature.',
+      high: "A high T4 can point to an overactive thyroid (hyperthyroidism) or temporary thyroid inflammation.",
+      low: "A low T4 can suggest an underactive thyroid (hypothyroidism), where the gland makes too little hormone.",
+    },
+  },
+  {
+    name: /ANTI[-\s]?TPO|THYROID\s*PEROXIDASE|\bATPO\b/i,
+    info: {
+      name: 'Anti-TPO Antibody',
+      categoryId: 'thyroid',
+      what: 'An immune marker; when present, the immune system may be acting against the thyroid.',
+      high: 'A raised level supports an autoimmune thyroid condition (e.g. Hashimoto’s).',
+      low: "A low or negative anti-TPO is reassuring: it means your immune system does not appear to be attacking your thyroid.",
+    },
+  },
+
+  /* ---------------- Blood Counts & Anaemia ---------------- */
+  {
+    name: /HAEMOGLOBIN|HEMOGLOBIN|\bHB\b|\bHGB\b/i,
+    info: {
+      name: 'Haemoglobin',
+      categoryId: 'blood',
+      what:
+        'The protein in red blood cells that carries oxygen from your lungs to the rest of your body.',
+      low:
+        'Low haemoglobin means anaemia — common causes are low iron, B12 or folate, or blood loss. It can cause tiredness and breathlessness.',
+      high: 'High haemoglobin can follow dehydration, smoking or living at altitude, and occasionally other conditions.',
+    },
+  },
+  {
+    name: /\bPCV\b|H(A)?EMATOCRIT|\bHCT\b/i,
+    info: {
+      name: 'Haematocrit (PCV)',
+      categoryId: 'blood',
+      what: 'The proportion of your blood made up of red cells — part of the anaemia picture.',
+      low: 'A low value tracks with anaemia.',
+      high: 'A high value often just reflects dehydration.',
+    },
+  },
+  {
+    name: /\bRBC\b|RED\s*(BLOOD\s*)?CELL\s*COUNT/i,
+    info: {
+      name: 'Red Blood Cell Count',
+      categoryId: 'blood',
+      what: 'The number of oxygen-carrying red cells in your blood.',
+      low: 'A low count contributes to anaemia.',
+      high: "A high red blood cell count often simply reflects dehydration; it can also follow low oxygen, such as at high altitude.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /\bWBC\b|WHITE\s*(BLOOD\s*)?CELL|TOTAL\s*LEU(K|C)OCYTE|\bTLC\b/i,
+    info: {
+      name: 'White Blood Cell Count (TLC)',
+      categoryId: 'blood',
+      what: 'The infection-fighting cells of your immune system.',
+      high: 'A high count often means the body is fighting an infection or inflammation.',
+      low: 'A low count can follow some viral infections or medicines and may need a repeat check.',
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /PLATELET|\bPLT\b/i,
+    info: {
+      name: 'Platelet Count',
+      categoryId: 'blood',
+      what: 'Tiny cell fragments that clump together to stop bleeding.',
+      high: 'A high count can follow infection or inflammation and is usually temporary.',
+      low: 'A low count can increase bruising or bleeding and is worth reviewing.',
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /\bMCV\b|MEAN\s*CORPUSCULAR\s*VOLUME/i,
+    info: {
+      name: 'MCV — Red Cell Size',
+      categoryId: 'blood',
+      what: 'The average size of your red cells — a clue to the type of anaemia (small cells suggest iron deficiency, large cells suggest B12/folate).',
+      high: "A high MCV means red cells are larger than average, often reflecting low vitamin B12 or folate, alcohol use, or an underactive thyroid.",
+      low: "A low MCV means red cells are smaller than average, most commonly from iron deficiency or an inherited trait like thalassaemia.",
+      advice: "Red-cell indices like this help pin down the type of anaemia — small, large or varied cells. Your doctor reads them together and may check iron, B12 or folate.",
+    },
+  },
+  {
+    // MCHC must precede MCH: its spelled-out name contains "…HAEMOGLOBIN" too.
+    name: /\bMCHC\b|MEAN\s*CORPUSCULAR\s*H(A)?EMOGLOBIN\s*CONCENTRATION/i,
+    info: {
+      name: 'MCHC',
+      categoryId: 'blood',
+      what: 'How concentrated the haemoglobin is inside each red cell — read alongside MCV and MCH to classify anaemia.',
+      high: "A high MCHC means the haemoglobin is more concentrated than usual inside the red cells.",
+      low: "A low MCHC means the haemoglobin is less concentrated than usual, most often from iron deficiency.",
+      advice: "Red-cell indices like this help pin down the type of anaemia — small, large or varied cells. Your doctor reads them together and may check iron, B12 or folate.",
+    },
+  },
+  {
+    name: /\bMCH\b|MEAN\s*CORPUSCULAR\s*H(A)?EMOGLOBIN/i,
+    info: {
+      name: 'MCH',
+      categoryId: 'blood',
+      what: 'The average amount of haemoglobin in each red cell — read alongside MCV to classify anaemia.',
+      high: "A high MCH means each red cell carries more haemoglobin than average, sometimes seen with larger cells from low B12 or folate.",
+      low: "A low MCH means each red cell carries less haemoglobin than average, most often from iron deficiency.",
+      advice: "Red-cell indices like this help pin down the type of anaemia — small, large or varied cells. Your doctor reads them together and may check iron, B12 or folate.",
+    },
+  },
+  {
+    // No fixed display name — the report shows the exact lab test (RDW-CV /
+    // RDW-SD) so it can't be mistaken for the other RDW measure.
+    name: /\bRDW\b|RED\s*CELL\s*DISTRIBUTION/i,
+    info: {
+      categoryId: 'blood',
+      what: 'How varied your red-cell sizes are — a helpful early hint about the cause of anaemia.',
+      high: "A high RDW means red cells vary more in size than usual, which can be an early clue to iron, B12, or folate shortfalls.",
+      low: "A low RDW means red cells are very uniform in size; this is normal and rarely significant.",
+      advice: "Red-cell indices like this help pin down the type of anaemia — small, large or varied cells. Your doctor reads them together and may check iron, B12 or folate.",
+    },
+  },
+  {
+    name: /NEUTROPHIL/i,
+    info: {
+      name: 'Neutrophils',
+      categoryId: 'blood',
+      what: 'The white cells that are your first line against bacterial infection.',
+      high: "A high neutrophil count commonly reflects a bacterial infection, inflammation, or simply physical stress on the body.",
+      low: "A low neutrophil count can follow viral infections or certain medications; mild dips are often temporary.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /LYMPHOCYTE/i,
+    info: {
+      name: 'Lymphocytes',
+      categoryId: 'blood',
+      what: 'White cells central to immune memory and fighting viruses.',
+      high: "A high lymphocyte count most often reflects a viral infection and usually settles as you recover.",
+      low: "A low lymphocyte count can follow a recent infection, stress, or certain medicines, and is often temporary.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /MONOCYTE/i,
+    info: {
+      name: 'Monocytes',
+      categoryId: 'blood',
+      what: 'White cells that clear debris and support the immune response.',
+      high: "A high monocyte count often reflects the body recovering from infection or dealing with ongoing inflammation.",
+      low: "A low monocyte count is often temporary, sometimes following acute stress, infection, or certain medications.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /EOSINOPHIL/i,
+    info: {
+      name: 'Eosinophils',
+      categoryId: 'blood',
+      what: 'White cells that rise with allergies and parasitic infections.',
+      high: "A high eosinophil count commonly reflects allergies, asthma, or a reaction to a medication; sometimes a parasitic infection.",
+      low: "A low eosinophil count is usually harmless, often just reflecting stress or steroid medication.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /BASOPHIL/i,
+    info: {
+      name: 'Basophils',
+      categoryId: 'blood',
+      what: 'The rarest white cells, involved in allergic and inflammatory responses.',
+      high: "A high basophil count is uncommon and may reflect allergies or ongoing inflammation.",
+      low: "A low basophil count is usually not a concern and can follow stress, allergies, or steroid use.",
+      advice: "Counts like this often change with a recent infection, inflammation or stress and settle on their own. Your doctor may repeat the test to be sure.",
+    },
+  },
+  {
+    name: /\bESR\b|ERYTHROCYTE\s*SEDIMENTATION/i,
+    info: {
+      name: 'ESR',
+      categoryId: 'blood',
+      what: 'A simple, general marker of inflammation in the body.',
+      high: 'A raised ESR signals inflammation somewhere — non-specific, so it is read with your symptoms and other tests.',
+      low: "A low ESR is usually not a concern; it simply means very little inflammation is being detected.",
+      advice: "Inflammation markers rise with many everyday causes, from a cold to a minor injury. Your doctor will read it alongside your symptoms and other results.",
+    },
+  },
+
+  /* ---------------- Vitamins, Minerals & Bone ---------------- */
+  {
+    name: /VITAMIN\s*D|25[-\s]?(OH|HYDROXY)/i,
+    info: {
+      name: 'Vitamin D',
+      categoryId: 'vitamins',
+      what: 'Keeps bones strong and supports muscle and immune function. Your skin makes it from sunlight.',
+      low:
+        'Deficiency is very common and can cause tiredness, aches and weaker bones. It is corrected easily with sunlight and supplements.',
+      high: "A high result almost always comes from taking too much vitamin D in supplements; it very rarely happens from food or sunshine.",
+      adviceHigh: "High vitamin D usually comes from too much supplement. It’s worth reviewing your dose with your doctor and easing back, as very high levels can affect calcium balance.",
+      adviceLow: "A little safe sunshine, plus foods like oily fish, eggs and fortified milk, can help rebuild your vitamin D. Your doctor may suggest a supplement and the right amount.",
+    },
+  },
+  {
+    name: /VITAMIN\s*B\s*12|COBALAMIN/i,
+    info: {
+      name: 'Vitamin B12',
+      categoryId: 'vitamins',
+      what: 'Essential for healthy nerves and red blood cells.',
+      low: 'Low B12 can cause tiredness, tingling and a form of anaemia — common in vegetarians and treatable with supplements.',
+      high: "Usually harmless and most often reflects taking B12 supplements or injections. Less commonly it can point to a liver or kidney issue worth checking.",
+      adviceHigh: "High B12 rarely comes from food and usually needs no dietary change. If you don’t take supplements, your doctor may look into what’s raising it, just to be thorough.",
+      adviceLow: "Foods like meat, fish, eggs and dairy, or fortified options if you eat plant-based, can help restore B12. Your doctor may recommend supplements or injections depending on the cause.",
+    },
+  },
+  {
+    name: /FOLATE|FOLIC\s*ACID/i,
+    info: {
+      name: 'Folate',
+      categoryId: 'vitamins',
+      what: 'A B-vitamin needed to build healthy red blood cells and DNA; important before and during pregnancy.',
+      low: 'Low folate can cause anaemia and is easily corrected through diet or supplements.',
+      high: "Typically harmless and usually reflects folic-acid supplements or fortified foods. It's mainly worth making sure a vitamin B12 deficiency isn't being hidden.",
+      adviceHigh: "A high folate level is usually harmless and needs no action. Keep enjoying your varied diet, and your doctor can review any supplements if it seems worth checking.",
+      adviceLow: "Eat more folate-rich foods like leafy greens, beans, citrus and fortified cereals. Your doctor may suggest a folic-acid supplement, especially important if you’re pregnant or planning to be.",
+    },
+  },
+  {
+    name: /FERRITIN/i,
+    info: {
+      name: 'Ferritin — Iron Stores',
+      categoryId: 'vitamins',
+      what: 'Reflects the iron your body has in reserve — the earliest marker of iron deficiency.',
+      low: 'Low ferritin means iron stores are running down, often before anaemia appears.',
+      high: 'High ferritin can follow inflammation, infection or iron overload.',
+      adviceHigh: "Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.",
+      adviceLow: "Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.",
+    },
+  },
+  {
+    name: /\bIRON\b|SERUM\s*IRON/i,
+    info: {
+      name: 'Serum Iron',
+      categoryId: 'vitamins',
+      what: 'The iron currently circulating in your blood, ready to make haemoglobin.',
+      high: "Can mean the body is carrying or storing extra iron, sometimes from supplements or an inherited condition called haemochromatosis.",
+      low: "Often reflects low iron from diet, blood loss such as heavy periods, or poor absorption; it's a common reason for anaemia.",
+      adviceHigh: "Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.",
+      adviceLow: "Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.",
+    },
+  },
+  {
+    name: /CALCIUM/i,
+    info: {
+      name: 'Calcium',
+      categoryId: 'vitamins',
+      what: 'A mineral essential for bones, muscle contraction and nerve signals.',
+      high: 'High calcium can affect the kidneys and nerves and is worth investigating.',
+      low: 'Low calcium can cause cramps and tingling.',
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+  {
+    name: /PHOSPHOR|PHOSPHATE/i,
+    info: {
+      name: 'Phosphorus',
+      categoryId: 'vitamins',
+      what: 'Works with calcium to build strong bones and store energy.',
+      high: "Can reflect reduced kidney function, since kidneys clear phosphorus; also comes from extra phosphate in diet or supplements.",
+      low: "Can mean low intake or poor absorption, and is sometimes linked to certain medicines or heavy alcohol use.",
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+  {
+    name: /MAGNESIUM/i,
+    info: {
+      name: 'Magnesium',
+      categoryId: 'vitamins',
+      what: 'Supports muscles, nerves and energy production.',
+      high: "Uncommon; usually reflects extra magnesium from supplements, laxatives or antacids, or reduced clearance by the kidneys.",
+      low: "Can mean low intake or absorption, ongoing diarrhoea, certain medicines, or heavy alcohol use.",
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+  {
+    name: /\bSODIUM\b|\bNA\b/i,
+    info: {
+      name: 'Sodium',
+      categoryId: 'vitamins',
+      what: 'A salt that balances body fluids and helps nerves and muscles work.',
+      high: "Usually reflects not enough water in the body (dehydration), for example from too little fluid, diarrhoea, or water pills.",
+      low: "Often reflects too much body water relative to sodium, from drinking large amounts, certain medicines, or heart, liver or kidney conditions.",
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+  {
+    name: /POTASSIUM|\bK\b/i,
+    info: {
+      name: 'Potassium',
+      categoryId: 'vitamins',
+      what: 'Keeps your heartbeat steady and muscles working.',
+      high: "Often linked to kidney function or certain medicines; sometimes the blood sample itself breaks down and falsely raises the reading, so a repeat may be done.",
+      low: "Can result from losing potassium through vomiting, diarrhoea, or water pills; certain medicines and adrenal conditions can also lower it.",
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+  {
+    name: /CHLORIDE/i,
+    info: {
+      name: 'Chloride',
+      categoryId: 'vitamins',
+      what: 'A salt that helps balance body fluids and acidity.',
+      high: "This electrolyte moves with sodium and fluid balance; a high result can reflect dehydration or an acid-base shift in the blood.",
+      low: "Can follow fluid loss from vomiting or diarrhoea, or an acid-base shift; sometimes linked to heart, lung or adrenal conditions.",
+      advice: "Levels like this shift with hydration, diet, medicines and kidney function. Your doctor will interpret it in context and, if needed, repeat the test.",
+    },
+  },
+
+  /* ---------------- Hormones ---------------- */
+  {
+    name: /\bPSA\b|PROSTATE\s*SPECIFIC/i,
+    info: {
+      name: 'PSA — Prostate Marker',
+      categoryId: 'hormones',
+      what: 'A protein from the prostate gland, used to screen for and monitor prostate conditions in men.',
+      high: 'A raised PSA can follow benign enlargement, infection or, less often, prostate cancer — your doctor decides on any next steps.',
+      low: "A low PSA is reassuring. It generally points to a healthy prostate and a very low likelihood of prostate cancer.",
+    },
+  },
+  {
+    name: /TESTOSTERONE/i,
+    info: {
+      name: 'Testosterone',
+      categoryId: 'hormones',
+      what: 'The main male sex hormone, also present in smaller amounts in women; affects energy, muscle and libido.',
+      high: "Can reflect natural variation; less commonly it relates to supplement or steroid use, or a condition of the testicles or adrenal glands.",
+      low: "Can mean the body is making less testosterone, from the testicles, the pituitary gland, ageing, or ongoing illness; sometimes causing low energy or libido.",
+    },
+  },
+  {
+    name: /\bTSH\b/i,
+    info: { name: 'TSH', categoryId: 'thyroid', what: 'A thyroid control hormone.' },
+  },
+  {
+    name: /VITAMIN\s*B9/i,
+    info: { name: 'Vitamin B9 (Folate)', categoryId: 'vitamins', what: 'Another name for folate — needed to build red blood cells and DNA.' },
+  },
+  {
+    name: /PROLACTIN/i,
+    info: {
+      name: 'Prolactin',
+      categoryId: 'hormones',
+      what: 'A pituitary hormone; relevant to fertility and breast health.',
+      high: "Often harmless and can follow stress, exercise, sleep or certain medicines; sometimes reflects an underactive thyroid or a small, benign pituitary growth.",
+      low: "Low prolactin is uncommon and usually needs no treatment; occasionally it reflects an underactive pituitary gland.",
+    },
+  },
+  {
+    name: /\bFSH\b|FOLLICLE\s*STIMULATING/i,
+    info: {
+      name: 'FSH',
+      categoryId: 'hormones',
+      what: 'A reproductive hormone that regulates the ovaries and testes.',
+      high: "In women often signals menopause or the ovaries slowing; in men it can mean the testicles are less active. May also reflect a pituitary issue.",
+      low: "Can mean the pituitary is sending weaker signals to the ovaries or testicles, sometimes from stress, low body weight, or a pituitary problem.",
+    },
+  },
+  {
+    name: /\bLH\b|LUTEINI[SZ]ING/i,
+    info: {
+      name: 'LH',
+      categoryId: 'hormones',
+      what: 'A reproductive hormone that triggers ovulation and testosterone production.',
+      high: "In women can reflect menopause or polycystic ovary syndrome; in men, testicles not responding fully. May also point to a pituitary issue.",
+      low: "Can mean the pituitary is making less LH, sometimes from stress, low body weight, or a pituitary disorder.",
+    },
+  },
+  {
+    name: /CORTISOL/i,
+    info: {
+      name: 'Cortisol',
+      categoryId: 'hormones',
+      what: 'The body’s main stress hormone; also regulates sugar and blood pressure.',
+      high: "Often reflects normal stress, illness, pregnancy, or steroid medicines; less commonly it points to an adrenal or pituitary condition.",
+      low: "Can reflect underactive adrenal glands; timing matters too, since cortisol is naturally lower later in the day.",
+    },
+  },
+  {
+    name: /\bHBA1C\b/i,
+    info: { name: 'HbA1c', categoryId: 'diabetes', what: 'Your 3-month average blood sugar.' },
+  },
+
+  /* ---------------- Infection & Immunity ---------------- */
+  {
+    name: /\bCRP\b|C[-\s]?REACTIVE\s*PROTEIN/i,
+    info: {
+      name: 'CRP — Inflammation Marker',
+      categoryId: 'infection',
+      what: 'Rises quickly when there is inflammation or infection anywhere in the body.',
+      high: 'A raised CRP signals active inflammation or infection — non-specific, so it is read with your symptoms.',
+    },
+  },
+  {
+    name: /\bHBSAG\b|HEPATITIS\s*B/i,
+    info: {
+      name: 'Hepatitis B (HBsAg)',
+      categoryId: 'infection',
+      what: 'A screen for current hepatitis B infection of the liver.',
+      high: 'A “reactive/positive” result needs confirmatory testing and medical follow-up.',
+    },
+  },
+  {
+    name: /HEPATITIS\s*C|\bHCV\b/i,
+    info: { name: 'Hepatitis C', categoryId: 'infection', what: 'A screen for hepatitis C infection of the liver.', high: 'A reactive result needs confirmatory testing and follow-up.' },
+  },
+  {
+    name: /\bHIV\b/i,
+    info: { name: 'HIV Screen', categoryId: 'infection', what: 'A screen for HIV infection.', high: 'A reactive screen always needs a confirmatory test before any conclusion.' },
+  },
+  {
+    name: /WIDAL|TYPHOID/i,
+    info: { name: 'Widal (Typhoid)', categoryId: 'infection', what: 'An older screen for typhoid fever; interpreted with symptoms and local background rates.' },
+  },
+  {
+    name: /DENGUE/i,
+    info: { name: 'Dengue', categoryId: 'infection', what: 'A screen for dengue infection during a fever illness.' },
+  },
+
+  /* ---------------- Urine ---------------- */
+  {
+    name: /URINE|MICROALBUMIN|ALBUMIN\s*\/\s*CREATININE/i,
+    info: {
+      name: 'Urine Analysis',
+      categoryId: 'urine',
+      what: 'A physical and chemical check of the urine — a window on the kidneys, sugar control and possible infection.',
+    },
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/* Resolver                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface ResolvedSmartMeta {
+  /** The matched per-test knowledge, or null when the analyte is unrecognised. */
+  info: TestInfo | null;
+  /** The body-system category the analyte belongs to (always resolved). */
+  categoryId: string;
+}
+
+const CATEGORY_BY_ID = new Map(SMART_CATEGORIES.map((c) => [c.id, c]));
+
+/** Look up a category by id (falls back to "Other Tests"). */
+export function smartCategory(id: string): SmartCategory {
+  return CATEGORY_BY_ID.get(id) ?? CATEGORY_BY_ID.get('other')!;
+}
+
+/**
+ * Resolve an analyte to its patient-friendly knowledge + body-system category.
+ * Match order: exact test code → test-name regex → LIS department fallback →
+ * "Other Tests". Always returns a category, so nothing is dropped.
+ */
+export function resolveSmartMeta(
+  code: string | null | undefined,
+  name: string | null | undefined,
+  departmentName: string | null | undefined,
+): ResolvedSmartMeta {
+  const upperCode = (code ?? '').trim().toUpperCase();
+  const nm = (name ?? '').trim();
+
+  for (const m of MATCHERS) {
+    if (m.codes && upperCode && m.codes.includes(upperCode)) {
+      return { info: m.info, categoryId: m.info.categoryId };
+    }
+  }
+  if (nm) {
+    for (const m of MATCHERS) {
+      if (m.name.test(nm)) return { info: m.info, categoryId: m.info.categoryId };
+    }
+  }
+
+  const dept = departmentName ?? '';
+  for (const [re, cat] of DEPARTMENT_FALLBACK) {
+    if (re.test(dept) && CATEGORY_IDS.has(cat)) return { info: null, categoryId: cat };
+  }
+  return { info: null, categoryId: 'other' };
+}

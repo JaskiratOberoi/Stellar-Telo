@@ -1,31 +1,13 @@
 import { notFound } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getSampleHeader } from '@/db/read/sampleHeader';
-import {
-  resolveBusinessUnit,
-  getSignersForBusinessUnit,
-  getDepartmentSignerMap,
-  getSignatureBytes,
-  getDefaultSigners,
-} from '@/db/read/signatures';
-import { getReferringDoctor } from '@/db/read/refDoctor';
-import { getMccCentreByCode } from '@/db/read/mccUnits';
-import { getProfileInterpretations } from '@/db/read/profileInterpretations';
-import { reportQrDataUrl, verifyReportToken } from '@/lib/report/reportLink';
+import { verifyReportToken } from '@/lib/report/reportLink';
 import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
-import { getSampleReport } from '@/db/read/sampleReport';
-import { LabReport, type LabReportData } from '@/components/reporting/tsh-report';
+import { LabReport } from '@/components/reporting/tsh-report';
+import { assembleLabReportData } from '@/lib/report/assembleReportData';
 
 export const dynamic = 'force-dynamic';
-
-/** YYYY-MM-DD for `d`. */
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate(),
-  ).padStart(2, '0')}`;
-}
 
 /**
  * Print fragment for one sample's full report, keyed by SID. Rendered (a) inside
@@ -78,13 +60,10 @@ export default async function ReportingPrintFragment({
     // Client-facing reporters (client_reporting) may only open their own
     // client's reports. Unrestricted roles pass through. (The token path is
     // pre-scoped: tokens are only minted by the PDF route for in-scope SIDs.)
+    if (!(await canAccessSidReport(user, decodedSid))) notFound();
     // Balance lock (Telo-only): don't render the report while there's an
     // outstanding balance. The token path is pre-gated by the PDF route.
-    const [scopeOk, lock] = await Promise.all([
-      canAccessSidReport(user, decodedSid),
-      isSidReportLocked(decodedSid),
-    ]);
-    if (!scopeOk) notFound();
+    const lock = await isSidReportLocked(decodedSid);
     if (lock.locked) {
       return (
         <div className="mx-auto max-w-md p-10 text-center text-sm text-muted-foreground">
@@ -102,118 +81,15 @@ export default async function ReportingPrintFragment({
     }
   }
 
-  // Header/demographics via ONE exact-match read. (This used to go through the
-  // worksheet SP with a ±3-day window around the `date` hint — slow, and the
-  // window could miss a rechecked sample entirely. The `date` param is still
-  // accepted: old QR links carry it, and it still tightens qrDate below.)
-  const row = await getSampleHeader(decodedSid);
-  if (!row) notFound();
-
-  // Date hint for the public QR link (tightens the worksheet window on scan).
-  const qrDate =
-    sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date)
-      ? sp.date
-      : row.sample_drawn && !Number.isNaN(new Date(row.sample_drawn).getTime())
-        ? ymd(new Date(row.sample_drawn))
-        : null;
-
-  const [report, bu, refDoctor, collectionCentre, profileInterpretations, qrDataUrl] =
-    await Promise.all([
-      getSampleReport(decodedSid, row.age, row.age_unit),
-      resolveBusinessUnit(row.business_unit),
-      getReferringDoctor(row.pid),
-      getMccCentreByCode(row.client_code),
-      getProfileInterpretations(),
-      reportQrDataUrl(decodedSid, qrDate),
-    ]);
-
-  // Configured signatories for the BU, made DEPARTMENT-AWARE (mirrors the LIS
-  // Department_View_Sign export): a specialist mapped only to a specific
-  // department — e.g. the Microbiology MD — prints only when the report
-  // contains that department, not on every report. General / BU-specific
-  // signatories (not tied to any department) always print.
-  const rawSigners = bu ? await getSignersForBusinessUnit(bu.id) : [];
-  const deptSignerMap = rawSigners.length ? await getDepartmentSignerMap() : new Map();
-  const reportDepts = new Set(
-    report.departments.map((d) => d.name.trim().toUpperCase()),
-  );
-  // Collapse duplicate doctors (the LIS has e.g. two "Upinder Singh" rows),
-  // preferring the id that carries the department mapping so its rules apply.
-  const normName = (n: string | null) =>
-    (n ?? '').toLowerCase().replace(/^dr\.?\s*/, '').replace(/[^a-z0-9]/g, '');
-  const byName = new Map<string, (typeof rawSigners)[number]>();
-  for (const s of rawSigners) {
-    const k = normName(s.doctorName);
-    const existing = byName.get(k);
-    if (!existing) byName.set(k, s);
-    else if (deptSignerMap.has(s.id) && !deptSignerMap.has(existing.id)) byName.set(k, s);
-  }
-  // Keep a signatory iff it is not department-managed (general/BU-specific) OR
-  // one of its departments is present on this report.
-  const deptFiltered = [...byName.values()].filter((s) => {
-    const depts = deptSignerMap.get(s.id) as Set<string> | undefined;
-    if (!depts || depts.size === 0) return true;
-    for (const d of depts) if (reportDepts.has(d)) return true;
-    return false;
-  });
-  // Guard: never leave a report unsigned — if the department filter removed
-  // everyone, fall back to the deduped list.
-  const selectedSigners = deptFiltered.length ? deptFiltered : [...byName.values()];
-  const orderedSigners = [...selectedSigners]
-    .sort((a, b) => (a.docType ?? 99) - (b.docType ?? 99))
-    .slice(0, 3);
-  const configuredSigners = await Promise.all(
-    orderedSigners.map(async (s) => {
-      const sig = await getSignatureBytes(s.id);
-      return {
-        id: s.id,
-        doctorName: s.doctorName,
-        designation: s.designation,
-        signatureDataUrl: sig
-          ? `data:${sig.mime};base64,${sig.bytes.toString('base64')}`
-          : null,
-      };
-    }),
-  );
-  // When the report's business unit has no signatories of its own (e.g. MDCARE /
-  // MEDICARE), fall back to the LIS default signatories for this report's
-  // departments — exactly as GET_PATIENT_REPORT_VAIL_ID does via the
-  // Department_View_Sign view. Keeps the doctor signs from going missing.
-  const signers =
-    configuredSigners.length > 0
-      ? configuredSigners
-      : await getDefaultSigners(report.departments.map((d) => d.name));
-
-  const data: LabReportData = {
+  const data = await assembleLabReportData({
+    sid: decodedSid,
     pdf: pdfMode,
-    headless: headless && !pdfMode,
+    headless,
     splitByDepartment,
     excludedKeys,
-    patientName: row.patient_name,
-    pid: row.pid,
-    sid: row.sid,
-    sex: row.sex,
-    age: row.age,
-    ageUnit: row.age_unit,
-    clientCode: row.client_code,
-    refDoctor,
-    collectedAt: row.sample_drawn,
-    registeredAt: row.regd_at,
-    reportedAt: row.last_modified_at,
-    statusLabel: row.status,
-    billNumber: row.bill_number,
-    clinicalHistory: row.clinical_history,
-    specimens: report.specimens,
-    collectionCentre,
-    profileInterpretations,
-    qrDataUrl,
-    departments: report.departments,
-    processedAt: bu
-      ? { name: bu.name, address: bu.address, city: bu.city, phone: bu.phone }
-      : null,
-    signers,
-    printedAt: new Date().toISOString(),
-  };
+    dateHint: sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : null,
+  });
+  if (!data) notFound();
 
   return (
     <>

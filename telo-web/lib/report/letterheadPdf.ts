@@ -32,9 +32,16 @@ export async function mergeOntoLetterhead(
   // header/footer bands blank so the PDF can be printed onto physical pre-printed
   // letterhead paper. The content keeps its full margins (26mm top / 34mm bottom)
   // so it still lines up under the printed letterhead, and page numbering stays.
-  options: { headless?: boolean } = {},
+  // pageNumberY overrides the vertical position of the "Page X of Y" stamp (in
+  // points from the page bottom) — the Smart Report uses smaller margins and
+  // needs the stamp lower, in its own clear bottom band. pageNumbers:false skips
+  // the stamp entirely (the Smart Report is a consumer booklet with a full-bleed
+  // cover — a "Page 1 of N" over the cover art would look wrong).
+  options: { headless?: boolean; pageNumberY?: number; pageNumbers?: boolean } = {},
 ): Promise<Uint8Array> {
   const headless = options.headless === true;
+  const pageNumberY = options.pageNumberY ?? 99;
+  const pageNumbers = options.pageNumbers !== false;
 
   const out = await PDFDocument.create();
   const content = await PDFDocument.load(contentPdf);
@@ -80,6 +87,8 @@ export async function mergeOntoLetterhead(
     const fg = await out.embedPage(src);
     page.drawPage(fg, { x: 0, y: 0, width, height });
 
+    if (!pageNumbers) continue;
+
     // "Page X of Y" — right-aligned on the report's last footer line (the NOTE
     // line), level with it rather than on a separate line below. The repeating
     // <tfoot> bottoms out at the content-box bottom (34mm ≈ 96pt), so the NOTE
@@ -91,7 +100,7 @@ export async function mergeOntoLetterhead(
     const rightMargin = (14 / 25.4) * 72; // 14mm content margin, in points
     page.drawText(label, {
       x: width - rightMargin - textWidth,
-      y: 99,
+      y: pageNumberY,
       size,
       font,
       color: rgb(0.35, 0.35, 0.35),
