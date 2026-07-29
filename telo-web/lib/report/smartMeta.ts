@@ -659,6 +659,29 @@ const MATCHERS: Matcher[] = [
     },
   },
   {
+    // Direct/indirect fractions BEFORE the generic Bilirubin matcher, else all
+    // three (total/direct/indirect) collapse into one "Bilirubin" card. The
+    // combined "Bilirubin (Total Direct & Indirect)" row still falls to generic.
+    name: /BILIRUBIN\s*[-,(]?\s*(DIRECT|CONJUGATED)|(DIRECT|CONJUGATED)\s*BILIRUBIN/i,
+    info: {
+      name: 'Bilirubin — Direct (Conjugated)',
+      categoryId: 'liver',
+      what: 'The processed form of bilirubin the liver has readied for removal in bile.',
+      high: 'A raised direct bilirubin points more towards a bile-flow or liver-cell problem; your doctor reads it with the total and your other liver tests.',
+      low: 'A low direct bilirubin is not a concern.',
+    },
+  },
+  {
+    name: /BILIRUBIN\s*[-,(]?\s*(INDIRECT|UNCONJUGATED)|(INDIRECT|UNCONJUGATED)\s*BILIRUBIN/i,
+    info: {
+      name: 'Bilirubin — Indirect (Unconjugated)',
+      categoryId: 'liver',
+      what: 'The unprocessed form of bilirubin, before the liver has readied it for removal.',
+      high: 'A raised indirect bilirubin can follow faster red-cell breakdown or a common, harmless inherited variant (Gilbert’s); read with the total.',
+      low: 'A low indirect bilirubin is not a concern.',
+    },
+  },
+  {
     name: /BILIRUBIN.*(TOTAL)?|TOTAL\s*BILIRUBIN/i,
     info: {
       name: 'Bilirubin',
@@ -671,9 +694,23 @@ const MATCHERS: Matcher[] = [
     },
   },
   {
+    // Albumin : Globulin RATIO before the Albumin/Globulin singles (its name
+    // contains both), else it mislabels as "Albumin".
+    name: /\bA\s*[\/:]\s*G\b|ALBUMIN\s*\/\s*GLOBULIN|ALBUMIN.*GLOBULIN.*RATIO/i,
+    info: {
+      name: 'Albumin : Globulin (A/G) Ratio',
+      categoryId: 'liver',
+      what: 'Compares albumin to the other blood proteins (globulins) — a simple check on the protein balance your liver and immune system keep.',
+      high: 'A high A/G ratio is usually harmless and can reflect lower globulins.',
+      low: 'A low A/G ratio can accompany low albumin or raised globulins, seen with some liver, kidney or inflammatory conditions.',
+      advice: 'Blood-protein ratios reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.',
+    },
+  },
+  {
     // Total Protein FIRST: its name ("…with albumin and globulin") contains
     // "albumin"/"globulin", which the matchers below would otherwise capture.
-    name: /TOTAL\s*PROTEIN|SERUM\s*PROTEIN/i,
+    // "PROTEIN\s*TOTAL" also catches the "Protein Total  Serum" wording.
+    name: /TOTAL\s*PROTEIN|PROTEIN\s*[-,]?\s*TOTAL|SERUM\s*PROTEIN/i,
     info: {
       name: 'Total Protein',
       categoryId: 'liver',
