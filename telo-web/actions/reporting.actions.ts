@@ -11,6 +11,10 @@ import {
 } from '@/lib/reportScope';
 import { getReportMccScope } from '@/auth/scope';
 import { searchMccUnits, fetchScopedMccUnits } from '@/db/read/mccUnits';
+import {
+  searchReportSamples,
+  type ReportSearchHit,
+} from '@/db/read/reportSearch';
 import { computeReportLocks } from '@/lib/reportLock';
 
 export interface ReportSearchFilters {
@@ -135,6 +139,46 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
 }
 
 /**
+ * Map a SQL search hit → result row. These rows come from the samples table
+ * rather than the worksheet SP, which is what makes a full-range search fast —
+ * so there is no per-result array, and two fields differ from mapRow():
+ *
+ *  - `value`/`unit` stay null. A headline value only exists when a test filter
+ *    is set, and that case is served by the routed SP fetch, which is unioned
+ *    FIRST and therefore wins for any SID it covers.
+ *  - `ready` is derived from the sample STATUS instead of per-result auth flags:
+ *    a fully authorised/printed sample is ready, a PARTIALLY-* one is not. That
+ *    is the same signal `isReleasable` trusts (the SP's per-result `authorized`
+ *    flag is unreliable — see the note there).
+ */
+function mapHit(h: ReportSearchHit): ReportSearchRow {
+  const status = (h.status ?? '').trim();
+  return {
+    sid: h.sid,
+    pid: h.pid,
+    patientName: h.patient_name,
+    ageGender: ageGenderLabel(h.age, h.age_unit, h.sex),
+    clientCode: h.client_code,
+    businessUnit: h.business_unit,
+    collectedAt: h.sample_drawn,
+    reportedAt: h.last_modified_at,
+    status,
+    value: null,
+    unit: null,
+    abnormal: false,
+    testNames: h.test_names_csv,
+    dateHint:
+      ymdFrom(h.regd_at) ??
+      ymdFrom(h.last_modified_at) ??
+      ymdFrom(h.sample_drawn),
+    ready: /(authoriz|authoris|print)/i.test(status) && !/partial/i.test(status),
+    locked: false,
+    lockReason: null,
+    dueAmount: 0,
+  };
+}
+
+/**
  * Cluster rows so every patient's samples are contiguous — a lab tech sees all
  * of one PID's reports together (e.g. all three VINTI rows in a row). Stable
  * group-by: groups appear in each PID's first-seen order, and rows keep their
@@ -173,30 +217,6 @@ async function annotateLocks(rows: ReportSearchRow[]): Promise<ReportSearchRow[]
   return rows;
 }
 
-/** Does the worksheet row match the universal query (case-insensitive)? */
-function rowMatchesQuery(r: WorksheetReportRow, qLower: string): boolean {
-  const hay: (string | null | undefined)[] = [
-    r.patient_name,
-    r.sid,
-    String(r.pid ?? ''),
-    r.client_code,
-    r.business_unit,
-    r.test_names_csv,
-    r.bill_number,
-  ];
-  for (const h of hay) {
-    if (h && h.toLowerCase().includes(qLower)) return true;
-  }
-  for (const t of r.results) {
-    if (
-      (t.test_code ?? '').toLowerCase().includes(qLower) ||
-      (t.test_name ?? '').toLowerCase().includes(qLower)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
 
 /**
  * Search samples for the Reporting tab. Gated to `report:view`. The optional
@@ -296,7 +316,6 @@ export async function searchReports(
   }
 
   const numeric = /^\d+$/.test(q);
-  const qLower = q.toLowerCase();
 
   // (a) Precise, unbounded server fetches routed by query shape. A text query
   //     is routed BOTH as a patient-name match AND as a server-side test
@@ -313,27 +332,43 @@ export async function searchReports(
   if (!numeric && !anchor) {
     routedPromises.push(fetchScoped({ testCode: q, pageSize: 500 }));
   }
-  // (b) Broad date-range window, filtered in-process across every field so
-  //     PID / client / bill# also match (bounded to this window).
-  const windowPromise = fetchScoped({ pageSize: 1000 });
+  // (b) Cross-field match over the WHOLE date range, done in SQL. This used to
+  //     be a page-capped worksheet window (`pageSize: 1000`) scanned in Node,
+  //     which silently missed anything past the first 1,000 samples — a month
+  //     across all business units holds 12,000+, so e.g. "HR204A" found nothing
+  //     until a BU was also picked and the window shrank enough to include it.
+  //     Paging the SP instead is not viable (~7-8s per 1,000 rows); the samples
+  //     table already carries every searchable field, so SQL answers it in
+  //     under a second. See db/read/reportSearch.ts.
+  const sqlHitsPromise = searchReportSamples({
+    from: filters.from,
+    to: filters.to,
+    q,
+    clientCodes: scopeCodes ? [...scopeCodes] : null,
+    businessUnit: baseFilters.businessUnit,
+    clientCode: typedCode,
+    limit: 1000,
+  });
 
-  const [routedRaw, windowRaw] = await Promise.all([
+  const [routedRaw, sqlHits] = await Promise.all([
     Promise.all(routedPromises).then((batches) => batches.flat()),
-    windowPromise,
+    sqlHitsPromise,
   ]);
   const routed = filterRowsByReportScope(routedRaw, scopeCodes);
-  const windowRows = filterRowsByReportScope(windowRaw, scopeCodes);
+  // Defence in depth — the SQL already scopes, but re-apply the same guard.
+  const hits = filterRowsByReportScope(sqlHits, scopeCodes);
 
-  // Union by sid; routed (precise) first, then window cross-field matches.
+  // Union by sid; routed (carries per-result values for an anchored test) first,
+  // then the SQL cross-field matches.
   const bySid = new Map<string, ReportSearchRow>();
   for (const r of routed) {
     if (!isReleasable(r)) continue;
     if (!bySid.has(r.sid)) bySid.set(r.sid, mapRow(r, anchor));
   }
-  for (const r of windowRows) {
-    if (bySid.has(r.sid)) continue;
-    if (!isReleasable(r)) continue;
-    if (rowMatchesQuery(r, qLower)) bySid.set(r.sid, mapRow(r, anchor));
+  for (const h of hits) {
+    if (bySid.has(h.sid)) continue;
+    if (!/(authoriz|authoris|print)/i.test(h.status ?? '')) continue;
+    bySid.set(h.sid, mapHit(h));
   }
 
   return annotateLocks(
