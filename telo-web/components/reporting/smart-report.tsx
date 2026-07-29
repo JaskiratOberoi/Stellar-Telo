@@ -196,6 +196,17 @@ function friendlyNameFor(infoName: string | undefined, row: SampleReportRow): st
   return base;
 }
 
+/** The reference range to print beside a result that has no gauge, or null when
+ *  the LIS carries no real range. Some derived results (e.g. the SGOT/SGPT
+ *  ratio) store a placeholder like "." or "-" — printing that as
+ *  "Healthy range: ." reads like a broken field, so it's dropped. A range must
+ *  contain at least one digit or letter to count. */
+function displayRange(raw: string | null | undefined): string | null {
+  const r = (raw ?? '').replace(/\s*\n\s*/g, ' · ').trim();
+  if (!r || !/[0-9a-z]/i.test(r)) return null;
+  return r;
+}
+
 /** Flatten the department → item → block tree into one analyte per numeric row. */
 function flattenAnalytes(
   departments: SampleReportDepartment[],
@@ -671,9 +682,9 @@ function ResultBlock({ a }: { a: Analyte }) {
             {a.gauge ? (
               <Gauge gauge={a.gauge} />
             ) : (
-              a.row.range && (
+              displayRange(a.row.range) && (
                 <div style={{ fontSize: '10px', color: MUTED, paddingTop: '6px' }}>
-                  Healthy range: {a.row.range.replace(/\s*\n\s*/g, ' · ')}
+                  Healthy range: {displayRange(a.row.range)}
                 </div>
               )
             )}
