@@ -42,6 +42,10 @@ const today = () => todayIST();
  *  app/api/reporting/pdf/bulk/route.ts. */
 const MAX_BULK = 25;
 
+/** Server-side cap on how many reports a search returns. Keep in sync with the
+ *  `.slice(0, 500)` / `pageSize: 500` in searchReports (actions/reporting.actions.ts). */
+const RESULT_CAP = 500;
+
 /** Shared <select> styling (matches the Input control). */
 const SELECT_CLASS =
   'flex h-9 w-full rounded-md border border-foreground/10 bg-input px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60';
@@ -155,6 +159,16 @@ export function ReportingView({
   // Balance-locked reports can't be viewed/printed/bulk-downloaded.
   const readyRows = (rows ?? []).filter((r) => r.ready && !r.locked);
   const selectedCount = selectedSids.size;
+
+  // Result totals for the summary bar. One row = one report (SID); the server
+  // groups by PID, so a single patient can span several rows — hence the
+  // separate patient count.
+  const resultCount = rows?.length ?? 0;
+  const patientCount = new Set((rows ?? []).map((r) => r.pid)).size;
+  const onHoldCount = (rows ?? []).filter((r) => r.locked).length;
+  // The server caps what it returns, so a full page means "at least this many",
+  // not "exactly this many" — say so rather than implying a precise total.
+  const atResultCap = resultCount >= RESULT_CAP;
 
   function toggleOne(sid: string) {
     setBulkError(null);
@@ -362,6 +376,36 @@ export function ReportingView({
               No results found for these filters.
             </p>
           ) : (
+            <>
+              {/* Totals for the current filters. */}
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-foreground/10 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">
+                  <span className="font-semibold text-foreground">
+                    {atResultCap ? `${RESULT_CAP}+` : resultCount}
+                  </span>{' '}
+                  {resultCount === 1 ? 'report' : 'reports'}
+                  {patientCount !== resultCount && (
+                    <>
+                      {' '}
+                      across{' '}
+                      <span className="font-semibold text-foreground">{patientCount}</span>{' '}
+                      {patientCount === 1 ? 'patient' : 'patients'}
+                    </>
+                  )}
+                  {onHoldCount > 0 && (
+                    <>
+                      {' · '}
+                      <span className="font-semibold text-destructive">{onHoldCount}</span> on
+                      hold
+                    </>
+                  )}
+                </span>
+                {atResultCap && (
+                  <span className="text-muted-foreground/80">
+                    Showing the first {RESULT_CAP} — narrow the dates or filters to see the rest.
+                  </span>
+                )}
+              </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -468,6 +512,7 @@ export function ReportingView({
                 })}
               </TableBody>
             </Table>
+            </>
           )}
         </div>
       )}
