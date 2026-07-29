@@ -73,9 +73,13 @@ function parseSegment(seg: string): ParsedRange | null {
   return null;
 }
 
-/** Labels marking the healthy band inside a banded multi-line range. */
+/** Labels marking the healthy band inside a banded multi-line range. The
+ *  `(?<!in)sufficien` guard is deliberate: it matches "Sufficiency" (the healthy
+ *  Vitamin-D band) but NOT "Insufficiency" (which also contains "sufficien" and
+ *  would otherwise be mistaken for the healthy band). "Deficiency" doesn't
+ *  contain "sufficien" so it's already excluded. */
 const NORMAL_BAND =
-  /(desirable|normal|optimal|sufficien|adequate|euthyroid|non[-\s]?diabetic|negative|low\s*risk)/i;
+  /(desirable|normal|optimal|(?<!in)sufficien|adequate|euthyroid|non[-\s]?diabetic|negative|low\s*risk)/i;
 
 /**
  * Parse the LIS free-text range into numeric bounds. `sex` narrows sex-split

@@ -150,6 +150,23 @@ function genderLabel(sex: string | null): string {
   return s;
 }
 
+/** Salutations that may already sit in front of a patient's name. */
+const NAME_TITLE = /^(mr|mrs|ms|miss|master|dr|smt|shri|sri|kum|km|baby|b\/o|c\/o|w\/o|s\/o|d\/o)\.?\s/i;
+
+/** "Prepared for" display name with a courtesy title. The LIS patient master
+ *  stores only name + gender, so we derive Mr./Ms. from sex — unless the name
+ *  already carries a title (then it's kept as-is). Marital titles (Mrs.) can't
+ *  be told apart from Ms. by gender alone, so female defaults to Ms. */
+function preparedForName(patientName: string | null, sex: string | null): string {
+  const raw = (patientName ?? '').trim();
+  const nm = titleCaseName(patientName);
+  if (!raw || nm === '—') return nm;
+  if (NAME_TITLE.test(raw)) return nm; // already titled
+  const s = (sex ?? '').trim();
+  const sal = /^m/i.test(s) ? 'Mr. ' : /^f/i.test(s) ? 'Ms. ' : '';
+  return `${sal}${nm}`;
+}
+
 function ageLabel(age: number | null, unit: string | null): string {
   if (age == null) return '—';
   return `${age} ${(unit ?? 'yrs').replace(/year\(s\)/i, 'yrs').trim()}`;
@@ -1333,7 +1350,7 @@ function Cover({ data }: { data: LabReportData }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '20px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex' }}>
             {[
-              ['Prepared for', name],
+              ['Prepared for', preparedForName(data.patientName, data.sex)],
               ['Sample', data.sid],
               ['Reported', fmtDate(data.reportedAt)],
             ].map(([k, v], i) => (
@@ -1495,7 +1512,7 @@ function Welcome({ data }: { data: LabReportData }) {
         }}
       >
         {[
-          ['Prepared for', titleCaseName(data.patientName)],
+          ['Prepared for', preparedForName(data.patientName, data.sex)],
           ['Age / Sex', `${ageLabel(data.age, data.ageUnit)} · ${genderLabel(data.sex)}`],
           ['Sample', data.sid],
           ['Collected', fmtDate(data.collectedAt)],
