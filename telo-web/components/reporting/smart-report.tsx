@@ -1158,20 +1158,28 @@ const COVER_STARS = [
 ];
 
 /**
- * Optional photographic cover background. Point this at a LICENSED image in
- * public/branding/ (e.g. '/branding/cover-photo.jpg' — a woman with a wearable /
- * at a wellness moment). When set, the cover shows the photo behind a dark scrim
- * that keeps the white text legible; when null, it falls back to the crafted
- * sunrise illustration. Keep the asset model-released for commercial/health use.
+ * Photographic cover backgrounds — one per patient gender, both LICENSED under
+ * the Pexels License (Ketut Subiyanto; commercial use, no attribution required)
+ * and pre-cropped to the A4 portrait ratio in public/branding/.
+ *
+ * Each is framed so the figure MATCHING the patient sits on the RIGHT, clear of
+ * the headline and tagline on the left — so unlike the earlier single-asset
+ * cover, neither is mirrored (mirroring would flip any text/logos in frame).
+ * Set to null to fall back to the crafted sunrise illustration.
  */
-const COVER_PHOTO_SRC: string | null = '/branding/cover-photo.jpg';
+const COVER_PHOTO_MALE: string | null = '/branding/cover-male.jpg';
+const COVER_PHOTO_FEMALE: string | null = '/branding/cover-female.jpg';
+
+/** Male patients get the jogging shot (man on the right); everyone else the
+ *  stretching shot (woman on the right). Both frame a couple, so the fallback
+ *  for an unknown or unspecified sex still reads naturally. */
+function coverPhotoFor(sex: string | null): string | null {
+  return /^m/i.test((sex ?? '').trim()) ? COVER_PHOTO_MALE : COVER_PHOTO_FEMALE;
+}
 
 function Cover({ data }: { data: LabReportData }) {
   const name = titleCaseName(data.patientName);
-  // The cover photo has the woman on the right (the prominent, text-clear side)
-  // by default — right for a female patient. For a male patient we mirror it so
-  // the man becomes the prominent figure and isn't lost behind the tagline.
-  const mirrorPhoto = /^m/i.test((data.sex ?? '').trim());
+  const coverPhoto = coverPhotoFor(data.sex);
   return (
     <div
       style={{
@@ -1288,11 +1296,11 @@ function Cover({ data }: { data: LabReportData }) {
 
       {/* Photographic background (when a licensed image is provided) — painted
           over the illustration, behind the content, with a scrim for legibility. */}
-      {COVER_PHOTO_SRC && (
+      {coverPhoto && (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={COVER_PHOTO_SRC}
+            src={coverPhoto}
             alt=""
             style={{
               position: 'absolute',
@@ -1300,7 +1308,6 @@ function Cover({ data }: { data: LabReportData }) {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              transform: mirrorPhoto ? 'scaleX(-1)' : undefined,
             }}
           />
           <div
@@ -1310,9 +1317,12 @@ function Cover({ data }: { data: LabReportData }) {
               inset: 0,
               // Dark on the left (where the tagline sits) fading to reveal the
               // subject on the right, plus a strong bottom band for the footer
-              // and a soft top wash for the logo.
+              // and a soft top wash for the logo. The horizontal ramp holds ~0.86
+              // across the whole text column (to ~44%) before falling away: the
+              // cover photos are bright daylight shots, and a lighter scrim left
+              // the headline sitting on sunlit grass/decking.
               background:
-                'linear-gradient(100deg, rgba(15,11,42,0.93) 0%, rgba(15,11,42,0.64) 30%, rgba(15,11,42,0.16) 55%, rgba(15,11,42,0) 74%), linear-gradient(180deg, rgba(15,11,42,0.5) 0%, rgba(15,11,42,0) 15%, rgba(15,11,42,0) 66%, rgba(12,9,36,0.96) 100%)',
+                'linear-gradient(100deg, rgba(15,11,42,0.95) 0%, rgba(15,11,42,0.86) 24%, rgba(15,11,42,0.60) 44%, rgba(15,11,42,0.20) 62%, rgba(15,11,42,0) 80%), linear-gradient(180deg, rgba(15,11,42,0.5) 0%, rgba(15,11,42,0) 15%, rgba(15,11,42,0) 66%, rgba(12,9,36,0.96) 100%)',
             }}
           />
         </>
