@@ -24,11 +24,12 @@ export default async function ReportingPage() {
     departments: [],
   }));
 
-  // Reporting only ever shows releasable samples (authorised / printed — see
-  // searchReports.isReleasable), so the status filter must only offer those;
-  // the pre-authorisation statuses would always yield an empty list.
-  const releasableStatuses = (lookups.statuses ?? []).filter((s) =>
-    /(authoriz|authoris|print)/i.test(s),
+  // Reporting only ever shows releasable samples (FULLY authorised / printed —
+  // see searchReports.isReleasable), so the status filter must only offer
+  // those; the pre-authorisation AND partially-* statuses would always yield
+  // an empty list.
+  const releasableStatuses = (lookups.statuses ?? []).filter(
+    (s) => /(authoriz|authoris|print)/i.test(s) && !/partial/i.test(s),
   );
 
   // Client-facing roles (client_reporting): lock the report scope to their own

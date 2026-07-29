@@ -241,23 +241,20 @@ export async function searchReports(
   const passesStatus = (row: ReportSearchRow) =>
     !statusSel || (row.status ?? '').trim().toLowerCase() === statusSel;
 
-  // A report (or partial report) can only be released once results are
-  // authorised. Show ONLY samples whose LIS status indicates authorisation or
-  // printing has happened — AUTHORIZED, PARTIALLY AUTHORIZED, PRINTED, PARTIALLY
-  // PRINTED. Everything pre-authorisation (SAMPLE REGISTERED, SAMPLE SENT,
-  // PARTIALLY TESTED, TESTED, PENDING, REJECTED) is hidden.
+  // A report can only be released once its results are FULLY authorised. Show
+  // ONLY samples at AUTHORIZED or PRINTED. The PARTIALLY-* statuses are
+  // excluded too (not just the pre-authorisation ones): a partially-authorised
+  // sample's PDF still includes its not-yet-authorised tests, so surfacing it
+  // here invited printing an incomplete clinical report. It appears once the
+  // lab authorises the remaining results.
   //
   // NB: do NOT gate on per-result `authorized` — every profile's Head/title row
   // carries auth=true even on a wholly-untested sample, so `results.some(
   // authorized)` is true for almost everything. The sample STATUS is the
   // reliable releasable signal.
-  //
-  // TODO(pre-prod, ~next week): a PARTIALLY-authorised/printed sample's generated
-  // PDF still includes its not-yet-authorised tests — getSampleReport() returns
-  // all result rows. Exclude unauthorised tests from the report before prod. See
-  // the detailed note above getSampleReport in db/read/sampleReport.ts.
   const isReleasable = (r: WorksheetReportRow) =>
-    /(authoriz|authoris|print)/i.test(r.status ?? '');
+    /(authoriz|authoris|print)/i.test(r.status ?? '') &&
+    !/partial/i.test(r.status ?? '');
 
   // Per-client report scope: null = unrestricted (super_admin/admin); otherwise
   // only the user's own client code(s). Applied to every fetched row so a
