@@ -151,6 +151,17 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
  *    is the same signal `isReleasable` trusts (the SP's per-result `authorized`
  *    flag is unreliable — see the note there).
  */
+/**
+ * Releasable = FULLY authorised or printed. The Partially-* statuses fail this
+ * on purpose: a partially-authorised sample's PDF still includes its
+ * not-yet-authorised tests. ONE definition — the SQL clause in
+ * db/read/reportSearch.ts (releasableOnly) must stay in step with it.
+ */
+function releasableStatus(s: string | null | undefined): boolean {
+  const v = s ?? '';
+  return /(authoriz|authoris|print)/i.test(v) && !/partial/i.test(v);
+}
+
 function mapHit(h: ReportSearchHit): ReportSearchRow {
   const status = (h.status ?? '').trim();
   return {
@@ -171,7 +182,7 @@ function mapHit(h: ReportSearchHit): ReportSearchRow {
       ymdFrom(h.regd_at) ??
       ymdFrom(h.last_modified_at) ??
       ymdFrom(h.sample_drawn),
-    ready: /(authoriz|authoris|print)/i.test(status) && !/partial/i.test(status),
+    ready: releasableStatus(status),
     locked: false,
     lockReason: null,
     dueAmount: 0,
@@ -252,9 +263,7 @@ export async function searchReports(
   // carries auth=true even on a wholly-untested sample, so `results.some(
   // authorized)` is true for almost everything. The sample STATUS is the
   // reliable releasable signal.
-  const isReleasable = (r: WorksheetReportRow) =>
-    /(authoriz|authoris|print)/i.test(r.status ?? '') &&
-    !/partial/i.test(r.status ?? '');
+  const isReleasable = (r: WorksheetReportRow) => releasableStatus(r.status);
 
   // Per-client report scope: null = unrestricted (super_admin/admin); otherwise
   // only the user's own client code(s). Applied to every fetched row so a
@@ -296,18 +305,48 @@ export async function searchReports(
       ),
     ).then((batches) => batches.flat());
 
-  // No universal query → plain date-range list (today's behaviour).
+  // No universal query → plain date-range list, answered by SQL over the WHOLE
+  // range. This used to be one page-capped worksheet fetch (`pageSize: 500`)
+  // post-filtered in Node — over a multi-week range the SP's 500-row window
+  // covered a sliver of the samples, so a range holding thousands of printed
+  // reports listed a few dozen. Same failure (and same fix) as the text search
+  // below; the cap is now spent on newest-first rows that are ALREADY
+  // releasable and filter-matched.
   if (!q) {
-    const rows = filterRowsByReportScope(
-      await fetchScoped({ pageSize: 500 }),
+    const hits = filterRowsByReportScope(
+      await searchReportSamples({
+        from: filters.from,
+        to: filters.to,
+        q: null,
+        testFilter: anchor || null,
+        clientCodes: scopeCodes ? [...scopeCodes] : null,
+        businessUnit: baseFilters.businessUnit,
+        clientCode: typedCode,
+        releasableOnly: true,
+        limit: 500,
+      }),
       scopeCodes,
     );
+    const bySid = new Map<string, ReportSearchRow>();
+    // With a Test filter set, the routed SP fetch still runs FIRST so anchored
+    // rows carry the test's headline value/unit — the SQL hits (no per-result
+    // array) fill in everything past the SP's window.
+    if (anchor) {
+      const routed = filterRowsByReportScope(
+        await fetchScoped({ pageSize: 500 }),
+        scopeCodes,
+      );
+      for (const r of routed) {
+        if (!isReleasable(r)) continue;
+        if (!bySid.has(r.sid)) bySid.set(r.sid, mapRow(r, anchor));
+      }
+    }
+    for (const h of hits) {
+      if (!bySid.has(h.sid)) bySid.set(h.sid, mapHit(h));
+    }
     return annotateLocks(
       groupByPid(
-        rows
-          .filter(isReleasable)
-          .map((r) => mapRow(r, anchor))
-          .filter(passesStatus),
+        Array.from(bySid.values()).filter(passesStatus).slice(0, 500),
       ),
     );
   }
@@ -344,6 +383,7 @@ export async function searchReports(
     clientCodes: scopeCodes ? [...scopeCodes] : null,
     businessUnit: baseFilters.businessUnit,
     clientCode: typedCode,
+    releasableOnly: true,
     limit: 1000,
   });
 
@@ -364,7 +404,7 @@ export async function searchReports(
   }
   for (const h of hits) {
     if (bySid.has(h.sid)) continue;
-    if (!/(authoriz|authoris|print)/i.test(h.status ?? '')) continue;
+    if (!releasableStatus(h.status)) continue;
     bySid.set(h.sid, mapHit(h));
   }
 

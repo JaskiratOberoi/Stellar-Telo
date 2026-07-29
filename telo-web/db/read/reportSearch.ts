@@ -57,8 +57,9 @@ export interface ReportSearchOptions {
   to: string;
   /** The universal query — matched across patient, SID, PID, client, bill# and
    *  the sample's test-name CSV (which carries package labels like
-   *  "[HR204A HEALTH PACKAGE]"). */
-  q: string;
+   *  "[HR204A HEALTH PACKAGE]"). Empty/omitted = LIST MODE: every sample in
+   *  the window that passes the other filters, newest first. */
+  q?: string | null;
   /** Restrict to these client codes (the caller's report scope). `null` =
    *  unrestricted. An empty array means "nothing visible" and returns []. */
   clientCodes: string[] | null;
@@ -66,19 +67,26 @@ export interface ReportSearchOptions {
   businessUnit?: string | null;
   /** Optional exact client code typed in the filter box. */
   clientCode?: string | null;
+  /** Optional test filter (the dedicated Test box) — contains-match over the
+   *  sample's test-name and test-code CSVs. */
+  testFilter?: string | null;
+  /** Only FULLY authorised/printed samples (excludes the Partially-* statuses)
+   *  — the Reporting tab's releasable rule, applied in SQL so the row cap is
+   *  spent on rows the caller will actually keep. */
+  releasableOnly?: boolean;
   /** Safety cap on rows returned. */
   limit?: number;
 }
 
 /**
- * SIDs in the window whose searchable text matches `q`. Returns at most `limit`
- * rows, newest first, so a very broad query can't drag the whole month back.
+ * SIDs in the window whose searchable text matches `q` — or, with no `q`, the
+ * plain date-range listing. Returns at most `limit` rows, newest first, so a
+ * very broad query can't drag the whole month back.
  */
 export async function searchReportSamples(
   opts: ReportSearchOptions,
 ): Promise<ReportSearchHit[]> {
   const q = (opts.q ?? '').trim();
-  if (!q) return [];
   if (opts.clientCodes !== null && opts.clientCodes.length === 0) return [];
   const limit = Math.max(1, Math.min(opts.limit ?? 500, 2000));
 
@@ -91,11 +99,40 @@ export async function searchReportSamples(
     const pool = await getPool();
     const req = pool
       .request()
-      .input('q', sql.NVarChar(120), `%${safe}%`)
       .input('from', sql.VarChar(10), opts.from)
       .input('to', sql.VarChar(10), opts.to)
-      .input('lim', sql.Int, limit)
-      .input('pidExact', sql.Int, numeric ? Number(q) : null);
+      .input('lim', sql.Int, limit);
+
+    // Universal-text clause only when a query was actually given (else this is
+    // the plain date-range listing).
+    let qClause = '';
+    if (q) {
+      req.input('q', sql.NVarChar(120), `%${safe}%`);
+      req.input('pidExact', sql.Int, numeric ? Number(q) : null);
+      qClause = `AND (
+             S.testnames   LIKE @q
+          OR P.name        LIKE @q
+          OR S.vailid      LIKE @q
+          OR U.MCCUnitCode LIKE @q
+          OR P.bill_number LIKE @q
+          OR (@pidExact IS NOT NULL AND P.id = @pidExact)
+        )`;
+    }
+
+    // Dedicated Test filter — the sample row carries both CSVs.
+    let testClause = '';
+    const tf = (opts.testFilter ?? '').trim();
+    if (tf) {
+      req.input('tf', sql.NVarChar(120), `%${tf.replace(/[%_[\]]/g, ' ').slice(0, 100)}%`);
+      testClause = `AND (S.testnames LIKE @tf OR S.testcodes LIKE @tf)`;
+    }
+
+    // Releasable = FULLY authorised or printed; Partially-* excluded (their
+    // PDFs would still include not-yet-authorised tests).
+    const releasableClause = opts.releasableOnly
+      ? `AND (STAT.status LIKE '%authoriz%' OR STAT.status LIKE '%print%')
+         AND STAT.status NOT LIKE '%partial%'`
+      : '';
 
     // Scope: bind each allowed client code as its own parameter.
     let scopeClause = '';
@@ -157,14 +194,9 @@ export async function searchReportSamples(
         ${scopeClause}
         ${clientClause}
         ${buClause}
-        AND (
-             S.testnames   LIKE @q
-          OR P.name        LIKE @q
-          OR S.vailid      LIKE @q
-          OR U.MCCUnitCode LIKE @q
-          OR P.bill_number LIKE @q
-          OR (@pidExact IS NOT NULL AND P.id = @pidExact)
-        )
+        ${releasableClause}
+        ${testClause}
+        ${qClause}
       ORDER BY S.modifieddate DESC
     `);
 
