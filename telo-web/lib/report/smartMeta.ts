@@ -294,6 +294,48 @@ interface Matcher {
  */
 const MATCHERS: Matcher[] = [
   /* ---------------- Heart & Cholesterol ---------------- */
+  // Ratios & "non-HDL" come FIRST: their names contain "HDL"/"LDL", so the
+  // generic single-lipid matchers below would otherwise mislabel them.
+  {
+    name: /CHOL\s*\/\s*HDL|CHOLESTEROL\s*\/\s*HDL|CHO\s*:\s*HDL|TC\s*[:/]\s*HDL|RISK\s*RATIO/i,
+    info: {
+      name: 'Total Cholesterol : HDL Ratio',
+      categoryId: 'heart',
+      what: 'Compares total cholesterol to protective HDL — a compact indicator of overall lipid balance.',
+      high: 'A high ratio means the balance is tilted away from protective HDL; the fix is the same as for high LDL/low HDL.',
+      low: "A low ratio is reassuring: it means your protective HDL is handling the cholesterol load well, and generally reflects a lower risk of heart disease.",
+    },
+  },
+  {
+    name: /LDL\s*\/\s*HDL/i,
+    info: {
+      name: 'LDL : HDL Ratio',
+      categoryId: 'heart',
+      what: 'Compares “bad” to “good” cholesterol; lower ratios are better for the heart.',
+      high: 'A high ratio suggests the lipid balance favours artery deposits.',
+      low: "A low ratio is a favourable sign: it means less 'bad' LDL relative to your protective HDL, and generally reflects a lower cardiovascular risk.",
+    },
+  },
+  {
+    name: /HDL\s*\/\s*LDL/i,
+    info: {
+      name: 'HDL : LDL Ratio',
+      categoryId: 'heart',
+      what: 'Compares protective HDL to artery-depositing LDL — here a HIGHER ratio is the healthy direction.',
+      high: 'A higher HDL:LDL ratio is favourable — more protective cholesterol relative to the harmful kind, generally reflecting a lower heart risk.',
+      low: 'A lower ratio means less protective HDL relative to LDL; the same steps that raise HDL and lower LDL help.',
+    },
+  },
+  {
+    name: /\bNON[-\s]?HDL/i,
+    info: {
+      name: 'Non-HDL Cholesterol',
+      categoryId: 'heart',
+      what: 'All the cholesterol that is not HDL — every particle type that can deposit in arteries, in one number.',
+      high: 'Treated much like high LDL: diet, activity, weight and — when advised — medication.',
+      low: "A low non-HDL is generally good for heart health and rarely causes symptoms. Only very low levels occasionally reflect nutrition, thyroid or liver issues worth checking.",
+    },
+  },
   {
     name: /\bHDL\b/i,
     info: {
@@ -339,36 +381,6 @@ const MATCHERS: Matcher[] = [
       high:
         'Often related to diet, weight, alcohol or uncontrolled blood sugar. Very high levels can also affect the pancreas. Usually improves well with lifestyle changes.',
       low: 'Low triglycerides are rarely a concern.',
-    },
-  },
-  {
-    name: /CHOL\s*\/\s*HDL|CHOLESTEROL\s*\/\s*HDL|CHO\s*:\s*HDL|RISK\s*RATIO/i,
-    info: {
-      name: 'Total Cholesterol : HDL Ratio',
-      categoryId: 'heart',
-      what: 'Compares total cholesterol to protective HDL — a compact indicator of overall lipid balance.',
-      high: 'A high ratio means the balance is tilted away from protective HDL; the fix is the same as for high LDL/low HDL.',
-      low: "A low ratio is reassuring: it means your protective HDL is handling the cholesterol load well, and generally reflects a lower risk of heart disease.",
-    },
-  },
-  {
-    name: /LDL\s*\/\s*HDL/i,
-    info: {
-      name: 'LDL : HDL Ratio',
-      categoryId: 'heart',
-      what: 'Compares “bad” to “good” cholesterol; lower ratios are better for the heart.',
-      high: 'A high ratio suggests the lipid balance favours artery deposits.',
-      low: "A low ratio is a favourable sign: it means less 'bad' LDL relative to your protective HDL, and generally reflects a lower cardiovascular risk.",
-    },
-  },
-  {
-    name: /\bNON[-\s]?HDL/i,
-    info: {
-      name: 'Non-HDL Cholesterol',
-      categoryId: 'heart',
-      what: 'All the cholesterol that is not HDL — every particle type that can deposit in arteries, in one number.',
-      high: 'Treated much like high LDL: diet, activity, weight and — when advised — medication.',
-      low: "A low non-HDL is generally good for heart health and rarely causes symptoms. Only very low levels occasionally reflect nutrition, thyroid or liver issues worth checking.",
     },
   },
   {
@@ -554,7 +566,20 @@ const MATCHERS: Matcher[] = [
     },
   },
   {
-    name: /\bUREA\b|BLOOD\s*UREA|\bBUN\b/i,
+    // BUN and Urea measure the same waste in different units and often BOTH sit
+    // on a KFT panel — give them distinct titles so they don't render as two
+    // identical "Urea" cards. BUN must precede the Urea matcher below.
+    name: /\bBUN\b|BLOOD\s*UREA\s*NITROGEN/i,
+    info: {
+      name: 'Blood Urea Nitrogen (BUN)',
+      categoryId: 'kidney',
+      what: 'The nitrogen part of urea — a protein-breakdown waste the kidneys clear. It measures the same thing as Urea, reported in a different unit.',
+      high: 'Can rise with reduced kidney function, dehydration or a high-protein diet.',
+      low: 'Often of little concern; can follow a low-protein diet or liver conditions.',
+    },
+  },
+  {
+    name: /\bUREA\b|BLOOD\s*UREA/i,
     info: {
       name: 'Urea',
       categoryId: 'kidney',
@@ -578,6 +603,19 @@ const MATCHERS: Matcher[] = [
   },
 
   /* ---------------- Liver Health ---------------- */
+  // Enzyme RATIO first — its name contains SGOT/SGPT, which the single-enzyme
+  // matchers below would otherwise capture.
+  {
+    name: /SG[OP]T\s*[\/:]\s*SG[PO]T|AST\s*[\/:]\s*ALT|ALT\s*[\/:]\s*AST/i,
+    info: {
+      name: 'AST : ALT Ratio',
+      categoryId: 'liver',
+      what: 'Compares two liver enzymes (AST and ALT). The balance between them is a clue to the type of liver stress.',
+      high: 'A higher AST:ALT ratio can accompany certain liver conditions; your doctor reads it together with your other liver results.',
+      low: 'A ratio below 1 is common and often seen with fatty liver; it is interpreted alongside your other liver tests.',
+      advice: 'This ratio is read in the context of your other liver enzymes. Your doctor will interpret it and advise if anything needs a closer look.',
+    },
+  },
   {
     name: /\bSGPT\b|\bALT\b|ALANINE\s*(AMINO)?TRANSAMINASE/i,
     info: {
@@ -633,6 +671,19 @@ const MATCHERS: Matcher[] = [
     },
   },
   {
+    // Total Protein FIRST: its name ("…with albumin and globulin") contains
+    // "albumin"/"globulin", which the matchers below would otherwise capture.
+    name: /TOTAL\s*PROTEIN|SERUM\s*PROTEIN/i,
+    info: {
+      name: 'Total Protein',
+      categoryId: 'liver',
+      what: 'All the protein in your blood (mainly albumin and globulin) — a broad marker of nutrition and liver/immune health.',
+      high: "A high total protein often just reflects dehydration concentrating the blood; sometimes it accompanies ongoing inflammation or infection.",
+      low: "A low total protein can mean the body is not absorbing or making enough protein, or is losing it, as with liver, kidney, or digestive issues.",
+      advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
+    },
+  },
+  {
     name: /ALBUMIN/i,
     info: {
       name: 'Albumin',
@@ -651,17 +702,6 @@ const MATCHERS: Matcher[] = [
       what: 'A family of blood proteins involved in immunity and transport.',
       high: 'Can rise with chronic infection or inflammation.',
       low: 'Low levels may relate to immune or liver conditions.',
-      advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
-    },
-  },
-  {
-    name: /TOTAL\s*PROTEIN|SERUM\s*PROTEIN/i,
-    info: {
-      name: 'Total Protein',
-      categoryId: 'liver',
-      what: 'All the protein in your blood (mainly albumin and globulin) — a broad marker of nutrition and liver/immune health.',
-      high: "A high total protein often just reflects dehydration concentrating the blood; sometimes it accompanies ongoing inflammation or infection.",
-      low: "A low total protein can mean the body is not absorbing or making enough protein, or is losing it, as with liver, kidney, or digestive issues.",
       advice: "Blood-protein levels reflect nutrition, hydration and how your liver and kidneys are working. Your doctor can pinpoint the cause and the right next step.",
     },
   },
@@ -948,6 +988,44 @@ const MATCHERS: Matcher[] = [
       high: 'High ferritin can follow inflammation, infection or iron overload.',
       adviceHigh: "Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.",
       adviceLow: "Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.",
+    },
+  },
+  {
+    // Iron-study markers whose names contain "Iron" — must precede the generic
+    // IRON matcher below, else they all mislabel as "Serum Iron".
+    name: /\bUIBC\b|UNSATURATED\s*IRON\s*BINDING/i,
+    info: {
+      name: 'UIBC (Unsaturated Iron Binding Capacity)',
+      categoryId: 'vitamins',
+      what: 'The spare capacity of your blood’s iron-carrying protein that isn’t yet holding iron — read together with iron and TIBC.',
+      high: 'A high UIBC usually reflects low iron stores, as more of the carrier protein sits empty and available.',
+      low: 'A low UIBC can accompany iron overload or ongoing inflammation, when little spare carrying capacity is left.',
+      adviceHigh: 'Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.',
+      adviceLow: 'Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.',
+    },
+  },
+  {
+    name: /\bTIBC\b|TOTAL\s*IRON\s*BINDING/i,
+    info: {
+      name: 'TIBC (Total Iron Binding Capacity)',
+      categoryId: 'vitamins',
+      what: 'The total amount of iron your blood could carry if its carrier protein were full — a marker of iron status.',
+      high: 'A high TIBC usually points to low iron stores (iron deficiency), as the body makes more carrier protein to grab what iron it can.',
+      low: 'A low TIBC can occur with iron overload, chronic illness, or low protein.',
+      adviceHigh: 'Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.',
+      adviceLow: 'Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.',
+    },
+  },
+  {
+    name: /TRANSFERRIN\s*SAT|\bTSAT\b|%\s*TRANSFERRIN|SATURATION.*TRANSFERRIN/i,
+    info: {
+      name: 'Transferrin Saturation',
+      categoryId: 'vitamins',
+      what: 'The percentage of your iron-carrying protein that is actually holding iron — one of the clearest single markers of iron status.',
+      high: 'A high saturation can indicate iron overload — too much iron in the body.',
+      low: 'A low saturation is an early sign of iron deficiency, before stores run fully down.',
+      adviceHigh: 'Raised iron stores are worth looking into, so avoid iron or high-dose vitamin-C supplements unless advised, and go easy on alcohol. Your doctor will check the cause and next steps.',
+      adviceLow: 'Build up iron with foods like lean meat, beans, lentils and leafy greens, paired with vitamin-C foods to absorb more. Your doctor may suggest a supplement and check the cause.',
     },
   },
   {
