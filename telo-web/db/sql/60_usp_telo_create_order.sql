@@ -84,7 +84,17 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     -- MRD free-text snapshot (the operator's "MRD + visit" field) recorded on
     -- each custom line for traceability. Required when a custom line's
     -- definition marks requires_mrd = 1 (enforced below).
-    @mrdText          NVARCHAR(200)  = NULL
+    @mrdText          NVARCHAR(200)  = NULL,
+    -- Origin marker prefix stamped into addedby/createdby/receivedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before and needs no change.
+    --
+    -- Stellar Infinity is taking over the ordering pipeline and passes 'inf:'.
+    -- Parameterised rather than forked: this procedure is ~1,000 lines of
+    -- pricing, gold-card, split-payment and custom-test rules, and a second
+    -- copy of it writing to the same tables would drift the first time either
+    -- side fixed a bug.
+    @origin           NVARCHAR(20)   = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -96,14 +106,20 @@ BEGIN
             @o BIT, @ec VARCHAR(20), @sampleCount INT = 0,
             @txn VARCHAR(24);
 
-    /* addedby/createdby/receivedby is stamped 'telo:<userId>'. This is an
-       INTENTIONAL Telo origin marker, not a defect: every Telo read path
+    /* addedby/createdby/receivedby is stamped '<@origin><userId>' — 'telo:1234'
+       by default, 'inf:1234' when Stellar Infinity is the caller. This is an
+       INTENTIONAL origin marker, not a defect: every Telo read path
        (the New-Order/pending-accession worklist in orders.ts, the ledger and
        receipts reports, the txn backfill) finds Telo orders with
        `addedby LIKE 'telo:%'`. It does NOT break the LIS report download — that
        failure was caused by NULL initial/MRNID (fixed below); hundreds of
        thousands of normal LIS rows carry a non-Username addedby and print fine.
-       Keep the marker so Telo can identify its own orders. */
+       Keep the marker so each platform can identify its own orders.
+
+       NOTE for anyone adding a read path that filters on the marker: while both
+       platforms are live, "created by our software" means telo: OR inf:. The
+       mobile-allowance gate below is the one place in this procedure that reads
+       it back, and it counts both — see the comment there for why. */
 
     /* Salutation kept in patient_master.initial (separate from name) — the LIS
        report download dereferences it, so it must never be NULL (an empty
@@ -207,17 +223,25 @@ BEGIN
         SELECT * FROM @emptySamples;
         RETURN;
     END
-    /* A mobile number may belong to at most 4 Telo-registered patients. The
+    /* A mobile number may belong to at most 4 self-registered patients. The
        form and registerOrder pre-check this live; this is the authoritative
-       gate. Only Telo-created rows count (addedby 'telo:%' — native LIS
-       patients don't consume the allowance) and only a NEW patient row can
-       consume a slot (@patientId reuse adds no patient). */
+       gate. Only rows OUR software created count (native LIS patients don't
+       consume the allowance) and only a NEW patient row can consume a slot
+       (@patientId reuse adds no patient).
+
+       Counts telo: AND inf: deliberately. The allowance is a property of the
+       mobile number, not of whichever front end happened to take the booking —
+       so while both platforms are live it has to be ONE shared allowance.
+       Counting only the caller's own marker would let a number reach four in
+       Telo and four again in Infinity, silently doubling a limit that exists
+       to stop one number being used to register a whole village. */
     IF (@patientId IS NULL OR @patientId = 0)
        AND @mobile IS NOT NULL AND LTRIM(RTRIM(@mobile)) <> ''
     BEGIN
         DECLARE @mobileUses INT =
             (SELECT COUNT(*) FROM dbo.tbl_med_mcc_patient_master
-             WHERE mobile_number = @mobile AND addedby LIKE 'telo:%');
+             WHERE mobile_number = @mobile
+               AND (addedby LIKE 'telo:%' OR addedby LIKE 'inf:%'));
         IF @mobileUses >= 4
         BEGIN
             SELECT ok = CAST(0 AS BIT), error_code = 'CONFLICT',
@@ -497,7 +521,7 @@ BEGIN
                  CAST(GETDATE() AS DATE),
                  GETDATE(), @refDoctor, @refCustomer, 1,
                  @clinicalHistory, @mobile, '', @email,
-                 @mrnId, CONCAT(N'telo:', @userId), GETDATE());
+                 @mrnId, CONCAT(@origin, @userId), GETDATE());
             SET @pid = SCOPE_IDENTITY();
             SET @pname = @name;
 
@@ -553,7 +577,7 @@ BEGIN
              test_type, addedby, addeddate, mobile_number)
         SELECT @pid, l.testMasterId, l.code, l.name, l.rate,
                CASE l.testtype WHEN 'p' THEN 'Profile' WHEN 'm' THEN 'Master' ELSE 'Test' END,
-               CONCAT(N'telo:', @userId), GETDATE(), LEFT(@mobile, 12)
+               CONCAT(@origin, @userId), GETDATE(), LEFT(@mobile, 12)
         FROM @lines l;
 
         /* ③ sample rows — ONE per distinct sample type.
@@ -571,7 +595,7 @@ BEGIN
                LEFT(g.csvCodes, 1000),
                LEFT(g.csvNames, 1000),
                LEFT(g.csvTypes, 500),
-               s.vailid, 1, CONCAT(N'telo:', @userId), GETDATE(), GETDATE(),
+               s.vailid, 1, CONCAT(@origin, @userId), GETDATE(), GETDATE(),
                GETDATE(), @buCode, LEFT(@mobile, 12)
         FROM #groups g
         JOIN @sids s ON s.sampleTypeId = g.sampleTypeId;
@@ -639,7 +663,7 @@ BEGIN
              @balance, @headerPayType, @payMode, @refDoctor, @refCustomer,
              LEFT(@mobile,10), LEFT(@email,50),
              CONVERT(VARCHAR(10), @ageType), 1,
-             CONCAT(N'telo:', @userId), GETDATE());
+             CONCAT(@origin, @userId), GETDATE());
         SET @billId = SCOPE_IDENTITY();
 
         /* Gold Card sidecar (Telo-level): records which card slashed this bill
@@ -651,7 +675,7 @@ BEGIN
                 (@billId,
                  LEFT(LTRIM(RTRIM(@goldCardNumber)), 50),
                  LEFT(LTRIM(RTRIM(@goldCardHolder)), 200),
-                 50, CONCAT(N'telo:', @userId));
+                 50, CONCAT(@origin, @userId));
 
         /* ⑤ billing line items */
         INSERT INTO dbo.tbl_billing_patient_test_detail
@@ -683,7 +707,7 @@ BEGIN
             SELECT @billId, @pid, c.customTestId, c.code, c.name,
                    c.unitAmount, c.qty,
                    NULLIF(LTRIM(RTRIM(@mrdText)), N''), @mcc,
-                   CONCAT(N'telo:', @userId)
+                   CONCAT(@origin, @userId)
             FROM @customLines c;
         END
 
@@ -705,7 +729,7 @@ BEGIN
                  card_number)
             OUTPUT inserted.id INTO @newReceipts (rid)
             SELECT @billId, GETDATE(), p.amount,
-                   CONCAT(N'telo:', @userId), '1', p.method,
+                   CONCAT(@origin, @userId), '1', p.method,
                    LEFT(p.ref, 50)
             FROM @pay p;
 
