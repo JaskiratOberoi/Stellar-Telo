@@ -56,10 +56,15 @@ BEGIN
                message = N'Bill not found', balance = CAST(NULL AS INT);
         RETURN;
     END
-    IF @addedby NOT LIKE 'telo:%'
+    -- Widened to admit Infinity, matching usp_telo_set_bill_discount,
+    -- usp_telo_void_receipt and usp_telo_edit_receipt_amount. Without it an
+    -- Infinity-created bill can be raised but never corrected: no cancel, so a
+    -- mis-booked test stays billed for ever with no path back. Telo callers are
+    -- unaffected — 'telo:%' still matches exactly as before.
+    IF @addedby NOT LIKE 'telo:%' AND @addedby NOT LIKE 'inf:%'
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = N'Only tests on Telo-created bills can be cancelled here.',
+               message = N'Only tests on Telo- or Infinity-created bills can be cancelled here.',
                balance = CAST(NULL AS INT);
         RETURN;
     END

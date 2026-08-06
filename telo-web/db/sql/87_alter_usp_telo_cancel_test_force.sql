@@ -53,10 +53,14 @@ BEGIN
                message = N'Bill not found', balance = CAST(NULL AS INT);
         RETURN;
     END
-    IF @addedby NOT LIKE 'telo:%'
+    -- Widened to admit Infinity — see the same change in script 84. Both files
+    -- carry it because 87 is the one actually deployed (it runs after 84 and
+    -- wins), but a re-run of 84 alone would otherwise silently revert the
+    -- widening and break Infinity's cancel with no deploy to point at.
+    IF @addedby NOT LIKE 'telo:%' AND @addedby NOT LIKE 'inf:%'
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = N'Only tests on Telo-created bills can be cancelled here.',
+               message = N'Only tests on Telo- or Infinity-created bills can be cancelled here.',
                balance = CAST(NULL AS INT);
         RETURN;
     END
