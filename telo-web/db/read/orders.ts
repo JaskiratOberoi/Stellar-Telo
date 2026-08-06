@@ -287,7 +287,7 @@ export async function getOrder(
              b.discount_amount AS discount, b.amount_paid AS amountPaid,
              -- Telo writes patient_id into medid so we can join bill→patient.
              TRY_CONVERT(INT, b.medid) AS patientId,
-             -- Registering Telo user (addedby='telo:<id>') → "Prepared by".
+             -- Registering user (addedby='telo:<id>' or 'inf:<id>') → "Prepared by".
              NULLIF(LTRIM(RTRIM(CONCAT(uu.firstname, ' ', uu.lastname))), '') AS preparedByUser,
              -- The exact Telo login that registered the bill (badge on receipt).
              uu.Username AS registeredByUsername,
@@ -299,8 +299,12 @@ export async function getOrder(
       LEFT JOIN dbo.tbl_med_mcc_patient_master p
             ON p.id = TRY_CONVERT(INT, b.medid)
       LEFT JOIN dbo.tbl_med_user_master uu
-            ON b.addedby LIKE 'telo:%'
-           AND uu.id = TRY_CONVERT(INT, STUFF(b.addedby, 1, 5, ''))
+            -- Split on the colon rather than a fixed offset. STUFF(...,1,5,'')
+            -- assumed a 5-character 'telo:' prefix; Infinity's 'inf:' is four,
+            -- so the old expression silently produced no user for an Infinity
+            -- bill and its "Prepared by" came out blank.
+            ON (b.addedby LIKE 'telo:%' OR b.addedby LIKE 'inf:%')
+           AND uu.id = TRY_CONVERT(INT, SUBSTRING(b.addedby, CHARINDEX(':', b.addedby) + 1, 20))
       LEFT JOIN dbo.telo_account ta_u ON ta_u.user_id = uu.id
       WHERE b.id = @bid ${scopeClause}
     `);
@@ -647,7 +651,13 @@ export async function listPendingAccessions(
                b.patientname AS patientName, b.mcc_code AS mccCode,
                b.amount AS total, b.Balance AS balance
         FROM dbo.tbl_billing_patient_detail b
-        WHERE b.addedby LIKE 'telo:%'
+        -- telo: OR inf:. Stellar Infinity books orders into the same tables and
+        -- stamps 'inf:<id>'. Matching only telo: would leave an Infinity order
+        -- invisible in this queue, so nobody here would ever allot its barcode
+        -- and its sample would sit unaccessioned with nothing reporting it.
+        -- The lab is one lab; both platforms' orders belong in one queue.
+        -- Native LIS orders stay excluded — they are accessioned in the LIS.
+        WHERE (b.addedby LIKE 'telo:%' OR b.addedby LIKE 'inf:%')
           AND TRY_CONVERT(INT, b.medid) IS NOT NULL
           ${scopeClause}
           ${kindClause}
@@ -782,7 +792,8 @@ export async function listPendingRegistrations(
                TRY_CONVERT(INT, b.medid) AS patientId,
                b.patientname AS patientName, b.mcc_code AS mccId
         FROM dbo.tbl_billing_patient_detail b
-        WHERE b.addedby LIKE 'telo:%'
+        -- telo: OR inf: — see the note on the pending-accessions query above.
+        WHERE (b.addedby LIKE 'telo:%' OR b.addedby LIKE 'inf:%')
           AND TRY_CONVERT(INT, b.medid) IS NOT NULL
           ${scopeClause}
           ${kindClause}
