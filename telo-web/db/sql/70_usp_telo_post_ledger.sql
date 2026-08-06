@@ -1,8 +1,8 @@
-/*
+﻿/*
  * 70_usp_telo_post_ledger.sql
  *
  * DEPRECATED / NOT CALLED. Telo no longer debits the franchise wallet at order
- * registration — the LIS does it when the order is moved Accessioning →
+ * registration â€” the LIS does it when the order is moved Accessioning â†’
  * Worksheet via the Accession "Register" button (CheckTransCash). Posting it
  * from Telo too would double-debit. Kept deployed for reference / rollback.
  *
@@ -14,7 +14,7 @@
  * Called INSIDE the create_order transaction. account_master row created on
  * first use (some MCCs have none yet).
  *
- * Pure OUTPUT params — emits NO result set so it composes cleanly inside
+ * Pure OUTPUT params â€” emits NO result set so it composes cleanly inside
  * usp_telo_create_order's nested EXEC.
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_post_ledger
@@ -26,7 +26,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_post_ledger
     @note            NVARCHAR(100) = N'Telo order',
     @closing_balance INT          OUTPUT,
     @ok              BIT          OUTPUT,
-    @error_code      VARCHAR(20)  OUTPUT
+    @error_code      VARCHAR(20)  OUTPUT,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -55,7 +59,7 @@ BEGIN
 
     UPDATE dbo.tbl_med_mcc_account_master
     SET currentbalance = @closing_balance,
-        lastupdatedby = CONCAT(N'telo:', @userId),
+        lastupdatedby = CONCAT(@origin, @userId),
         lastupdateddate = GETDATE()
     WHERE mcccode = @mcc;
 
@@ -65,7 +69,7 @@ BEGIN
     VALUES
         (@mcc, 3, GETDATE(), @amount,
          CONCAT(@note, N' (vailid ', @vailid, N')'),
-         CONCAT(N'telo:', @userId), GETDATE(), 1);
+         CONCAT(@origin, @userId), GETDATE(), 1);
 
     SET @ok = 1;
 END

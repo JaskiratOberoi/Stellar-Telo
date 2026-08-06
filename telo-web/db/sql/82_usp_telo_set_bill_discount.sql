@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 82_usp_telo_set_bill_discount.sql
  *
  * Sets the ABSOLUTE discount on an existing Telo bill and recomputes Balance.
@@ -12,9 +12,9 @@
  * Per product decision, an over-discount IS allowed: if discount + amount_paid
  * exceeds the gross amount the Balance goes negative, signalling a refund is
  * due (the operator then records that refund separately). The only bounds are
- * 0 <= @discount <= amount — a discount larger than the gross bill is rejected.
+ * 0 <= @discount <= amount â€” a discount larger than the gross bill is rejected.
  *
- * Does NOT touch the LIS client account (tbl_med_mcc_account_*) — Telo bills
+ * Does NOT touch the LIS client account (tbl_med_mcc_account_*) â€” Telo bills
  * are B2C and tracked entirely in Telo's billing tables.
  *
  * Returns { ok, error_code, message, balance INT }.
@@ -22,7 +22,11 @@
 CREATE OR ALTER PROCEDURE dbo.usp_telo_set_bill_discount
     @billId    INT,
     @discount  INT,
-    @userId    INT = NULL
+    @userId    INT = NULL,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -42,7 +46,7 @@ BEGIN
                message = N'Bill not found', balance = CAST(NULL AS INT);
         RETURN;
     END
-    IF @addedby NOT LIKE 'telo:%'
+    IF @addedby NOT LIKE 'telo:%' AND @addedby NOT LIKE 'inf:%'
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'Only Telo-created bills can be edited here.',
@@ -59,7 +63,7 @@ BEGIN
     IF @discount > @amount
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = CONCAT(N'Discount cannot exceed the bill amount (₹', @amount, N').'),
+               message = CONCAT(N'Discount cannot exceed the bill amount (â‚¹', @amount, N').'),
                balance = CAST(NULL AS INT);
         RETURN;
     END
@@ -70,7 +74,7 @@ BEGIN
         UPDATE dbo.tbl_billing_patient_detail
         SET discount_amount = @discount,
             Balance         = @amount - @discount - @paid,
-            updatedby       = CONCAT(N'telo:', ISNULL(@userId, 0)),
+            updatedby       = CONCAT(@origin, ISNULL(@userId, 0)),
             updateddate     = GETDATE()
         WHERE id = @billId;
 

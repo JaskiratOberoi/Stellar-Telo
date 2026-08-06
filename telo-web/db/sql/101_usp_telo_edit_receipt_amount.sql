@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 101_usp_telo_edit_receipt_amount.sql
  *
  * EDITS the amount of a single already-recorded receipt (payment OR refund) on
@@ -7,12 +7,12 @@
  * receipts, non-positive amounts and blank reasons.
  *
  * The receipt row keeps its id, telo_txn number, recd_date, pay_mode and
- * reference EXACTLY as recorded — only `amount` is updated in place, so every
+ * reference EXACTLY as recorded â€” only `amount` is updated in place, so every
  * read that sums receipts is automatically consistent. The bill's
  * amount_paid / Balance shift by the delta (@newAmount - old):
  *   - payment (receive_status='1'):  amount_paid += delta,  Balance -= delta
  *   - refund  (receive_status='2'):  amount_paid -= delta,  Balance += delta
- * One row is appended to dbo.telo_receipt_edit per edit (who / when / from →
+ * One row is appended to dbo.telo_receipt_edit per edit (who / when / from â†’
  * to / why), so the order page can show the "modified" badge and the full
  * trail survives repeat edits.
  *
@@ -25,7 +25,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_edit_receipt_amount
     @billId    INT,
     @newAmount INT,
     @userId    INT = NULL,
-    @reason    NVARCHAR(200) = NULL
+    @reason    NVARCHAR(200) = NULL,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -83,7 +87,7 @@ BEGIN
                balance = CAST(NULL AS INT);
         RETURN;
     END
-    IF @addedby NOT LIKE 'telo:%'
+    IF @addedby NOT LIKE 'telo:%' AND @addedby NOT LIKE 'inf:%'
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'Only receipts on Telo-created bills can be edited.',
@@ -93,7 +97,7 @@ BEGIN
     END
 
     -- A voided receipt no longer counts toward amount_paid, and the void row
-    -- snapshots the amount as it was — editing it now would corrupt both.
+    -- snapshots the amount as it was â€” editing it now would corrupt both.
     IF EXISTS (SELECT 1 FROM dbo.telo_receipt_void WHERE receipt_id = @receiptId)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
@@ -122,7 +126,7 @@ BEGIN
         VALUES
             (@receiptId, @billId, @old, @newAmount, @userId, @cleanReason);
 
-        -- Amount only — id, telo_txn number, recd_date, pay_mode and the
+        -- Amount only â€” id, telo_txn number, recd_date, pay_mode and the
         -- reference stay exactly as originally recorded.
         UPDATE dbo.tbl_billing_patient_amount_receipt
         SET amount = @newAmount
@@ -135,7 +139,7 @@ BEGIN
             Balance     = CASE WHEN @status = '2'
                                THEN ISNULL(Balance, amount) + @delta
                                ELSE ISNULL(Balance, amount) - @delta END,
-            updatedby   = CONCAT(N'telo:', ISNULL(@userId, 0)),
+            updatedby   = CONCAT(@origin, ISNULL(@userId, 0)),
             updateddate = GETDATE()
         WHERE id = @billId;
 

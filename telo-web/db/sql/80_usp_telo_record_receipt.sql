@@ -1,11 +1,11 @@
-/*
+﻿/*
  * 80_usp_telo_record_receipt.sql
  *
- * Records a payment against an EXISTING bill — Telo-internal ONLY. Atomic:
+ * Records a payment against an EXISTING bill â€” Telo-internal ONLY. Atomic:
  * inserts a receipt row, bumps amount_paid, recomputes Balance.
  *
  * It deliberately does NOT post to the LIS client account
- * (tbl_med_mcc_account_*). Telo is the B2C portal — patient payments are
+ * (tbl_med_mcc_account_*). Telo is the B2C portal â€” patient payments are
  * tracked entirely within Telo's own billing tables. The LIS is the B2B
  * portal: its client-account ledger is settled manually when the franchise
  * clears its balance. Franchise test-charge debits remain the LIS's job
@@ -21,7 +21,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_record_receipt
     @amount      INT,
     @payMode     VARCHAR(50)  = N'Online',
     @gatewayRef  VARCHAR(100) = NULL,
-    @userId      INT          = NULL
+    @userId      INT          = NULL,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -61,7 +65,7 @@ BEGIN
              pay_mode, card_number)
         VALUES
             (@billId, GETDATE(), @amount,
-             CONCAT(N'telo:', ISNULL(@userId, 0)), '1',
+             CONCAT(@origin, ISNULL(@userId, 0)), '1',
              @payMode, @gatewayRef);
         SET @rid = SCOPE_IDENTITY();
         SET @txn = CONCAT(
@@ -77,7 +81,7 @@ BEGIN
         UPDATE dbo.tbl_billing_patient_detail
         SET amount_paid = ISNULL(amount_paid, 0) + @amount,
             Balance = ISNULL(Balance, amount) - @amount,
-            updatedby = CONCAT(N'telo:', ISNULL(@userId, 0)),
+            updatedby = CONCAT(@origin, ISNULL(@userId, 0)),
             updateddate = GETDATE()
         WHERE id = @billId;
 

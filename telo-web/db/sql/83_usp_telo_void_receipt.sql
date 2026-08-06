@@ -1,4 +1,4 @@
-/*
+﻿/*
  * 83_usp_telo_void_receipt.sql
  *
  * VOIDS a single receipt (payment OR refund) on an existing Telo bill, without
@@ -21,7 +21,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_void_receipt
     @receiptId INT,
     @billId    INT,
     @userId    INT = NULL,
-    @reason    NVARCHAR(200) = NULL
+    @reason    NVARCHAR(200) = NULL,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -57,7 +61,7 @@ BEGIN
                already_voided = CAST(0 AS BIT), balance = CAST(NULL AS INT);
         RETURN;
     END
-    IF @addedby NOT LIKE 'telo:%'
+    IF @addedby NOT LIKE 'telo:%' AND @addedby NOT LIKE 'inf:%'
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
                message = N'Only receipts on Telo-created bills can be voided.',
@@ -65,7 +69,7 @@ BEGIN
         RETURN;
     END
 
-    -- Idempotent: already voided → no-op, report current balance.
+    -- Idempotent: already voided â†’ no-op, report current balance.
     IF EXISTS (SELECT 1 FROM dbo.telo_receipt_void WHERE receipt_id = @receiptId)
     BEGIN
         SELECT ok = CAST(1 AS BIT), error_code = CAST(NULL AS VARCHAR(20)),
@@ -90,7 +94,7 @@ BEGIN
             Balance     = CASE WHEN @status = '2'
                                THEN ISNULL(Balance, amount) - @amount
                                ELSE ISNULL(Balance, amount) + @amount END,
-            updatedby   = CONCAT(N'telo:', ISNULL(@userId, 0)),
+            updatedby   = CONCAT(@origin, ISNULL(@userId, 0)),
             updateddate = GETDATE()
         WHERE id = @billId;
 

@@ -1,14 +1,14 @@
-/*
+﻿/*
  * 85_usp_telo_record_mcc_payment.sql
  *
  * Records a MANUAL client payment (deposit toward Noble) into the shared LIS
- * franchise-wallet ledger — the SAME tables the LIS Admin_General/Mcc_Account.aspx
+ * franchise-wallet ledger â€” the SAME tables the LIS Admin_General/Mcc_Account.aspx
  * "Save" posts to (tbl_med_mcc_account_master / _detail). Because Telo's Client
  * Accounts read and the LIS screen both derive their figures from these two
  * tables, a payment posted here reconciles identically in BOTH portals.
  *
  * Mirrors the proven write in usp_telo_post_ledger (UPDLOCK on the master row,
- * auto-create it on first use) but as a CREDIT/Payment — the inverse of a debit:
+ * auto-create it on first use) but as a CREDIT/Payment â€” the inverse of a debit:
  *   - tbl_med_mcc_account_master.currentbalance += @amount,
  *                                totaldeposited  += @amount
  *   - tbl_med_mcc_account_detail row: credittype = 1 (Payment),
@@ -17,16 +17,16 @@
  *        attribute and total the row).
  *
  * @mode (deposittype) follows the LIS GetPaymentMode map:
- *   1 DD · 2 Cheque · 3 Cash · 4 NEFT/iNet/Transfer · 5 Online · 6 Other · 7 Reject
+ *   1 DD Â· 2 Cheque Â· 3 Cash Â· 4 NEFT/iNet/Transfer Â· 5 Online Â· 6 Other Â· 7 Reject
  *
- * @depositDate is 'YYYY-MM-DD' (or NULL → now), CAST to DATETIME — same
+ * @depositDate is 'YYYY-MM-DD' (or NULL â†’ now), CAST to DATETIME â€” same
  * calendar-day handling the date-bounded reads in db/read/mccLedger.ts use.
  *
  * Returns: { ok, error_code, message, new_balance }
  * Not idempotent by design: each call posts one payment row, exactly like the
  * LIS screen's Save. The calling server action throttles + audits.
  *
- * Idempotent to DEPLOY (CREATE OR ALTER). Touches shared LIS tables — treat any
+ * Idempotent to DEPLOY (CREATE OR ALTER). Touches shared LIS tables â€” treat any
  * deploy as a production migration.
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_record_mcc_payment
@@ -34,9 +34,13 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_record_mcc_payment
     @mcc         INT,
     @amount      INT,
     @mode        INT           = 3,     -- deposittype; default Cash
-    @depositDate VARCHAR(10)   = NULL,  -- 'YYYY-MM-DD' or NULL → GETDATE()
+    @depositDate VARCHAR(10)   = NULL,  -- 'YYYY-MM-DD' or NULL â†’ GETDATE()
     @chequeNo    NVARCHAR(50)  = NULL,
-    @reason      NVARCHAR(200) = NULL
+    @reason      NVARCHAR(200) = NULL,
+    -- Origin marker prefix stamped into addedby/updatedby/lastupdatedby, as
+    -- '<origin><userId>'. Defaulted to 'telo:' so every existing Telo caller
+    -- behaves exactly as before. Stellar Infinity passes 'inf:'.
+    @origin NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -75,7 +79,7 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        /* Some clients have no wallet row yet — create it on first use, exactly
+        /* Some clients have no wallet row yet â€” create it on first use, exactly
            like usp_telo_post_ledger does. */
         IF NOT EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_account_master WHERE mcccode = @mcc)
             INSERT INTO dbo.tbl_med_mcc_account_master (mcccode, totaldeposited, currentbalance)
@@ -86,13 +90,13 @@ BEGIN
         WHERE mcccode = @mcc;
 
         /* A payment CREDITS the wallet (raises the balance / reduces what the
-           client owes) — inverse of the test-charge debit in post_ledger. */
+           client owes) â€” inverse of the test-charge debit in post_ledger. */
         SET @new = ISNULL(@cur, 0) + @amount;
 
         UPDATE dbo.tbl_med_mcc_account_master
         SET currentbalance  = @new,
             totaldeposited  = ISNULL(totaldeposited, 0) + @amount,
-            lastupdatedby   = CONCAT(N'telo:', @userId),
+            lastupdatedby   = CONCAT(@origin, @userId),
             lastupdateddate = GETDATE()
         WHERE mcccode = @mcc;
 
@@ -103,7 +107,7 @@ BEGIN
             (@mcc, 1, @mode, @dt, @amount,
              LEFT(NULLIF(LTRIM(RTRIM(@chequeNo)), N''), 50),
              LEFT(NULLIF(LTRIM(RTRIM(@reason)),  N''), 200),
-             CONCAT(N'telo:', @userId), GETDATE(), 0);
+             CONCAT(@origin, @userId), GETDATE(), 0);
 
         COMMIT;
 
