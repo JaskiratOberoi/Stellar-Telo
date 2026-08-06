@@ -25,7 +25,11 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_add_sids
     @userId    INT,
     @patientId INT,
     @mcc       INT,
-    @sids      dbo.TeloSampleSid READONLY
+    @sids      dbo.TeloSampleSid READONLY,
+    -- Origin marker prefix, as '<origin><userId>'. Defaulted to 'telo:' so
+    -- every existing Telo caller behaves exactly as before. Stellar Infinity
+    -- passes 'inf:'. Same rationale as usp_telo_create_order.
+    @origin    NVARCHAR(20) = N'telo:'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -36,9 +40,11 @@ BEGIN
             @extraTypes NVARCHAR(200), @dupVailids NVARCHAR(400),
             @filledTypes NVARCHAR(400);
 
-    /* Sample rows are stamped 'telo:<userId>' — the intentional Telo origin
-       marker every Telo read path keys on (addedby LIKE 'telo:%'). See
-       usp_telo_create_order for the full rationale. */
+    /* Sample rows are stamped '<@origin><userId>' — 'telo:1234' by default,
+       'inf:1234' when Stellar Infinity is the caller. The intentional origin
+       marker every read path keys on. See usp_telo_create_order for the full
+       rationale, including why a read path that filters on the marker must
+       match telo: OR inf: while both platforms are live. */
 
     DECLARE @emptySamples TABLE (
         sample_id INT, vailid NVARCHAR(50),
@@ -262,7 +268,7 @@ BEGIN
                LEFT(g.csvCodes, 1000),
                LEFT(g.csvNames, 1000),
                LEFT(g.csvTypes, 500),
-               s.vailid, 1, CONCAT(N'telo:', @userId), GETDATE(), GETDATE(),
+               s.vailid, 1, CONCAT(@origin, @userId), GETDATE(), GETDATE(),
                GETDATE(), @buCode, LEFT(@mobile, 12)
         FROM #groups g
         JOIN @sids s ON s.sampleTypeId = g.sampleTypeId;
