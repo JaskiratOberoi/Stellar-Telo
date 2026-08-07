@@ -18,6 +18,7 @@ export function ReportPreview({
   date,
   patientName,
   profileName,
+  smartAvailable = false,
   onClose,
 }: {
   sid: string;
@@ -28,6 +29,10 @@ export function ReportPreview({
    *  filename (PatientName_SID_ProfileName.pdf). Null when the search had no
    *  single-test filter. */
   profileName: string | null;
+  /** True only when this patient's order includes the paid 'Smart Report'
+   *  custom test (₹99) — the Smart Report button is hidden otherwise, and the
+   *  smart-pdf route enforces the same rule server-side. */
+  smartAvailable?: boolean;
   onClose: () => void;
 }) {
   const dateParam = date ? `&date=${encodeURIComponent(date)}` : '';
@@ -411,17 +416,19 @@ export function ReportPreview({
                 {downloading ? 'Preparing…' : 'Download PDF'}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={downloadSmart}
-              disabled={smartBusy}
-              title="Download the patient-friendly Smart Report (wellness format with patient-friendly explanations and visual gauges)"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {smartBusy ? 'Preparing…' : 'Smart Report'}
-            </Button>
+            {smartAvailable && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={downloadSmart}
+                disabled={smartBusy}
+                title="Download the patient-friendly Smart Report (wellness format with patient-friendly explanations and visual gauges)"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {smartBusy ? 'Preparing…' : 'Smart Report'}
+              </Button>
+            )}
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close preview">
               <X className="h-4 w-4" />
             </Button>

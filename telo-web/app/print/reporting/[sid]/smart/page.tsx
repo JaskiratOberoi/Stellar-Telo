@@ -4,6 +4,7 @@ import { hasCapability } from '@/auth/rbac';
 import { verifyReportToken } from '@/lib/report/reportLink';
 import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
+import { sidHasSmartReport } from '@/db/read/customTests';
 import { SmartReport } from '@/components/reporting/smart-report';
 import { assembleLabReportData } from '@/lib/report/assembleReportData';
 
@@ -39,6 +40,10 @@ export default async function SmartReportingPrintFragment({
     const user = await requireSession();
     if (!hasCapability(user.caps, 'report:view')) notFound();
     if (!(await canAccessSidReport(user, decodedSid))) notFound();
+    // Paid feature: only render when the patient's order includes the
+    // 'Smart Report' custom test. (The token path is pre-gated — tokens are
+    // only minted by the smart-pdf route, which enforces the same check.)
+    if (!(await sidHasSmartReport(decodedSid))) notFound();
     const lock = await isSidReportLocked(decodedSid);
     if (lock.locked) {
       return (

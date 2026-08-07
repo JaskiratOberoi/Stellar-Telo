@@ -44,6 +44,7 @@ type AuditEvent =
   // column so the two trails correlate.
   | { kind: 'report.viewed'; actor: number; sid: string }
   | { kind: 'report.pdf'; actor: number; sid: string }
+  | { kind: 'report.smart_pdf'; actor: number; sid: string }
   | { kind: 'report.pdf_bulk'; actor: number; count: number; sids: string }
   // CCAvenue online client payment: a client started a payment, and the gateway
   // callback outcome (status + whether a wallet credit was posted this call).

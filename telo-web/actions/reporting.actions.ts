@@ -16,6 +16,7 @@ import {
   type ReportSearchHit,
 } from '@/db/read/reportSearch';
 import { computeReportLocks } from '@/lib/reportLock';
+import { pidsWithSmartReport } from '@/db/read/customTests';
 
 export interface ReportSearchFilters {
   from: string; // YYYY-MM-DD
@@ -61,6 +62,9 @@ export interface ReportSearchRow {
   lockReason: 'patient' | 'client' | null;
   /** The outstanding amount (₹) behind the lock, for the message. */
   dueAmount: number;
+  /** True when this patient's order includes the 'Smart Report' custom test —
+   *  the only case the patient-friendly Smart Report button is offered. */
+  smartReport: boolean;
 }
 
 /** A test/profile option for the Reporting test-filter picker. */
@@ -135,6 +139,7 @@ function mapRow(r: WorksheetReportRow, anchor: string): ReportSearchRow {
     locked: false,
     lockReason: null,
     dueAmount: 0,
+    smartReport: false,
   };
 }
 
@@ -186,6 +191,7 @@ function mapHit(h: ReportSearchHit): ReportSearchRow {
     locked: false,
     lockReason: null,
     dueAmount: 0,
+    smartReport: false,
   };
 }
 
@@ -211,12 +217,16 @@ function groupByPid(rows: ReportSearchRow[]): ReportSearchRow[] {
   return order.flatMap((pid) => groups.get(pid) ?? []);
 }
 
-/** Stamp each result row with its balance lock (patient bill / client wallet). */
+/** Stamp each result row with its balance lock (patient bill / client wallet)
+ *  and whether its patient bought the Smart Report (drives the Smart button). */
 async function annotateLocks(rows: ReportSearchRow[]): Promise<ReportSearchRow[]> {
   if (rows.length === 0) return rows;
-  const locks = await computeReportLocks(
-    rows.map((r) => ({ sid: r.sid, pid: r.pid, clientCode: r.clientCode })),
-  );
+  const [locks, smartPids] = await Promise.all([
+    computeReportLocks(
+      rows.map((r) => ({ sid: r.sid, pid: r.pid, clientCode: r.clientCode })),
+    ),
+    pidsWithSmartReport(rows.map((r) => r.pid)),
+  ]);
   for (const r of rows) {
     const l = locks.get(r.sid);
     if (l) {
@@ -224,6 +234,7 @@ async function annotateLocks(rows: ReportSearchRow[]): Promise<ReportSearchRow[]
       r.lockReason = l.reason;
       r.dueAmount = l.dueAmount;
     }
+    r.smartReport = smartPids.has(r.pid);
   }
   return rows;
 }

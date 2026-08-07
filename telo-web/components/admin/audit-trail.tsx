@@ -102,6 +102,7 @@ const KIND_LABEL: Record<string, string> = {
   'report.viewed': 'Report viewed',
   'report.pdf': 'Report PDF downloaded',
   'report.pdf_bulk': 'Bulk report PDFs downloaded',
+  'report.smart_pdf': 'Smart Report downloaded',
 };
 
 /** Known detail keys → short display labels; ₹-prefix for money fields. */

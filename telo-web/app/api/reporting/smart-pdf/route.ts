@@ -3,6 +3,8 @@ import { currentUser } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
 import { canAccessSidReport } from '@/lib/reportScope';
 import { isSidReportLocked } from '@/lib/reportLock';
+import { sidHasSmartReport } from '@/db/read/customTests';
+import { audit } from '@/lib/audit';
 import { renderFragmentToPdf } from '@/lib/report/renderPdf';
 import { mergeOntoLetterhead } from '@/lib/report/letterheadPdf';
 import { reportToken } from '@/lib/report/reportLink';
@@ -54,6 +56,17 @@ export async function POST(req: Request) {
       { status: 423 },
     );
   }
+  // Paid feature: the Smart Report only renders when the patient's order
+  // includes the 'Smart Report' custom test (₹99). The UI hides the button in
+  // that case; this is the enforcement for hand-crafted requests.
+  if (!(await sidHasSmartReport(sid.trim()))) {
+    return new NextResponse(
+      'Smart Report was not purchased for this patient.',
+      { status: 403 },
+    );
+  }
+  // Every gate passed — this download WILL render. Audit who pulled which SID.
+  audit({ kind: 'report.smart_pdf', actor: user.uid, sid: sid.trim() });
   const dateHint = typeof date === 'string' && date.trim() ? date.trim() : '';
 
   // PatientName_SID_ProfileName_Smart.pdf — the _Smart suffix keeps it distinct

@@ -525,6 +525,7 @@ export function ReportingView({
           date={selected.dateHint}
           patientName={selected.patientName}
           profileName={searchedTestName || null}
+          smartAvailable={selected.smartReport}
           onClose={() => setSelected(null)}
         />
       )}
