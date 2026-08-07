@@ -686,6 +686,7 @@ export function RegisterForm({
             <MobileField
               value={f.mobile}
               onChange={(next) => setF((s) => ({ ...s, mobile: next }))}
+              required={!isB2b}
               status={mobileStatus}
               onStatus={setMobileStatus}
             />
@@ -1435,11 +1436,15 @@ export function RegisterForm({
             const hasClientDup =
               new Set(trimmed.filter(Boolean)).size <
               trimmed.filter(Boolean).length;
+            // Mobile is mandatory on B2C; optional on B2B (hospital walk-ins
+            // often have no reachable number) — but a PARTIAL number is
+            // invalid on both channels.
+            const mobileTrim = f.mobile.trim();
+            const mobileInvalid = isB2b
+              ? mobileTrim.length > 0 && mobileTrim.length < 10
+              : mobileTrim.length < 10;
             const coreMissing =
-              !f.name.trim() ||
-              !f.age.trim() ||
-              !f.mobile.trim() ||
-              f.mobile.trim().length < 10;
+              !f.name.trim() || !f.age.trim() || mobileInvalid;
             // The mobile usage cap blocks like a taken SID: at the limit,
             // while checking, or unverifiable — never save on an unknown.
             const mobileBlocked = mobileStatus === 'blocked';

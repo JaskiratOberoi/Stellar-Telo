@@ -21,11 +21,16 @@ export function MobileField({
   onChange,
   status,
   onStatus,
+  required = true,
 }: {
   value: string;
   onChange: (next: string) => void;
   status: MobileStatus;
   onStatus: (s: MobileStatus) => void;
+  /** B2C keeps mobile mandatory; B2B passes false (hospital walk-ins often
+   *  have no reachable number). An OPTIONAL number, once typed, still has to
+   *  be a valid one — minLength and the usage cap apply to non-empty input. */
+  required?: boolean;
 }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seq = useRef(0);
@@ -67,11 +72,11 @@ export function MobileField({
   const remaining = Math.max(0, MAX_PATIENTS_PER_MOBILE - count);
   return (
     <div className="space-y-0.5">
-      <Label htmlFor="mobile">Mobile *</Label>
+      <Label htmlFor="mobile">{required ? 'Mobile *' : 'Mobile'}</Label>
       <Input
         id="mobile"
         name="mobile"
-        required
+        required={required}
         inputMode="tel"
         minLength={10}
         maxLength={20}

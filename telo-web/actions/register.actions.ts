@@ -353,7 +353,9 @@ const registerSchema = z.object({
   ),
   ageType: optInt(), // 1 Years / 2 Months / 3 Days
   gender: optInt(), // 1 Male / 2 Female / 3 Other
-  mobile: z.string().trim().min(10).max(20),
+  // Optional at the schema layer; the per-channel rule (mandatory on B2C,
+  // optional on B2B) is enforced after parse, once `b2b` is known.
+  mobile: z.string().trim().max(20).optional().default(''),
   email: z.string().trim().max(100).optional(),
   clinicalHistory: z.string().trim().max(500).optional(),
   refDoctorJson: z.string().optional(),
@@ -520,12 +522,16 @@ export async function registerOrder(
 
     // Per-mobile patient cap. The form pre-checks this live, but a tampered
     // POST (or a stale form) must not slip past — the SP repeats this count
-    // inside the write as the final word.
-    const mobileUses = await countMobileUsage(f.mobile);
-    if (mobileUses >= MAX_PATIENTS_PER_MOBILE) {
-      return {
-        error: `This mobile number is already used by ${mobileUses} patients — the limit is ${MAX_PATIENTS_PER_MOBILE} patients per number.`,
-      };
+    // inside the write as the final word. Skipped for a blank (B2B-optional)
+    // mobile: counting `mobile_number = ''` would tally every number-less
+    // patient in the network and block the order outright.
+    if (f.mobile) {
+      const mobileUses = await countMobileUsage(f.mobile);
+      if (mobileUses >= MAX_PATIENTS_PER_MOBILE) {
+        return {
+          error: `This mobile number is already used by ${mobileUses} patients — the limit is ${MAX_PATIENTS_PER_MOBILE} patients per number.`,
+        };
+      }
     }
 
     const b2b = f.b2b === '1';
@@ -534,6 +540,16 @@ export async function registerOrder(
     // hand-crafted POST.
     if (b2b && (await fetchMrpOnly(user.uid))) {
       return { error: 'The B2B Orders feature is not available for this account.' };
+    }
+
+    // Per-channel mobile rule: mandatory on B2C, optional on B2B — but a
+    // PARTIAL number is invalid on both channels. (The schema only bounds the
+    // length; this is the actual requirement, mirrored in the form's gate.)
+    if (!b2b && f.mobile.length < 10) {
+      return { error: 'A mobile number of at least 10 digits is required.' };
+    }
+    if (f.mobile && f.mobile.length < 10) {
+      return { error: 'Enter a complete mobile number (at least 10 digits), or leave it blank.' };
     }
 
     // Parse the split-payment lines. Drop zero-amount rows (an empty line the
