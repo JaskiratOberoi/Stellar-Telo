@@ -106,6 +106,29 @@ const DEFAULTS: Fields = {
   discountAmount: '0',
 };
 
+/** B2B age is entered as Years + Months; LIS stores one age + age_type.
+ *  Under 2 years (with any months) → months; otherwise → years. */
+function resolveB2bAge(
+  yearsStr: string,
+  monthsStr: string,
+): { age: number; ageType: number } | null {
+  const yRaw = yearsStr.trim();
+  const mRaw = monthsStr.trim();
+  const y = yRaw === '' ? 0 : Number(yRaw);
+  const m = mRaw === '' ? 0 : Number(mRaw);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || y < 0 || m < 0) return null;
+  if (y === 0 && m === 0) return null;
+  if (y > 150 || m > 150) return null;
+  const totalMonths = y * 12 + m;
+  if (y === 0 || (m > 0 && totalMonths < 24)) {
+    if (totalMonths <= 0 || totalMonths > 150) return null;
+    return { age: totalMonths, ageType: 2 };
+  }
+  // Years path: months must be 0–11 when both are filled.
+  if (m > 11) return null;
+  return { age: y, ageType: 1 };
+}
+
 // One split-payment line in the form. Amounts are kept as strings (controlled
 // inputs); the hidden paymentsJson field serialises them at submit.
 type PayLine = { method: string; amount: string; ref: string };
@@ -183,12 +206,17 @@ export function RegisterForm({
   // Ref. doctor uses structured CreatableValue state — picked existing id or
   // fresh name. Serialized into refDoctorJson at submit.
   const [refDoctor, setRefDoctor] = useState<CreatableValue>(null);
-  // MRD + (IPD/OPD/ICU) is now a plain text field — operators type the
-  // patient's MRD and visit-type together (e.g. "MRD-12345 OPD"). At submit
-  // the value is wrapped as { kind: 'new', name } so the existing server
-  // action (which writes to tbl_billing_patient_detail.ref_customer) works
-  // unchanged.
+  // B2B: referring customer is a CreatableCombobox (same pattern as Ref.
+  // doctor), scoped to the selected Client code. B2C keeps the free-text
+  // "MRD + (IPD/OPD/ICU)" field below.
+  const [refCustomer, setRefCustomer] = useState<CreatableValue>(null);
   const [refCustomerText, setRefCustomerText] = useState('');
+  // B2B age is captured as Years + Months (LIS still stores a single
+  // age + age_type). B2C keeps the age + unit dropdown.
+  const [ageYears, setAgeYears] = useState('');
+  const [ageMonths, setAgeMonths] = useState('');
+  // B2B passport / travel ID — written to patient_master.MRNID.
+  const [passport, setPassport] = useState('');
 
   // Per-MCC referrer lists. Every doctor/customer in Noble is owned by exactly
   // one MCC via pcc_code → mcc_unit_master.id, so the combobox must only show
@@ -203,12 +231,14 @@ export function RegisterForm({
     if (mcc === '') {
       setRefData(null);
       setRefDoctor(null);
+      setRefCustomer(null);
       setRefCustomerText('');
       return;
     }
-    // Clear any prior selection — a doctor mapped to MCC A must not silently
-    // carry over to MCC B. MRD is patient-specific so we clear it too.
+    // Clear any prior selection — a doctor/customer mapped to MCC A must not
+    // silently carry over to MCC B. MRD is patient-specific so we clear it too.
     setRefDoctor(null);
+    setRefCustomer(null);
     setRefCustomerText('');
     const cached = refCache.current.get(Number(mcc));
     if (cached) {
@@ -233,6 +263,11 @@ export function RegisterForm({
     id: d.id,
     code: d.code ?? '',
     name: d.name,
+  }));
+  const customersItems = (refData?.customers ?? []).map((c) => ({
+    id: c.id,
+    code: c.code ?? '',
+    name: c.name,
   }));
 
   const [picked, setPicked] = useState<Picked[]>(initialItems);
@@ -266,9 +301,10 @@ export function RegisterForm({
   const [groups, setGroups] = useState<SampleGroup[]>([]);
   const [groupSids, setGroupSids] = useState<Record<number, string>>({});
   const [groupStatus, setGroupStatus] = useState<Record<number, SidStatus>>({});
-  // SIDs are optional at order time (the lab adds them later from the worklist),
-  // so the panel stays collapsed by default and doesn't compete for attention.
-  const [sidsOpen, setSidsOpen] = useState(false);
+  // SIDs are optional at order time (the lab adds them later from the worklist).
+  // B2B opens the panel by default — hospital counters usually barcode at
+  // registration. B2C stays collapsed so it doesn't compete for attention.
+  const [sidsOpen, setSidsOpen] = useState(isB2b);
   const groupsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // If a typed SID turns out to be taken or unverifiable, reveal the panel so
@@ -561,11 +597,33 @@ export function RegisterForm({
         type="hidden"
         name="refCustomerJson"
         value={
-          refCustomerText.trim()
-            ? JSON.stringify({ kind: 'new', name: refCustomerText.trim() })
-            : ''
+          isB2b
+            ? refCustomer
+              ? JSON.stringify(refCustomer)
+              : ''
+            : refCustomerText.trim()
+              ? JSON.stringify({ kind: 'new', name: refCustomerText.trim() })
+              : ''
         }
       />
+      {isB2b && (() => {
+        const resolved = resolveB2bAge(ageYears, ageMonths);
+        return (
+          <>
+            <input type="hidden" name="age" value={resolved?.age ?? ''} />
+            <input
+              type="hidden"
+              name="ageType"
+              value={resolved?.ageType ?? ''}
+            />
+            <input
+              type="hidden"
+              name="mrnId"
+              value={passport.trim()}
+            />
+          </>
+        );
+      })()}
       <input
         type="hidden"
         name="sidsJson"
@@ -639,39 +697,75 @@ export function RegisterForm({
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            <div className="space-y-0.5">
-              <Label htmlFor="age">Age *</Label>
-              <Input
-                id="age"
-                name="age"
-                type="number"
-                required
-                min={0}
-                max={150}
-                value={f.age}
-                onChange={upd('age')}
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label>Unit</Label>
-              <select
-                name="ageType"
-                suppressHydrationWarning
-              className={sel}
-                value={f.ageType}
-                onChange={upd('ageType')}
-              >
-                <option value="1">Years</option>
-                <option value="2">Months</option>
-                <option value="3">Days</option>
-              </select>
-            </div>
+            {isB2b ? (
+              <>
+                <div className="space-y-0.5">
+                  <Label htmlFor="ageYears">Years</Label>
+                  <Input
+                    id="ageYears"
+                    type="number"
+                    min={0}
+                    max={150}
+                    value={ageYears}
+                    onChange={(e) => setAgeYears(e.target.value)}
+                    placeholder="Years"
+                    aria-invalid={
+                      ageYears.trim() !== '' || ageMonths.trim() !== ''
+                        ? resolveB2bAge(ageYears, ageMonths) == null
+                        : false
+                    }
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label htmlFor="ageMonths">Months</Label>
+                  <Input
+                    id="ageMonths"
+                    type="number"
+                    min={0}
+                    max={ageYears.trim() && Number(ageYears) > 0 ? 11 : 150}
+                    value={ageMonths}
+                    onChange={(e) => setAgeMonths(e.target.value)}
+                    placeholder="Months"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-0.5">
+                  <Label htmlFor="age">Age *</Label>
+                  <Input
+                    id="age"
+                    name="age"
+                    type="number"
+                    required
+                    min={0}
+                    max={150}
+                    value={f.age}
+                    onChange={upd('age')}
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label>Unit</Label>
+                  <select
+                    name="ageType"
+                    suppressHydrationWarning
+                    className={sel}
+                    value={f.ageType}
+                    onChange={upd('ageType')}
+                  >
+                    <option value="1">Years</option>
+                    <option value="2">Months</option>
+                    <option value="3">Days</option>
+                  </select>
+                </div>
+              </>
+            )}
             <div className="space-y-0.5">
               <Label>Gender</Label>
               <select
                 name="gender"
                 suppressHydrationWarning
-              className={sel}
+                className={sel}
                 value={f.gender}
                 onChange={upd('gender')}
               >
@@ -681,6 +775,12 @@ export function RegisterForm({
               </select>
             </div>
           </div>
+          {isB2b && (
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Age required — enter years and/or months (e.g. 2y 3m, or 6 months
+              for an infant).
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <MobileField
@@ -728,31 +828,89 @@ export function RegisterForm({
                 </p>
               )}
             </div>
-            <div className="space-y-0.5">
-              <Label htmlFor="refCustomer">
-                MRD + (IPD/OPD/ICU)
-                {mrdRequired && <span className="ml-0.5 text-destructive">*</span>}
-              </Label>
-              <Input
-                id="refCustomer"
-                value={refCustomerText}
-                onChange={(e) => setRefCustomerText(e.target.value)}
-                placeholder={
-                  mcc === ''
-                    ? 'Select a Client code first'
-                    : 'e.g. MRD-12345 OPD'
-                }
-                maxLength={100}
-                disabled={mcc === ''}
-                aria-invalid={mrdRequired && !refCustomerText.trim()}
-              />
-              {mrdRequired && !refCustomerText.trim() && (
-                <p className="text-[11px] text-destructive">
-                  MRD number is required for the external test in this order.
-                </p>
-              )}
-            </div>
+            {isB2b ? (
+              <div className="space-y-0.5">
+                <Label htmlFor="refCustomer">
+                  Referring customer
+                  {mrdRequired && (
+                    <span className="ml-0.5 text-destructive">*</span>
+                  )}
+                </Label>
+                <CreatableCombobox
+                  id="refCustomer"
+                  items={customersItems}
+                  value={refCustomer}
+                  onChange={setRefCustomer}
+                  placeholder={
+                    mcc === ''
+                      ? 'Select a Client code first'
+                      : refDataLoading
+                        ? 'Loading…'
+                        : customersItems.length === 0
+                          ? 'No customers on file — type to add'
+                          : 'Search or add new customer…'
+                  }
+                  disabled={mcc === ''}
+                />
+                {mrdRequired && !refCustomer && (
+                  <p className="text-[11px] text-destructive">
+                    Referring customer is required for the external test in this
+                    order.
+                  </p>
+                )}
+                {mcc !== '' &&
+                  !refDataLoading &&
+                  customersItems.length === 0 &&
+                  !mrdRequired && (
+                    <p className="text-[11px] text-muted-foreground">
+                      No customers on file for this Client yet — type a name to
+                      add one.
+                    </p>
+                  )}
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                <Label htmlFor="refCustomer">
+                  MRD + (IPD/OPD/ICU)
+                  {mrdRequired && (
+                    <span className="ml-0.5 text-destructive">*</span>
+                  )}
+                </Label>
+                <Input
+                  id="refCustomer"
+                  value={refCustomerText}
+                  onChange={(e) => setRefCustomerText(e.target.value)}
+                  placeholder={
+                    mcc === ''
+                      ? 'Select a Client code first'
+                      : 'e.g. MRD-12345 OPD'
+                  }
+                  maxLength={100}
+                  disabled={mcc === ''}
+                  aria-invalid={mrdRequired && !refCustomerText.trim()}
+                />
+                {mrdRequired && !refCustomerText.trim() && (
+                  <p className="text-[11px] text-destructive">
+                    MRD number is required for the external test in this order.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
+
+          {isB2b && (
+            <div className="space-y-0.5">
+              <Label htmlFor="passport">Passport number</Label>
+              <Input
+                id="passport"
+                value={passport}
+                onChange={(e) => setPassport(e.target.value)}
+                placeholder="Optional"
+                maxLength={50}
+                autoComplete="off"
+              />
+            </div>
+          )}
 
           <div className="space-y-0.5">
             <Label htmlFor="clinicalHistory">Clinical history</Label>
@@ -1378,7 +1536,7 @@ export function RegisterForm({
                 <div className={sidsOpen ? 'space-y-2 px-3 pb-3' : 'hidden'}>
                   <p className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] text-muted-foreground">
                     Optional — leave blank and the lab technician adds them later
-                    from the New Order worklist.
+                    from the {isB2b ? 'B2B Orders' : 'New Order'} worklist.
                   </p>
                   {groups.map((g, idx) => {
                     const me = trimmed[idx];
@@ -1443,14 +1601,20 @@ export function RegisterForm({
             const mobileInvalid = isB2b
               ? mobileTrim.length > 0 && mobileTrim.length < 10
               : mobileTrim.length < 10;
+            const b2bAge = isB2b ? resolveB2bAge(ageYears, ageMonths) : null;
+            const ageMissing = isB2b ? b2bAge == null : !f.age.trim();
             const coreMissing =
-              !f.name.trim() || !f.age.trim() || mobileInvalid;
+              !f.name.trim() || ageMissing || mobileInvalid;
             // The mobile usage cap blocks like a taken SID: at the limit,
             // while checking, or unverifiable — never save on an unknown.
             const mobileBlocked = mobileStatus === 'blocked';
             const mobileBusy =
               mobileStatus === 'checking' || mobileStatus === 'error';
-            const mrdMissing = mrdRequired && !refCustomerText.trim();
+            const mrdMissing = mrdRequired
+              ? isB2b
+                ? !refCustomer
+                : !refCustomerText.trim()
+              : false;
             const blocked =
               pending ||
               (picked.length === 0 && customPicked.length === 0) ||
@@ -1480,7 +1644,9 @@ export function RegisterForm({
                   : refDoctorMissing
                     ? 'Ref. doctor required'
                   : mrdMissing
-                    ? 'MRD number required'
+                    ? isB2b
+                      ? 'Referring customer required'
+                      : 'MRD number required'
                   : mobileBlocked
                     ? 'Mobile number limit reached'
                     : mobileStatus === 'checking'
@@ -1545,7 +1711,17 @@ export function RegisterForm({
                   <span>
                     {f.title && f.title !== NO_TITLE ? `${f.title} ` : ''}
                     {f.name || '—'}
-                    {f.age ? ` · ${f.age}` : ''}
+                    {isB2b
+                      ? (() => {
+                          const a = resolveB2bAge(ageYears, ageMonths);
+                          if (!a) return '';
+                          const y = ageYears.trim() || '0';
+                          const m = ageMonths.trim() || '0';
+                          return ` · ${y}y ${m}m`;
+                        })()
+                      : f.age
+                        ? ` · ${f.age}`
+                        : ''}
                     {f.gender === '1'
                       ? ' M'
                       : f.gender === '2'
@@ -1575,10 +1751,34 @@ export function RegisterForm({
                       </span>
                     </>
                   )}
-                  {refCustomerText.trim() && (
+                  {isB2b && refCustomer && (
+                    <>
+                      <span className="text-zinc-500">Ref. customer</span>
+                      <span>
+                        {refCustomer.kind === 'new' ? (
+                          <>
+                            {refCustomer.name}{' '}
+                            <span className="ml-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-primary">
+                              new
+                            </span>
+                          </>
+                        ) : (
+                          refData?.customers.find((c) => c.id === refCustomer.id)
+                            ?.name ?? '—'
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {!isB2b && refCustomerText.trim() && (
                     <>
                       <span className="text-zinc-500">MRD + visit</span>
                       <span>{refCustomerText.trim()}</span>
+                    </>
+                  )}
+                  {isB2b && passport.trim() && (
+                    <>
+                      <span className="text-zinc-500">Passport</span>
+                      <span>{passport.trim()}</span>
                     </>
                   )}
                   {clinicalFileName && (

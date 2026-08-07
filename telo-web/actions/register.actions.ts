@@ -375,6 +375,9 @@ const registerSchema = z.object({
   customItemsJson: z.string().optional(),
   // '1' for a B2B-tab registration (bill at MRP); absent/empty for New Order.
   b2b: z.string().optional(),
+  // B2B passport / travel ID → patient_master.MRNID. Optional; blank falls
+  // back to the SP's patient-id backfill (same as the LIS form).
+  mrnId: z.string().trim().max(50).optional(),
 });
 
 // One payment line from the form. `ref` is the operator-entered reference for
@@ -642,15 +645,18 @@ export async function registerOrder(
       return { error: 'Select or add a referring doctor.' };
     }
     // MRD is compulsory when the order carries a custom line that requires it
-    // (e.g. "Glucose - External"). The MRD is captured via the ref_customer
-    // field. Authoritative gate; the SP repeats it.
+    // (e.g. "Glucose - External"). Captured via ref_customer (B2C free-text or
+    // B2B referring-customer combobox). Authoritative gate; the SP repeats it.
     if (requiresMrd && !refCust) {
       return {
-        error: 'Enter the patient’s MRD number — it is required for this external test.',
+        error: b2b
+          ? 'Select or add a referring customer — required for this external test.'
+          : 'Enter the patient’s MRD number — it is required for this external test.',
       };
     }
-    // MRD text snapshot for the custom-line log (the operator types it fresh as
-    // a new ref_customer, so it's the 'new' name).
+    // MRD text snapshot for the custom-line log. B2C types it as a new
+    // ref_customer name; B2B may pick an existing customer (use the typed
+    // 'new' name when present, otherwise leave null — the FK id is enough).
     const mrdText = refCust?.kind === 'new' ? refCust.name : null;
     const clinicalPdf = await readClinicalPdf(formData);
 
@@ -686,6 +692,8 @@ export async function registerOrder(
       clinicalHistory: f.clinicalHistory || null,
       clinicalFile: clinicalPdf?.buffer ?? null,
       clinicalFileName: clinicalPdf?.name ?? null,
+      // B2B passport → MRNID; blank lets the SP backfill patient id (LIS parity).
+      mrnId: f.mrnId?.trim() || null,
       // Existing id wins; otherwise pass the fresh name and the SP upserts.
       refDoctor: refDoc?.kind === 'existing' ? refDoc.id : null,
       refCustomer: refCust?.kind === 'existing' ? refCust.id : null,
