@@ -15,6 +15,7 @@ import type { LisAuthBits } from '@/lib/lis-security';
 import { EMPTY_AUTH_BITS } from '@/lib/lis-security';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import {
   Table,
@@ -264,21 +265,22 @@ function UsertypeForm({
           />
         </div>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          name="isActive"
-          value="1"
-          defaultChecked={initial?.isActive ?? true}
-          disabled={initial?.id === 1}
-        />
-        Active
-      </label>
+      <Switch
+        name="isActive"
+        value="1"
+        className="items-center text-sm"
+        defaultChecked={initial?.isActive ?? true}
+        disabled={initial?.id === 1}
+        label="Active"
+      />
       {initial && initial.userCount > 0 && (
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" name="force" value="1" />
-          Force deactivate even with {initial.userCount} user(s) assigned
-        </label>
+        <Switch
+          name="force"
+          value="1"
+          size="sm"
+          className="items-center text-xs text-muted-foreground"
+          label={`Force deactivate even with ${initial.userCount} user(s) assigned`}
+        />
       )}
       {state.error && (
         <p className="text-sm text-destructive">{state.error}</p>
@@ -423,15 +425,13 @@ function LisSecurityEditor({
                   <ul className="space-y-1">
                     {items.map((m) => (
                       <li key={m.id}>
-                        <label className="flex items-start gap-1.5 text-xs">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={menuIds.has(m.id)}
-                            onChange={() => toggle(m.id)}
-                          />
-                          <span>{m.label}</span>
-                        </label>
+                        <Switch
+                          size="sm"
+                          className="text-xs"
+                          checked={menuIds.has(m.id)}
+                          onChange={() => toggle(m.id)}
+                          label={m.label}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -446,16 +446,16 @@ function LisSecurityEditor({
             </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               {data.authBitLabels.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={!!authBits[key]}
-                    onChange={(e) =>
-                      setAuthBits((b) => ({ ...b, [key]: e.target.checked }))
-                    }
-                  />
-                  {label}
-                </label>
+                <Switch
+                  key={key}
+                  size="sm"
+                  className="items-center text-xs"
+                  checked={!!authBits[key]}
+                  onChange={(e) =>
+                    setAuthBits((b) => ({ ...b, [key]: e.target.checked }))
+                  }
+                  label={label}
+                />
               ))}
             </div>
           </div>
@@ -653,16 +653,14 @@ function TeloRoleForm({
           defaultValue={initial?.description ?? ''}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          name="isActive"
-          value="1"
-          defaultChecked={initial?.isActive ?? true}
-          disabled={initial?.roleKey === 'super_admin'}
-        />
-        Active
-      </label>
+      <Switch
+        name="isActive"
+        value="1"
+        className="items-center text-sm"
+        defaultChecked={initial?.isActive ?? true}
+        disabled={initial?.roleKey === 'super_admin'}
+        label="Active"
+      />
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
       <Button type="submit" disabled={pending} size="sm">
         {pending ? 'Saving…' : 'Save'}
@@ -739,23 +737,23 @@ function TeloCapsEditor({
             <ul className="space-y-1">
               {items.map((c) => (
                 <li key={c.value}>
-                  <label className="flex items-start gap-1.5 text-xs">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={selected.has(c.value)}
-                      disabled={
-                        roleKey === 'super_admin' && c.value === 'user:manage'
-                      }
-                      onChange={() => toggle(c.value)}
-                    />
-                    <span>
-                      {c.label}{' '}
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {c.value}
-                      </span>
-                    </span>
-                  </label>
+                  <Switch
+                    size="sm"
+                    className="text-xs"
+                    checked={selected.has(c.value)}
+                    disabled={
+                      roleKey === 'super_admin' && c.value === 'user:manage'
+                    }
+                    onChange={() => toggle(c.value)}
+                    label={
+                      <>
+                        {c.label}{' '}
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {c.value}
+                        </span>
+                      </>
+                    }
+                  />
                 </li>
               ))}
             </ul>
