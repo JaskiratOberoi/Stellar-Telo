@@ -132,6 +132,17 @@ export async function assembleLabReportData(
     registeredAt: row.regd_at,
     reportedAt: row.last_modified_at,
     statusLabel: row.status,
+    // B2B passport / travel ID (patient_master.MRNID).
+    //
+    // usp_telo_create_order mirrors the LIS order form and never leaves MRNID
+    // blank — with no passport entered it backfills the PATIENT ID (see the
+    // MRNID note in 60_usp_telo_create_order.sql). Printing that verbatim would
+    // put the patient id under a "Passport No." label on every B2C report, so
+    // treat an MRNID equal to the pid as "no passport".
+    passportNo: (() => {
+      const v = (row.mrn_id ?? '').trim();
+      return v && v !== String(row.pid) ? v : null;
+    })(),
     billNumber: row.bill_number,
     clinicalHistory: row.clinical_history,
     specimens: report.specimens,

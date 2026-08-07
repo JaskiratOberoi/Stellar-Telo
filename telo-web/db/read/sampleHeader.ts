@@ -36,6 +36,8 @@ export interface SampleHeader {
   status: string | null;
   bill_number: string | null;
   clinical_history: string | null;
+  /** patient_master.MRNID — carries the B2B passport / travel ID. */
+  mrn_id: string | null;
 }
 
 interface RawHeader {
@@ -53,6 +55,8 @@ interface RawHeader {
   status: string | null;
   bill_number: string | null;
   clinical_history: string | null;
+  /** patient_master.MRNID — carries the B2B passport / travel ID. */
+  mrn_id: string | null;
 }
 
 /** Wall-clock ISO string (style 126, no offset) → Listec-convention `...Z`. */
@@ -91,7 +95,8 @@ export async function getSampleHeaders(sid: string): Promise<SampleHeader[]> {
           CONVERT(VARCHAR(23), S.lastmodified_date, 126) AS last_modified_at,
           STAT.status AS status,
           P.bill_number,
-          S.Sample_ClinicalHistory AS clinical_history
+          S.Sample_ClinicalHistory AS clinical_history,
+          P.MRNID AS mrn_id
         FROM dbo.tbl_med_mcc_patient_samples S
         INNER JOIN dbo.tbl_med_mcc_patient_master P ON S.patient_id = P.id
         INNER JOIN dbo.tbl_med_mcc_unit_master U ON P.mcc_code = U.id

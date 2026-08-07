@@ -161,6 +161,9 @@ export interface LabReportData {
   registeredAt: string | null;
   reportedAt: string | null;
   statusLabel: string | null;
+  /** B2B passport / travel ID; null when the order had none. Replaces the
+   *  Report Status row in the printed header. */
+  passportNo: string | null;
   billNumber: string | null;
   clinicalHistory: string | null;
   /** Distinct specimen / sample types on this sample (e.g. "Serum"). */
@@ -694,7 +697,7 @@ function PatientMetaBlock({
           {data.specimens && data.specimens.length > 0 && (
             <Meta label="Specimen" value={data.specimens.join(', ')} />
           )}
-          <Meta label="Report Status" value={data.statusLabel ?? '—'} />
+          <Meta label="Passport No." value={data.passportNo ?? '—'} mono />
           {/* Collected/Registered/Reported come from the Listec worksheet feed
               (IST wall-clock reinterpreted as UTC) → fmtListec; Printed is a real
               Telo instant → fmtIST. See lib/datetime fmtListec. */}
