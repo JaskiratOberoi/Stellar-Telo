@@ -1,19 +1,9 @@
 /** Shared auth/identity types. No IO — safe to import anywhere. */
 
-/** Telo-side role (independent of the LIS usertype). One per user, assigned
- *  by a Telo Super Admin via the Admin panel. Source of truth for what tabs
- *  and actions the user sees once a row is present in tbl_telo_user_role. */
-export type TeloRole =
-  | 'super_admin'
-  | 'admin'
-  | 'billing'
-  | 'b2c_billing' // Billing, but only the B2C "New order" tab (e.g. MEDICARE / MDCARE)
-  | 'b2b_billing' // Client, but only the B2B "Patient Orders" tab (LIS clients, e.g. DL0002)
-  | 'client'
-  | 'client_reporting' // Client home dashboard + Reporting (view/print own-client reports) only
-  | 'report_admin' // Reporting for EVERY client code (view/print), and nothing else
-  | 'technician'
-  | 'viewer';
+/** Telo-side role key (independent of the LIS usertype). Built-ins are seeded
+ *  (`super_admin`, `billing`, …); Admins may add custom keys via Roles hub.
+ *  Assigned per user in `tbl_telo_user_role`; definitions live in `telo_role`. */
+export type TeloRole = string;
 
 export type Capability =
   | 'user:manage'        // Admin panel (Super Admin only)

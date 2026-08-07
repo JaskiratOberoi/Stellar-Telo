@@ -34,10 +34,18 @@ import { getPool, sql, withRetry } from '@/db/pool';
 import { audit } from '@/lib/audit';
 import { AppError } from '@/lib/errors';
 import type { TeloRole } from '@/types/auth';
+import {
+  fetchTeloRoles,
+  fetchLisUsertypeRoleMap,
+  type TeloRoleRow,
+} from '@/db/read/teloRoles';
 
 export interface AdminOverview {
   users: TeloUserRow[];
   lisUsertypes: LisUsertype[];
+  teloRoles: TeloRoleRow[];
+  /** LIS usertype id → default Telo role (for effective-role display). */
+  lisRoleMap: Record<number, TeloRole>;
   fetchedAt: string;
 }
 
@@ -46,13 +54,17 @@ export interface AdminOverview {
 // Saves ~1.7k rows × ~60 B of RSC payload on every admin page render.
 export async function getAdminOverview(): Promise<AdminOverview> {
   await requireCapability('user:manage');
-  const [users, lisUsertypes] = await Promise.all([
+  const [users, lisUsertypes, teloRoles, lisRoleMap] = await Promise.all([
     listTeloUsers(),
     fetchLisUsertypes(),
+    fetchTeloRoles(),
+    fetchLisUsertypeRoleMap(),
   ]);
   return {
     users,
     lisUsertypes,
+    teloRoles: teloRoles.filter((r) => r.isActive),
+    lisRoleMap,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -132,28 +144,14 @@ async function assignMccScope(
   }
 }
 
-// Keep this in sync with the TeloRole union (types/auth.ts) AND the SP's
-// allow-list (db/sql/98_usp_telo_admin_set_role.sql). The `_RolesInSync` guard
-// below fails to compile if a TeloRole is added to the type but missed here —
-// which is exactly the bug that made b2c_billing / b2b_billing / client_reporting
-// unsavable ("Invalid role change") after they were added everywhere else.
-const teloRoleSchema = z.enum([
-  'super_admin',
-  'admin',
-  'billing',
-  'b2c_billing',
-  'b2b_billing',
-  'client',
-  'client_reporting',
-  'report_admin',
-  'technician',
-  'viewer',
-]);
-// Compile-time exhaustiveness: every TeloRole must appear in the enum above.
-type _RolesInSync =
-  [TeloRole] extends [z.infer<typeof teloRoleSchema>] ? true : never;
-const _rolesInSync: _RolesInSync = true;
-void _rolesInSync;
+// Role keys are validated against dbo.telo_role in the SP. Accept any
+// lowercase key shape here; unknown/inactive keys are rejected server-side.
+const teloRoleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z][a-z0-9_]*$/, 'Invalid role key');
 
 export type AdminFormState = { error: string | null; ok: boolean };
 const ok = (): AdminFormState => ({ error: null, ok: true });

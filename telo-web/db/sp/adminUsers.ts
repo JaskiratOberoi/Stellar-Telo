@@ -36,7 +36,7 @@ export async function adminCreateUser(
       .input('lastName', sql.NVarChar(100), input.lastName ?? null)
       .input('email', sql.NVarChar(100), input.email ?? null)
       .input('lisUsertypeId', sql.Int, input.lisUsertypeId)
-      .input('teloRole', sql.NVarChar(20), input.teloRole)
+      .input('teloRole', sql.NVarChar(40), input.teloRole)
       .input('actor', sql.Int, input.actor)
       .execute<{
         ok: boolean;
@@ -64,7 +64,7 @@ export async function adminSetRole(args: {
     const r = await pool
       .request()
       .input('userId', sql.Int, args.userId)
-      .input('teloRole', sql.NVarChar(20), args.teloRole)
+      .input('teloRole', sql.NVarChar(40), args.teloRole)
       .input('actor', sql.Int, args.actor)
       .execute<{ ok: boolean; error_code: string | null; message: string | null }>(
         'dbo.usp_telo_admin_set_role',

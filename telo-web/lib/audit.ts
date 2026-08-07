@@ -28,6 +28,11 @@ type AuditEvent =
   | { kind: 'admin.user.lis_access'; actor: number; target: number; enabled: boolean }
   | { kind: 'admin.user.mrp_only'; actor: number; target: number; enabled: boolean }
   | { kind: 'admin.user.prepared_by'; actor: number; target: number; cleared: boolean }
+  | { kind: 'admin.usertype.upsert'; actor: number; usertypeId: number; name: string }
+  | { kind: 'admin.usertype.security_set'; actor: number; usertypeId: number; menuCount: number }
+  | { kind: 'admin.telo_role.upsert'; actor: number; roleKey: string }
+  | { kind: 'admin.telo_role.caps_set'; actor: number; roleKey: string; capCount: number }
+  | { kind: 'admin.lis_usertype_role.set'; actor: number; lisUsertypeId: number; teloRole: string }
   | { kind: 'admin.profile_interpretation.save'; actor: number; target: number }
   | { kind: 'patient.info.update'; actor: number; billId: number }
   | { kind: 'bill.discount.set'; actor: number; billId: number; discount: number }

@@ -28,7 +28,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import type { TeloRole } from '@/types/auth';
-import { lisUsertypeToTeloRole } from '@/auth/rbac';
 import { fmtIST } from '@/lib/datetime';
 import { RemoteCombobox } from '@/components/ui/remote-combobox';
 import type { ScopedMcc } from '@/db/read/mccUnits';
@@ -36,19 +35,6 @@ import type { ScopedMcc } from '@/db/read/mccUnits';
 const initial: AdminFormState = { error: null, ok: false };
 const sel =
   'h-9 w-full rounded-md border border-foreground/10 bg-input px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50';
-
-const ROLES: { value: TeloRole; label: string; hint: string }[] = [
-  { value: 'super_admin', label: 'Super Admin', hint: 'All access + user mgmt' },
-  { value: 'admin', label: 'Admin', hint: 'Everything except user mgmt' },
-  { value: 'billing', label: 'Billing', hint: 'Register + accession + payments' },
-  { value: 'b2c_billing', label: 'B2C Billing', hint: 'Billing — B2C "New order" tab only' },
-  { value: 'b2b_billing', label: 'B2B Billing', hint: 'Client — B2B "Patient Orders" tab only' },
-  { value: 'client', label: 'Client', hint: 'Billing + own Sales & Accounts' },
-  { value: 'client_reporting', label: 'Client Reporting', hint: 'Client home + Reporting (own reports, view/print)' },
-  { value: 'report_admin', label: 'Reporting (all clients)', hint: 'Reporting for EVERY client code — nothing else' },
-  { value: 'technician', label: 'Technician', hint: 'Accession SIDs only' },
-  { value: 'viewer', label: 'Viewer', hint: 'Read-only' },
-];
 
 export function UserManagement({
   initial: overview,
@@ -78,6 +64,15 @@ export function UserManagement({
     setPage(1);
   }, [q, roleFilter, lisRoleFilter, activeFilter]);
 
+  const roleLabel = (key: string) =>
+    overview.teloRoles.find((r) => r.roleKey === key)?.label ?? key;
+
+  const effectiveRole = (u: AdminOverview['users'][number]) =>
+    u.teloRole ??
+    (u.lisUsertypeId != null
+      ? (overview.lisRoleMap[u.lisUsertypeId] ?? 'viewer')
+      : 'viewer');
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return overview.users.filter((u) => {
@@ -91,12 +86,11 @@ export function UserManagement({
       if (
         roleFilter !== 'all' &&
         roleFilter !== 'unassigned' &&
-        (u.teloRole ?? lisUsertypeToTeloRole(u.lisUsertypeId)) !== roleFilter
+        effectiveRole(u) !== roleFilter
       )
         return false;
       if (!needle) return true;
-      const effective =
-        u.teloRole ?? lisUsertypeToTeloRole(u.lisUsertypeId);
+      const effective = effectiveRole(u);
       return (
         u.username.toLowerCase().includes(needle) ||
         (u.firstName ?? '').toLowerCase().includes(needle) ||
@@ -106,7 +100,7 @@ export function UserManagement({
         (u.lisUsertypeName ?? '').toLowerCase().includes(needle)
       );
     });
-  }, [overview.users, q, roleFilter, lisRoleFilter, activeFilter]);
+  }, [overview.users, overview.lisRoleMap, q, roleFilter, lisRoleFilter, activeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -142,8 +136,8 @@ export function UserManagement({
               className={sel + ' h-8 w-full sm:w-44'}
             >
               <option value="all">All roles</option>
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>
+              {overview.teloRoles.map((r) => (
+                <option key={r.roleKey} value={r.roleKey}>
                   {r.label}
                 </option>
               ))}
@@ -227,6 +221,8 @@ export function UserManagement({
                 key={u.id}
                 user={u}
                 isSelf={u.id === currentUid}
+                teloRoles={overview.teloRoles}
+                lisRoleMap={overview.lisRoleMap}
               />
             ))
           )}
@@ -283,6 +279,7 @@ export function UserManagement({
       {createOpen && (
         <CreateUserPanel
           lisUsertypes={overview.lisUsertypes}
+          teloRoles={overview.teloRoles}
           onClose={() => setCreateOpen(false)}
         />
       )}
@@ -293,10 +290,20 @@ export function UserManagement({
 function UserRow({
   user,
   isSelf,
+  teloRoles,
+  lisRoleMap,
 }: {
   user: AdminOverview['users'][number];
   isSelf: boolean;
+  teloRoles: AdminOverview['teloRoles'];
+  lisRoleMap: AdminOverview['lisRoleMap'];
 }) {
+  const roleLabel = (key: string) =>
+    teloRoles.find((r) => r.roleKey === key)?.label ?? key;
+  const derived =
+    user.lisUsertypeId != null
+      ? (lisRoleMap[user.lisUsertypeId] ?? 'viewer')
+      : 'viewer';
   const [openRow, setOpenRow] = useState<
     null | 'role' | 'password' | 'edit' | 'preparedBy'
   >(null);
@@ -320,14 +327,14 @@ function UserRow({
         <TableCell>
           {user.teloRole ? (
             <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-              {labelFor(user.teloRole)}
+              {roleLabel(user.teloRole)}
             </span>
           ) : (
             <span
               className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
               title="Derived from the LIS user type — no explicit Telo role assigned yet."
             >
-              {labelFor(lisUsertypeToTeloRole(user.lisUsertypeId))}
+              {roleLabel(derived)}
               <span className="ml-1 opacity-60 italic">(from LIS)</span>
             </span>
           )}
@@ -435,6 +442,8 @@ function UserRow({
           <TableCell colSpan={7} className="bg-foreground/[0.03]">
             <EditUserForm
               user={user}
+              teloRoles={teloRoles}
+              lisRoleMap={lisRoleMap}
               onDone={() => setOpenRow(null)}
             />
           </TableCell>
@@ -458,6 +467,7 @@ function UserRow({
             <SetRoleForm
               userId={user.id}
               current={user.teloRole}
+              teloRoles={teloRoles}
               onDone={() => setOpenRow(null)}
             />
           </TableCell>
@@ -478,17 +488,15 @@ function UserRow({
   );
 }
 
-function labelFor(role: TeloRole): string {
-  return ROLES.find((r) => r.value === role)?.label ?? role;
-}
-
 function SetRoleForm({
   userId,
   current,
+  teloRoles,
   onDone,
 }: {
   userId: number;
   current: TeloRole | null;
+  teloRoles: AdminOverview['teloRoles'];
   onDone: () => void;
 }) {
   const [state, action, pending] = useActionState(setRoleAction, initial);
@@ -511,9 +519,10 @@ function SetRoleForm({
           suppressHydrationWarning
           className={sel + ' w-56'}
         >
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label} — {r.hint}
+          {teloRoles.map((r) => (
+            <option key={r.roleKey} value={r.roleKey}>
+              {r.label}
+              {r.description ? ` — ${r.description}` : ''}
             </option>
           ))}
         </select>
@@ -539,9 +548,13 @@ function SetRoleForm({
 
 function EditUserForm({
   user,
+  teloRoles,
+  lisRoleMap,
   onDone,
 }: {
   user: AdminOverview['users'][number];
+  teloRoles: AdminOverview['teloRoles'];
+  lisRoleMap: AdminOverview['lisRoleMap'];
   onDone: () => void;
 }) {
   const [state, action, pending] = useActionState(updateUserAction, initial);
@@ -619,7 +632,12 @@ function EditUserForm({
   }
 
   const effectiveRole =
-    user.teloRole ?? lisUsertypeToTeloRole(user.lisUsertypeId);
+    user.teloRole ??
+    (user.lisUsertypeId != null
+      ? (lisRoleMap[user.lisUsertypeId] ?? 'viewer')
+      : 'viewer');
+  const roleLabel =
+    teloRoles.find((r) => r.roleKey === effectiveRole)?.label ?? effectiveRole;
   // report_admin reports on every client code and can't order, so a per-client
   // MCC scope is meaningless — hide the picker like the other unrestricted roles.
   const scopeIsUnrestricted =
@@ -674,7 +692,7 @@ function EditUserForm({
         <Label>Client codes (MCC scope)</Label>
         {scopeIsUnrestricted ? (
           <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
-            {labelFor(effectiveRole)} accounts have{' '}
+            {roleLabel} accounts have{' '}
             <span className="font-medium text-foreground">unrestricted</span>{' '}
             MCC scope — assignments here only matter if the role is downgraded
             later.
@@ -995,9 +1013,11 @@ function SetMrpOnlyButton({
 
 function CreateUserPanel({
   lisUsertypes,
+  teloRoles,
   onClose,
 }: {
   lisUsertypes: AdminOverview['lisUsertypes'];
+  teloRoles: AdminOverview['teloRoles'];
   onClose: () => void;
 }) {
   const [state, action, pending] = useActionState(createUserAction, initial);
@@ -1137,8 +1157,8 @@ function CreateUserPanel({
               onChange={(e) => setTeloRole(e.target.value as TeloRole)}
               className={sel}
             >
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value}>
+              {teloRoles.map((r) => (
+                <option key={r.roleKey} value={r.roleKey}>
                   {r.label}
                 </option>
               ))}
@@ -1165,7 +1185,8 @@ function CreateUserPanel({
           <Label>Client codes (MCC scope)</Label>
           {scopeIsUnrestricted ? (
             <p className="rounded-md border border-foreground/5 bg-foreground/[0.03] px-3 py-2 text-xs text-muted-foreground">
-              {ROLES.find((r) => r.value === teloRole)?.label} accounts have{' '}
+              {teloRoles.find((r) => r.roleKey === teloRole)?.label ?? teloRole}{' '}
+              accounts have{' '}
               <span className="font-medium text-foreground">unrestricted</span>{' '}
               MCC scope — no selection needed.
             </p>

@@ -27,6 +27,12 @@ export default async function AdminUsersPage() {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-4">
           <a
+            href="/admin/roles"
+            className="text-sm text-muted-foreground underline hover:text-foreground"
+          >
+            Roles &amp; permissions →
+          </a>
+          <a
             href="/admin/interpretations"
             className="text-sm text-muted-foreground underline hover:text-foreground"
           >

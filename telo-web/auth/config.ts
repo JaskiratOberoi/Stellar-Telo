@@ -6,7 +6,10 @@ import { authConfig } from '@/auth/base';
 import { authenticateUser } from '@/db/sp/authenticateUser';
 import { fetchTeloRole } from '@/db/read/teloUsers';
 import { getSessionVersion } from '@/db/read/sessionVersion';
-import { deriveCapabilities } from '@/auth/rbac';
+import {
+  resolveCapsForRole,
+  resolveLisUsertypeToTeloRole,
+} from '@/db/read/teloRoles';
 import { rateLimit } from '@/lib/rate-limit';
 import { audit } from '@/lib/audit';
 import type { TeloUser } from '@/types/auth';
@@ -61,6 +64,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Capture the user's current session-version snapshot — any later
         // admin action that bumps this row revokes the token we mint here.
         const sv = await getSessionVersion(row.user_id);
+        const effectiveRole =
+          teloRole ?? (await resolveLisUsertypeToTeloRole(row.usertype_id));
+        const caps = await resolveCapsForRole(effectiveRole);
 
         const user: TeloUser = {
           uid: row.user_id,
@@ -75,7 +81,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           subPccId: row.sub_pcc_id,
           buId: row.business_unit_id,
           teloRole,
-          caps: deriveCapabilities(row, teloRole),
+          caps,
           sv,
         };
         return { id: String(user.uid), ...user } as never;

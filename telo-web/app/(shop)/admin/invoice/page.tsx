@@ -27,9 +27,14 @@ export default async function AdminInvoicePage() {
             receipt for each client account.
           </p>
         </div>
-        <Link href="/admin/users" className="text-sm underline">
-          ← User accounts
-        </Link>
+        <div className="flex shrink-0 flex-wrap items-center gap-3 text-sm">
+          <Link href="/admin/roles" className="underline">
+            Roles &amp; permissions
+          </Link>
+          <Link href="/admin/users" className="underline">
+            ← User accounts
+          </Link>
+        </div>
       </div>
 
       {!tableReady && (

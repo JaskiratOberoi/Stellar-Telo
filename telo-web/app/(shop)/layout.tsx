@@ -34,8 +34,8 @@ const NAV: NavItem[] = [
   { href: '/client-accounts', label: 'Client Accounts', cap: 'account:view' },
   { href: '/sales', label: 'Sales', cap: 'sales:view' },
   { href: '/reporting', label: 'Reporting', cap: 'report:view' },
-  // href: '/admin' so the active-link indicator covers /admin/users AND
-  // /admin/invoice (ShopNav uses pathname.startsWith(href)).
+  // href: '/admin' so the active-link indicator covers /admin/users,
+  // /admin/roles, /admin/invoice, etc. (ShopNav uses pathname.startsWith).
   { href: '/admin', label: 'Admin', cap: 'user:manage' },
   // Top-level /audit (not /admin/audit) so the Admin tab's startsWith active
   // check doesn't light up for it too.

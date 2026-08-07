@@ -23,12 +23,20 @@ export default async function AdminInterpretationsPage() {
             Save; leave blank to show none.
           </p>
         </div>
-        <a
-          href="/admin/users"
-          className="shrink-0 text-sm text-muted-foreground underline hover:text-foreground"
-        >
-          ← User accounts
-        </a>
+        <div className="flex shrink-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <a
+            href="/admin/roles"
+            className="underline hover:text-foreground"
+          >
+            Roles &amp; permissions
+          </a>
+          <a
+            href="/admin/users"
+            className="underline hover:text-foreground"
+          >
+            ← User accounts
+          </a>
+        </div>
       </div>
       <InterpretationManagement initial={profiles} />
     </div>

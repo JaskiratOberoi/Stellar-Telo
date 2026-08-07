@@ -23,7 +23,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_admin_create_user
     @lastName      NVARCHAR(100) = NULL,
     @email         NVARCHAR(100) = NULL,
     @lisUsertypeId INT,
-    @teloRole      NVARCHAR(20),
+    @teloRole      NVARCHAR(40),
     @actor         INT
 AS
 BEGIN
@@ -39,12 +39,23 @@ BEGIN
                user_id = CAST(NULL AS INT);
         RETURN;
     END
-    -- NOTE: keep this list in sync with the TeloRole union (types/auth.ts),
-    -- the zod enum (actions/admin.actions.ts), and SP 98 (set_role). Omitting
-    -- b2c_billing / b2b_billing / client / client_reporting here made new
-    -- users of those roles unsavable with "Unknown Telo role" even though the
-    -- Admin panel offered them. DO deploy this SP whenever the set changes.
-    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
+    -- Roles live in dbo.telo_role. Fall back to the historic hard-coded set
+    -- only when that table is empty / not yet deployed.
+    IF OBJECT_ID(N'dbo.telo_role', N'U') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM dbo.telo_role)
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.telo_role
+            WHERE role_key = @teloRole AND is_active = 1
+        )
+        BEGIN
+            SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
+                   message = N'Unknown or inactive Telo role',
+                   user_id = CAST(NULL AS INT);
+            RETURN;
+        END
+    END
+    ELSE IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
                          N'b2b_billing', N'client', N'client_reporting',
                          N'report_admin', N'technician', N'viewer')
     BEGIN

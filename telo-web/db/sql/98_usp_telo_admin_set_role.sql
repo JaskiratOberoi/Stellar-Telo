@@ -11,18 +11,29 @@
  */
 CREATE OR ALTER PROCEDURE dbo.usp_telo_admin_set_role
     @userId   INT,
-    @teloRole NVARCHAR(20),
+    @teloRole NVARCHAR(40),
     @actor    INT
 AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    -- NOTE: keep b2c_billing / b2b_billing / client_reporting in this list.
-    -- They are live Telo roles (see auth/rbac.ts). Do NOT drop them, and DO
-    -- deploy this SP to production whenever the set changes, else the Admin
-    -- panel rejects those roles with "Unknown Telo role".
-    IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
+    -- Roles live in dbo.telo_role (seeded + Admin-editable). Fall back to the
+    -- historic hard-coded set only when the table is empty/not yet deployed.
+    IF OBJECT_ID(N'dbo.telo_role', N'U') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM dbo.telo_role)
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.telo_role
+            WHERE role_key = @teloRole AND is_active = 1
+        )
+        BEGIN
+            SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
+                   message = N'Unknown or inactive Telo role';
+            RETURN;
+        END
+    END
+    ELSE IF @teloRole NOT IN (N'super_admin', N'admin', N'billing', N'b2c_billing',
                          N'b2b_billing', N'client', N'client_reporting',
                          N'report_admin', N'technician', N'viewer')
     BEGIN

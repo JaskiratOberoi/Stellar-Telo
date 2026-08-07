@@ -1,224 +1,31 @@
 import type { AuthRow, Capability, TeloRole } from '@/types/auth';
+import {
+  ROLE_CAPS,
+  LIS_TO_TELO_ROLE_MAP,
+} from '@/auth/rbac-defaults';
+
+export { ROLE_CAPS, LIS_TO_TELO_ROLE_MAP };
 
 /**
- * Telo capabilities are role-based. The role itself comes from one of two
- * places:
+ * Telo capabilities are role-based. The role itself comes from:
  *
- * 1. **Explicit assignment** (`tbl_telo_user_role`) — set by a Telo Super
- *    Admin via the Admin panel. Highest precedence.
- * 2. **Implicit (derived from LIS usertypeid)** — every login that lacks an
- *    explicit row gets a Telo role derived in code from its
- *    `tbl_med_user_master.usertypeid` via `LIS_TO_TELO_ROLE_MAP` below.
- *    No DB writes; nothing in the LIS schema changes.
+ * 1. **Explicit assignment** (`tbl_telo_user_role`) — Admin panel.
+ * 2. **Implicit** — derived from LIS `usertypeid` via `telo_lis_usertype_role`
+ *    (seeded from the historic map; editable in Admin → Roles).
  *
- * Tweak the per-role permission set in `ROLE_CAPS` or the per-LIS-role
- * mapping in `LIS_TO_TELO_ROLE_MAP` and redeploy. The Admin panel still
- * lets you override on a per-user basis without code changes.
+ * Capability grants live in `telo_role_capability` (editable). The constants
+ * in rbac-defaults.ts are seed + emergency fallback only.
+ *
+ * Sync helpers below use the in-code fallbacks (safe for client components).
+ * Server auth uses the async resolvers that read Redis/DB.
  */
 
-export const ROLE_CAPS: Record<TeloRole, Capability[]> = {
-  super_admin: [
-    'user:manage',
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'order:b2b',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'payment:refund',
-    'rate:view',
-    'rate:manage',
-    'balance:view',
-    'account:view',
-    'account:manage',
-    'sales:view',
-    'dashboard:view',
-    // Reporting is gated to super_admin only while the feature is finalised.
-    // Widen by adding 'report:view' to other roles here.
-    'report:view',
-  ],
-  admin: [
-    // Everything super_admin has EXCEPT user:manage.
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'order:b2b',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'rate:view',
-    'rate:manage',
-    'balance:view',
-    'account:view',
-    'sales:view',
-    'dashboard:view',
-  ],
-  billing: [
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'order:b2b',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'rate:view',
-    'balance:view',
-    // Sales (sales:view) and Client Accounts (account:view) are intentionally
-    // hidden for Billing — the nav tabs disappear and both pages redirect to
-    // /dashboard on direct URL access.
-    'dashboard:view',
-  ],
-  // ⚠️ DO NOT REMOVE the `b2c_billing` / `b2b_billing` roles below. They are a
-  // deliberate, in-use split of the billing/client channels (B2C "New order" vs
-  // B2B "Patient Orders") and are referenced across the app (nav gating,
-  // /home landing, LIS_TO_TELO_ROLE_MAP, the Admin picker, and the
-  // usp_telo_admin_set_role SP). If a future change or merge appears to drop
-  // them, RE-INCORPORATE them — and make sure they ship to production
-  // (deploy db/sql/98_usp_telo_admin_set_role.sql). Note for AI agents: keep
-  // these; don't "simplify" them away.
-  //
-  // Billing, restricted to the B2C channel: the "New order" tab only, no B2B
-  // "Patient Orders" tab. For internal counters that never raise B2B orders
-  // and for MRP-only clients like MEDICARE / MDCARE. Same caps as `billing`
-  // minus `order:b2b`.
-  b2c_billing: [
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'rate:view',
-    'balance:view',
-    'dashboard:view',
-  ],
-  // Client, restricted to the B2B channel: the "Patient Orders" tab only, no
-  // B2C "New order" tab. The default for LIS client accounts (DL0002 etc.) via
-  // LIS_TO_TELO_ROLE_MAP below. Same caps as `client` minus `order:b2c`.
-  b2b_billing: [
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2b',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'rate:view',
-    'balance:view',
-    'account:view',
-    'sales:view',
-    'dashboard:view',
-  ],
-  client: [
-    // B2B clients logging in with their LIS credentials. Same as billing, but
-    // WITH Sales (sales:view) + Client Accounts (account:view) so a client can
-    // see their own sales and account. Both pages scope a single-MCC user to
-    // their own client code, so there is no cross-client visibility.
-    'order:create',
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'order:b2b',
-    'order:discount',
-    'patient:create',
-    'patient:view',
-    'bill:view',
-    'payment:capture',
-    'rate:view',
-    'balance:view',
-    'account:view',
-    'sales:view',
-    'dashboard:view',
-  ],
-  // Client-facing reporting operator: ONLY the animated client home dashboard
-  // (/home) + the Reporting tab (view/print). No orders, billing, balances,
-  // sales or dashboard. `report:view` is scoped to the user's own client
-  // code(s) for every non-admin role (see lib/reportScope.ts) — so a client's
-  // reporting staff can only see/print their OWN centre's reports.
-  client_reporting: ['report:view'],
-  // Reporting operator with NO client-code restriction — view/print reports for
-  // EVERY client code and nothing else. Same single cap as client_reporting;
-  // the difference is scope: lib/reportScope.ts treats report_admin as an
-  // unrestricted reporter (null scope), so it never per-client-filters. Grants
-  // no orders/billing/accounts/user-management access.
-  report_admin: ['report:view'],
-  technician: [
-    // Strictly the New Order worklist — open existing orders to add SIDs.
-    // No dashboard:view → revenue KPIs are hidden and / lands on /orders/new.
-    'order:accession',
-    'order:view',
-    'order:b2c',
-    'patient:view',
-  ],
-  viewer: [
-    // Read-only across Dashboard / Orders / Balances / Rate lists.
-    'order:view',
-    'order:b2c',
-    'patient:view',
-    'bill:view',
-    'rate:view',
-    'balance:view',
-    'account:view',
-    'sales:view',
-    'dashboard:view',
-  ],
-};
-
-/**
- * Map every LIS `tbl_med_usertypes.id` to its Telo role. IDs not listed
- * default to `'viewer'` — the safest fallback for an unknown LIS role.
- *
- * Source: `tbl_med_usertypes` snapshot. Numbers are the LIS `id`s.
- */
-export const LIS_TO_TELO_ROLE_MAP: Record<number, TeloRole> = {
-  1: 'super_admin', // Super Admin
-  5: 'admin', // Admin
-  26: 'admin', // Director
-  28: 'admin', // BAS ADMIN
-  32: 'admin', // SALES ADMIN
-  // LIS client accounts (DL0002 etc.) default to B2B billing — the B2B
-  // "Patient Orders" tab only, no B2C "New order" tab. Assign the full `client`
-  // role (or `b2c_billing` for MRP-only clients like MEDICARE / MDCARE) per
-  // account from the Admin panel to override.
-  2: 'b2b_billing', // Client
-  7: 'b2b_billing', // Sub Client
-  12: 'b2b_billing', // CLIENT INVOICE
-  29: 'billing', // WALKIN CODES — internal counter/entry staff (no Sales/Accounts)
-  33: 'billing', // ENTRY — internal counter/entry staff (no Sales/Accounts)
-  4: 'technician', // Technician
-  9: 'technician', // Molecular
-  16: 'technician', // PHLEBOTMIST
-  17: 'technician', // HISTO TECH
-  18: 'technician', // AUTHORISED
-  20: 'technician', // ACCESSIONING
-  25: 'technician', // SPL MOLECULR
-  30: 'technician', // TECH ONLY
-  34: 'technician', // HLD ACCESSION
-  // Everything else (Doctor, Sales, Reporting variants, Accounts, RSM, …)
-  // → viewer by default. Override per-user from the Admin panel if needed.
-};
-
-/** Resolve caps for a given Telo role. */
+/** Sync fallback — prefer `resolveCapsForRole` on the server. */
 export function deriveCapsForRole(role: TeloRole): Capability[] {
-  return [...ROLE_CAPS[role]];
+  return [...(ROLE_CAPS[role] ?? ROLE_CAPS.viewer)];
 }
 
-/** Derive a Telo role from an LIS usertypeid (always returns one). */
+/** Sync fallback — prefer `resolveLisUsertypeToTeloRole` on the server. */
 export function lisUsertypeToTeloRole(
   lisUsertypeId: number | null | undefined,
 ): TeloRole {
@@ -226,11 +33,7 @@ export function lisUsertypeToTeloRole(
   return LIS_TO_TELO_ROLE_MAP[lisUsertypeId] ?? 'viewer';
 }
 
-/**
- * Main entry — explicit assignment wins; otherwise derive from LIS
- * usertypeid via the in-code map. AuthRow's per-user security bits are no
- * longer used for capability shaping — the role is the source of truth.
- */
+/** Sync fallback using in-code map/caps (JWT minting uses the async path). */
 export function deriveCapabilities(
   row: AuthRow,
   teloRole: TeloRole | null,

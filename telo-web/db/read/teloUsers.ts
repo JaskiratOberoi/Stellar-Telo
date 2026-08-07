@@ -1,21 +1,14 @@
 import 'server-only';
 import { getPool, sql, withRetry } from '@/db/pool';
-import { ROLE_CAPS } from '@/auth/rbac';
 import type { TeloRole } from '@/types/auth';
-
-// Valid Telo roles = the keys of ROLE_CAPS (the single source of truth in
-// auth/rbac.ts). Deriving this instead of re-listing the roles means a new role
-// (e.g. client_reporting) is accepted here automatically — a hardcoded copy
-// previously fell out of sync and made new roles silently fall back to the
-// LIS-derived role (so an assigned client_reporting/b2c_billing user kept the
-// wrong tabs). Do NOT replace this with a literal list.
-const TELO_ROLES: ReadonlySet<TeloRole> = new Set(
-  Object.keys(ROLE_CAPS) as TeloRole[],
-);
 
 function toRole(value: string | null): TeloRole | null {
   if (!value) return null;
-  return TELO_ROLES.has(value as TeloRole) ? (value as TeloRole) : null;
+  const v = value.trim();
+  if (!v) return null;
+  // Accept any non-empty role key — definitions live in dbo.telo_role.
+  // Unknown legacy keys still pass through so a user isn't silently demoted.
+  return v;
 }
 
 /**

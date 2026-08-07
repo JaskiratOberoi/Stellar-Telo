@@ -23,7 +23,7 @@ BEGIN
     CREATE TABLE dbo.tbl_telo_user_role (
         id          INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
         user_id     INT NOT NULL,
-        role        NVARCHAR(20) NOT NULL,
+        role        NVARCHAR(40) NOT NULL,
         assigned_by INT NULL,
         assigned_at DATETIME NOT NULL DEFAULT GETDATE(),
         CONSTRAINT UQ_telo_user_role_user UNIQUE (user_id)
