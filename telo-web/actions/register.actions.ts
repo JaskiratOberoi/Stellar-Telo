@@ -692,7 +692,9 @@ export async function registerOrder(
       clinicalHistory: f.clinicalHistory || null,
       clinicalFile: clinicalPdf?.buffer ?? null,
       clinicalFileName: clinicalPdf?.name ?? null,
-      // B2B passport → MRNID; blank lets the SP backfill patient id (LIS parity).
+      // Passport → MRNID (offered on both channels); blank lets the SP backfill
+      // the patient id (LIS parity) — which the report header treats as "no
+      // passport" and omits. See lib/report/assembleReportData.ts.
       mrnId: f.mrnId?.trim() || null,
       // Existing id wins; otherwise pass the fresh name and the SP upserts.
       refDoctor: refDoc?.kind === 'existing' ? refDoc.id : null,

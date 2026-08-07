@@ -606,6 +606,11 @@ export function RegisterForm({
               : ''
         }
       />
+      {/* Passport / travel ID is offered on BOTH channels, so its hidden field
+          sits outside the B2B-only block below (which carries the years+months
+          age resolution). Blank submits as '' and the SP backfills MRNID with
+          the patient id, exactly as before. */}
+      <input type="hidden" name="mrnId" value={passport.trim()} />
       {isB2b && (() => {
         const resolved = resolveB2bAge(ageYears, ageMonths);
         return (
@@ -615,11 +620,6 @@ export function RegisterForm({
               type="hidden"
               name="ageType"
               value={resolved?.ageType ?? ''}
-            />
-            <input
-              type="hidden"
-              name="mrnId"
-              value={passport.trim()}
             />
           </>
         );
@@ -898,19 +898,17 @@ export function RegisterForm({
             )}
           </div>
 
-          {isB2b && (
-            <div className="space-y-0.5">
-              <Label htmlFor="passport">Passport number</Label>
-              <Input
-                id="passport"
-                value={passport}
-                onChange={(e) => setPassport(e.target.value)}
-                placeholder="Optional"
-                maxLength={50}
-                autoComplete="off"
-              />
-            </div>
-          )}
+          <div className="space-y-0.5">
+            <Label htmlFor="passport">Passport number</Label>
+            <Input
+              id="passport"
+              value={passport}
+              onChange={(e) => setPassport(e.target.value)}
+              placeholder="Optional"
+              maxLength={50}
+              autoComplete="off"
+            />
+          </div>
 
           <div className="space-y-0.5">
             <Label htmlFor="clinicalHistory">Clinical history</Label>
@@ -1775,7 +1773,7 @@ export function RegisterForm({
                       <span>{refCustomerText.trim()}</span>
                     </>
                   )}
-                  {isB2b && passport.trim() && (
+                  {passport.trim() && (
                     <>
                       <span className="text-zinc-500">Passport</span>
                       <span>{passport.trim()}</span>

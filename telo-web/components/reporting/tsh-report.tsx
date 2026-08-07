@@ -697,7 +697,11 @@ function PatientMetaBlock({
           {data.specimens && data.specimens.length > 0 && (
             <Meta label="Specimen" value={data.specimens.join(', ')} />
           )}
-          <Meta label="Passport No." value={data.passportNo ?? '—'} mono />
+          {/* Omitted entirely when the order carried no passport (same
+              convention as Specimen / Bill No. above and below). */}
+          {data.passportNo && (
+            <Meta label="Passport No." value={data.passportNo} mono />
+          )}
           {/* Collected/Registered/Reported come from the Listec worksheet feed
               (IST wall-clock reinterpreted as UTC) → fmtListec; Printed is a real
               Telo instant → fmtIST. See lib/datetime fmtListec. */}
