@@ -7,7 +7,7 @@ import { Menu, X } from 'lucide-react';
 import { signOutAction } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
 import { VersionBadge } from '@/components/ui/version-badge';
-import { NobleStar } from '@/components/ui/noble-star';
+import { NobleMark } from '@/components/ui/noble-mark';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -107,9 +107,9 @@ export function ShopNav({
             )}
           >
             <span className="inline-flex items-center gap-1.5">
-              {/* Noble's sparkle leads the wordmark — inherits text-primary so
-                  it tracks the brand colour in both themes. */}
-              <NobleStar className="h-[15px] w-[15px] text-primary" />
+              {/* Noble's ring mark leads the wordmark; it repaints itself
+                  white on the dark theme (see NobleMark). */}
+              <NobleMark className="h-[18px] w-[18px]" />
               <span className="text-primary">Telo</span>
               <VersionBadge />
             </span>
