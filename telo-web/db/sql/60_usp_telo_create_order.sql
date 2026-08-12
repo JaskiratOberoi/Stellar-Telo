@@ -148,11 +148,20 @@ BEGIN
     );
 
     /* =================== validation ====================================== */
+    /* Existence only — NOT IsActive.
+       tbl_med_mcc_unit_master.IsActive is not a liveness flag in this
+       deployment: over 1,700 codes carry IsActive = 0 while trading daily, and
+       the LIS itself ignores it for client codes (both "PCC" pickers in
+       MedCis.Business/Utilities.cs carry a commented-out IsActive filter).
+       Telo's readers stopped trusting it in v1.85; this gate was the last
+       place that still did, and it hard-blocked ordering for any centre the
+       LIS had flagged inactive — MDCARE included, which is ~99% of Telo's
+       order volume. See db/read/mccUnits.ts for the full rationale. */
     IF NOT EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_unit_master
-                   WHERE id = @mcc AND IsActive = 1)
+                   WHERE id = @mcc)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = N'Unknown or inactive collection centre',
+               message = N'Unknown collection centre',
                patient_id = NULL, bill_id = NULL, bill_number = NULL,
                total = 0, sample_count = 0;
         SELECT * FROM @emptySamples;

@@ -53,11 +53,15 @@ BEGIN
                      ELSE CAST(@depositDate AS DATETIME) END;
 
     /* ---- validation -------------------------------------------------------- */
+    /* Existence only — NOT IsActive; same reasoning as
+       60_usp_telo_create_order.sql. Refusing a wallet top-up because the LIS
+       flagged the client "inactive" would strand payments for clients that
+       bill every day (MDCARE among them). */
     IF NOT EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_unit_master
-                   WHERE id = @mcc AND IsActive = 1)
+                   WHERE id = @mcc)
     BEGIN
         SELECT ok = CAST(0 AS BIT), error_code = 'VALIDATION',
-               message = N'Unknown or inactive client',
+               message = N'Unknown client',
                new_balance = CAST(NULL AS INT);
         RETURN;
     END
