@@ -153,7 +153,7 @@ export default async function BalanceMccPage({
             receiptsByBill={data.receiptsByBill}
             fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.xlsx`}
           />
-          <PrintReportButton />
+          <PrintReportButton rowCount={data.bills.length} />
           {showBackLink && (
             <Link href={backHref} className="text-sm underline">
               ← Accounts summary

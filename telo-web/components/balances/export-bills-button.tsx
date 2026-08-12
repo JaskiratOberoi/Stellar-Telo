@@ -63,6 +63,38 @@ const HEADERS = [
 
 const COLUMN_WIDTHS = [12, 11, 26, 11, 22, 18, 10, 7, 11, 11, 11, 11, 24, 24];
 
+/** Rows built per slice before handing the main thread back to the browser. */
+const CHUNK = 400;
+
+/** Resolve after the browser has had a chance to paint. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+/**
+ * `Array.map` that yields between slices, so building tens of thousands of
+ * styled cell objects doesn't lock the tab. A busy client can hold thousands
+ * of bills in one period (MDCARE: ~5.7k year-to-date) x 14 cells each, and
+ * doing that in one synchronous pass is what made the tab stop responding.
+ */
+async function mapInChunks<T, R>(
+  items: T[],
+  fn: (item: T) => R,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += CHUNK) {
+    for (const item of items.slice(i, i + CHUNK)) out.push(fn(item));
+    if (i + CHUNK < items.length) await nextFrame();
+  }
+  return out;
+}
+
 /**
  * Export the (currently filtered) accounts bills to a real .xlsx workbook for
  * mass corrections — amounts as raw numbers (editable/summable), one row per
@@ -86,6 +118,11 @@ export function ExportBillsButton({
     if (busy || bills.length === 0) return;
     setBusy(true);
     try {
+      // Let React paint "Exporting…" BEFORE the heavy work starts. Without this
+      // the state update and the blocking build happen in the same frame, so
+      // the button never changes and the tab just appears to freeze.
+      await nextFrame();
+
       // Browser build (this is a client component); the package exposes only
       // subpath exports, so import the browser entry explicitly.
       const writeXlsxFile = (await import('write-excel-file/browser')).default;
@@ -95,7 +132,7 @@ export function ExportBillsButton({
         fontWeight: 'bold' as const,
       }));
 
-      const dataRows = bills.map((b) => {
+      const dataRows = await mapInChunks(bills, (b) => {
         // Comma-join the bill's txn ids; tag refunds so corrections are clear.
         const txnIds = (receiptsByBill?.[b.billId] ?? [])
           .filter((t) => t.txnId)
