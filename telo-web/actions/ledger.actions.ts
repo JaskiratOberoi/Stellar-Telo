@@ -62,8 +62,10 @@ export interface LedgerForMcc {
   fetchedAt: string;
 }
 
-/** Bills per page on the account summary. */
-export const BILLS_PAGE_SIZE = 200;
+/** Bills per page on the account summary. NOT exported: a 'use server' module
+ *  may only export async functions, and the page reads the size off the
+ *  returned `pageSize` anyway. */
+const BILLS_PAGE_SIZE = 200;
 
 const EMPTY_TOTALS: AccountsTotals = {
   bills: 0,
