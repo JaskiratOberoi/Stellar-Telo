@@ -5,6 +5,7 @@ import { FileSpreadsheet } from 'lucide-react';
 import type { SheetData } from 'write-excel-file/browser';
 import { Button } from '@/components/ui/button';
 import { fmtIST } from '@/lib/datetime';
+import { getBillsForExport } from '@/actions/ledger.actions';
 
 /** The bill fields exported to the spreadsheet (a structural subset of the
  *  ledger's PendingBillRow — kept local so this client component never imports
@@ -100,24 +101,45 @@ async function mapInChunks<T, R>(
  * mass corrections — amounts as raw numbers (editable/summable), one row per
  * bill with its payment txn ids. The xlsx writer is dynamically imported so it
  * only loads when the button is clicked (no impact on the rest of the bundle).
- * Purely client-side: no server call, no data mutation.
+ * Fetches the full matching set through getBillsForExport on click (the page
+ * itself is paginated), then builds the workbook client-side. Read-only — no
+ * data mutation.
  */
 export function ExportBillsButton({
-  bills,
-  receiptsByBill,
+  mccId,
+  from,
+  to,
+  mine,
+  q,
+  rowCount,
   fileName,
 }: {
-  bills: ExportBill[];
-  /** Payment/refund receipts per bill id — to list their txn ids in the export. */
-  receiptsByBill?: Record<number, ExportReceipt[]>;
+  /** The account page's active filters — replayed server-side to fetch the
+   *  FULL matching set. The summary is server-paginated, so exporting the
+   *  rendered rows would silently ship a partial workbook. */
+  mccId: number;
+  from: string;
+  to: string;
+  mine?: boolean;
+  q?: string;
+  /** Total matching bills — for the disabled state and the button title. */
+  rowCount: number;
   fileName: string;
 }) {
   const [busy, setBusy] = useState(false);
 
   async function onExport() {
-    if (busy || bills.length === 0) return;
+    if (busy || rowCount === 0) return;
     setBusy(true);
     try {
+      // Pull every matching bill (one round-trip), then build in slices.
+      const { bills, receiptsByBill } = await getBillsForExport(mccId, {
+        from,
+        to,
+        mine,
+        q,
+      });
+      if (bills.length === 0) return;
       // Let React paint "Exporting…" BEFORE the heavy work starts. Without this
       // the state update and the blocking build happen in the same frame, so
       // the button never changes and the tab just appears to freeze.
@@ -186,8 +208,12 @@ export function ExportBillsButton({
       size="sm"
       className="gap-1.5"
       onClick={onExport}
-      disabled={busy || bills.length === 0}
-      title={bills.length === 0 ? 'No bills to export' : 'Download an editable Excel workbook'}
+      disabled={busy || rowCount === 0}
+      title={
+        rowCount === 0
+          ? 'No bills to export'
+          : `Download all ${rowCount.toLocaleString('en-IN')} matching bills as an editable Excel workbook`
+      }
     >
       <FileSpreadsheet className="h-3.5 w-3.5" />
       {busy ? 'Exporting…' : 'Export Excel'}

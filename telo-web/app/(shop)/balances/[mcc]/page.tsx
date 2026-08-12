@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireSession } from '@/auth/session';
 import { hasCapability } from '@/auth/rbac';
-import { getLedgerForMcc } from '@/actions/ledger.actions';
+import { getLedgerForMcc, getBillsForExport } from '@/actions/ledger.actions';
 import { fetchScopedMccUnits } from '@/db/read/mccUnits';
 import { getMccInvoiceConfig } from '@/db/read/invoiceConfig';
 import { getReceiptsInPeriod } from '@/db/read/receipts';
@@ -16,6 +16,7 @@ import { BalancesBillsTable } from '@/components/balances/balances-bills-table';
 import { BalanceViewTabs } from '@/components/balances/balance-view-tabs';
 import { PrintReportButton } from '@/components/balances/print-report-button';
 import { ExportBillsButton } from '@/components/balances/export-bills-button';
+import { AutoPrint } from '@/components/balances/auto-print';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,16 @@ export default async function BalanceMccPage({
   searchParams,
 }: {
   params: Promise<{ mcc: string }>;
-  searchParams: Promise<{ from?: string; to?: string; mine?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    mine?: string;
+    q?: string;
+    page?: string;
+    /** ?print=1 renders the FULL statement (all bills, unpaginated). The
+     *  screen view stays paginated; only this mode loads everything. */
+    print?: string;
+  }>;
 }) {
   const { mcc } = await params;
   const mccId = Number(mcc);
@@ -53,13 +63,19 @@ export default async function BalanceMccPage({
   const to = sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today();
   // "My Accounts Summary" filter: only bills this Telo user registered.
   const mine = sp.mine === '1';
+  // Server-side search + paging: both live in the URL alongside from/to/mine,
+  // so a filtered page is shareable and the browser Back button works.
+  const q = (sp.q ?? '').trim();
+  const pageParam = Number(sp.page);
+  const pageNo = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+  const printMode = sp.print === '1';
 
   // Receipts query is scoped to this MCC only — needs the user's mcc scope
   // to defend against URL-typing, so we fetch scope first then receipts in
   // parallel with the other reads.
   const scope = await getMccScope(user.uid);
   const [data, mccs, invoiceConfig, receipts] = await Promise.all([
-    getLedgerForMcc(mccId, { from, to, mine }),
+    getLedgerForMcc(mccId, { from, to, mine, q, page: pageNo }),
     // Self-include this MCC so its name resolves even if the LIS flags it inactive.
     fetchScopedMccUnits([mccId], [mccId]),
     getMccInvoiceConfig(mccId),
@@ -89,6 +105,15 @@ export default async function BalanceMccPage({
   ];
   const activePeriod = periods.find((p) => p.from === from && p.to === to);
 
+  /** Same URL, different page — every other filter is preserved. */
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams({ from, to });
+    if (mine) params.set('mine', '1');
+    if (q) params.set('q', q);
+    if (n > 1) params.set('page', String(n));
+    return `/balances/${mccId}?${params.toString()}`;
+  };
+
   // Negative-balance bills are pinned to the top by default; load this user's
   // unpin exceptions so the client table can render the right pin state. Only
   // negative bills are pinnable, so the lookup set is naturally small.
@@ -98,9 +123,11 @@ export default async function BalanceMccPage({
   const unpinnedIds = await getUnpinnedBillIds(user.uid, negativeBillIds);
 
   // ── Summary aggregates ─────────────────────────────────────────────────
-  // Bill-date-keyed (what was billed in the window):
-  const totalAmount = data.bills.reduce((s, b) => s + b.amount, 0);
-  const pendingBills = data.bills.filter((b) => b.balance > 0).length;
+  // Bill-date-keyed (what was billed in the window). These come from the SQL
+  // totals, NOT from `data.bills` — that array is now a single page, so
+  // summing it would under-report the period the moment paging kicks in.
+  const totalAmount = data.totals.amount;
+  const pendingBills = data.totals.pendingCount;
   // Receipt-date-keyed (what was actually collected in the window):
   // see db/read/receipts.ts — payments recorded today against any bill
   // roll up here, never into prior days' totals.
@@ -110,22 +137,32 @@ export default async function BalanceMccPage({
   const cashCount  = receipts.cashCount;
   const otherCount = receipts.otherCount;
 
-  return (
-    <div>
-      {/* ── Print view: A4 account statement ───────────────────────── */}
-      <div className="hidden print:block">
+  // Print mode: load the WHOLE period so the statement is complete. A printed
+  // account statement must never be a page of it — the screen view is paged,
+  // this is not. Rendered on its own so the heavy table only exists when the
+  // operator actually asked to print.
+  if (printMode) {
+    const full = await getBillsForExport(mccId, { from, to, mine, q });
+    return (
+      <div>
+        <AutoPrint />
         <AccountsReport
           mccName={mccMeta?.name ?? null}
           mccCode={mccMeta?.code ?? null}
           invoiceConfig={invoiceConfig}
           from={from}
           to={to}
-          bills={data.bills}
-          receiptsByBill={data.receiptsByBill}
+          bills={full.bills}
+          receiptsByBill={full.receiptsByBill}
           totalBalance={data.totalBalance}
           receipts={receipts}
         />
       </div>
+    );
+  }
+
+  return (
+    <div>
 
       {/* ── Screen view: interactive ledger ────────────────────────── */}
       <div className="space-y-4 print:hidden">
@@ -138,10 +175,14 @@ export default async function BalanceMccPage({
             </span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            {data.bills.length} Telo bill
-            {data.bills.length === 1 ? '' : 's'}
-            {mine ? ' (yours)' : ''} · {inr(data.totalBalance)}{' '}
+            {data.totals.count.toLocaleString('en-IN')} Telo bill
+            {data.totals.count === 1 ? '' : 's'}
+            {mine ? ' (yours)' : ''}
+            {q ? ` matching “${q}”` : ''} · {inr(data.totalBalance)}{' '}
             balance · {fmtIST(from, 'date')} → {fmtIST(to, 'date')}
+            {data.totalPages > 1 && (
+              <> · page {data.page} of {data.totalPages}</>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -149,11 +190,18 @@ export default async function BalanceMccPage({
             <BalanceViewTabs mccId={mccId} from={from} to={to} active="bills" />
           )}
           <ExportBillsButton
-            bills={data.bills}
-            receiptsByBill={data.receiptsByBill}
+            mccId={mccId}
+            from={from}
+            to={to}
+            mine={mine}
+            q={q}
+            rowCount={data.totals.count}
             fileName={`${mccMeta?.code ?? mccId}_accounts_${from}_${to}.xlsx`}
           />
-          <PrintReportButton rowCount={data.bills.length} />
+          <PrintReportButton
+            rowCount={data.totals.count}
+            printHref={`${pageHref(1)}&print=1`}
+          />
           {showBackLink && (
             <Link href={backHref} className="text-sm underline">
               ← Accounts summary
@@ -235,8 +283,62 @@ export default async function BalanceMccPage({
         to={to}
         mine={mine}
       />
+
+      {/* Pager — plain links so paging survives a reload/share and needs no
+          client state. Only rendered when the period actually spans pages. */}
+      {data.totalPages > 1 && (
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">
+            Showing{' '}
+            {((data.page - 1) * data.pageSize + 1).toLocaleString('en-IN')}–
+            {Math.min(
+              data.page * data.pageSize,
+              data.totals.count,
+            ).toLocaleString('en-IN')}{' '}
+            of {data.totals.count.toLocaleString('en-IN')}
+          </span>
+          <span className="flex items-center gap-2">
+            <PagerLink
+              disabled={data.page <= 1}
+              href={pageHref(data.page - 1)}
+              label="‹ Prev"
+            />
+            <span className="tabular-nums text-muted-foreground">
+              {data.page} / {data.totalPages}
+            </span>
+            <PagerLink
+              disabled={data.page >= data.totalPages}
+              href={pageHref(data.page + 1)}
+              label="Next ›"
+            />
+          </span>
+        </div>
+      )}
       </div>{/* end screen view */}
     </div>
+  );
+}
+
+/** Pager control — a link when navigable, an inert span at the ends. */
+function PagerLink({
+  href,
+  label,
+  disabled,
+}: {
+  href: string;
+  label: string;
+  disabled: boolean;
+}) {
+  const base = 'rounded-md border border-foreground/10 px-2.5 py-1 text-xs';
+  if (disabled) {
+    return (
+      <span className={cn(base, 'cursor-not-allowed opacity-40')}>{label}</span>
+    );
+  }
+  return (
+    <Link href={href} className={cn(base, 'hover:bg-foreground/5')}>
+      {label}
+    </Link>
   );
 }
 

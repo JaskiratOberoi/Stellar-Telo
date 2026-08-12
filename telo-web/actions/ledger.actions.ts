@@ -6,6 +6,8 @@ import { getMccScope } from '@/auth/scope';
 import {
   summarizeTeloAccounts,
   listTeloBillsForMcc,
+  getTeloBillTotalsForMcc,
+  type BillTotals,
   listTeloReceiptsForBills,
   searchTeloBills,
   type AccountsRow,
@@ -43,12 +45,25 @@ export interface AccountsSummary {
 
 export interface LedgerForMcc {
   mccId: number;
+  /** The requested page of bills — NOT the whole period. Totals below cover
+   *  every matching bill; never re-derive them from this array. */
   bills: PendingBillRow[];
   receiptsByBill: Record<number, BillReceiptRow[]>;
+  /** Period balance over EVERY matching bill, summed in SQL. */
   totalBalance: number;
+  /** Full period aggregates (count + money), independent of the page. */
+  totals: BillTotals;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  /** Active free-text filter, applied in SQL across the whole period. */
+  q: string;
   range: { from: string; to: string };
   fetchedAt: string;
 }
+
+/** Bills per page on the account summary. */
+export const BILLS_PAGE_SIZE = 200;
 
 const EMPTY_TOTALS: AccountsTotals = {
   bills: 0,
@@ -157,9 +172,11 @@ export async function searchAccountsBills(args: {
  */
 export async function getLedgerForMcc(
   mccId: number,
-  args: { from: string; to: string; mine?: boolean },
+  args: { from: string; to: string; mine?: boolean; q?: string; page?: number },
 ): Promise<LedgerForMcc> {
   const range = { from: args.from, to: args.to };
+  const q = (args.q ?? '').trim();
+  const pageSize = BILLS_PAGE_SIZE;
   const user = await currentUser();
   if (!user || !hasCapability(user.caps, 'balance:view')) {
     return {
@@ -167,18 +184,38 @@ export async function getLedgerForMcc(
       bills: [],
       receiptsByBill: {},
       totalBalance: 0,
+      totals: { count: 0, balance: 0, amount: 0, amountPaid: 0, discount: 0, pendingCount: 0 },
+      page: 1,
+      pageSize,
+      totalPages: 1,
+      q,
       range,
       fetchedAt: new Date().toISOString(),
     };
   }
   const scope = await getMccScope(user.uid);
-  const bills = await listTeloBillsForMcc(
+  const opts = { registeredByUserId: args.mine ? user.uid : null, q };
+
+  // Totals first: they decide how many pages exist, so a stale `page` (e.g. a
+  // bookmarked ?page=9 after the range narrowed) can be clamped instead of
+  // returning an empty table.
+  const totals = await getTeloBillTotalsForMcc(
     mccId,
     scope,
     args.from,
     args.to,
-    args.mine ? user.uid : null,
+    opts,
   );
+  const totalPages = Math.max(1, Math.ceil(totals.count / pageSize));
+  const page = Math.min(Math.max(1, Math.floor(args.page ?? 1)), totalPages);
+
+  const bills = await listTeloBillsForMcc(mccId, scope, args.from, args.to, {
+    ...opts,
+    page,
+    pageSize,
+  });
+  // Receipts only for the rows actually shown — this used to fetch them for
+  // every bill in the period.
   const receiptRows = await listTeloReceiptsForBills(bills.map((b) => b.billId));
   const receiptsByBill: Record<number, BillReceiptRow[]> = {};
   for (const row of receiptRows) {
@@ -188,8 +225,47 @@ export async function getLedgerForMcc(
     mccId,
     bills,
     receiptsByBill,
-    totalBalance: bills.reduce((a, b) => a + b.balance, 0),
+    // From SQL over the whole period — not `bills.reduce(...)`, which would
+    // now only sum the visible page.
+    totalBalance: totals.balance,
+    totals,
+    page,
+    pageSize,
+    totalPages,
+    q,
     range,
     fetchedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * EVERY matching bill (no paging) plus its receipts — for the Excel export.
+ *
+ * The page renders one page at a time, so the export must not hand back
+ * `data.bills`: that would silently ship only the visible rows in a workbook
+ * used for mass corrections. This deliberately re-runs the same filters
+ * unpaged.
+ */
+export async function getBillsForExport(
+  mccId: number,
+  args: { from: string; to: string; mine?: boolean; q?: string },
+): Promise<{
+  bills: PendingBillRow[];
+  receiptsByBill: Record<number, BillReceiptRow[]>;
+}> {
+  const user = await currentUser();
+  if (!user || !hasCapability(user.caps, 'balance:view')) {
+    return { bills: [], receiptsByBill: {} };
+  }
+  const scope = await getMccScope(user.uid);
+  const bills = await listTeloBillsForMcc(mccId, scope, args.from, args.to, {
+    registeredByUserId: args.mine ? user.uid : null,
+    q: (args.q ?? '').trim(),
+  });
+  const receiptRows = await listTeloReceiptsForBills(bills.map((b) => b.billId));
+  const receiptsByBill: Record<number, BillReceiptRow[]> = {};
+  for (const row of receiptRows) {
+    (receiptsByBill[row.billId] ??= []).push(row);
+  }
+  return { bills, receiptsByBill };
 }

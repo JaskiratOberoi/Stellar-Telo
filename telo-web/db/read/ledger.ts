@@ -220,33 +220,173 @@ export async function summarizeTeloAccounts(
  * SP stamps. Used by the Accounts "My Accounts Summary" filter so an operator
  * sharing a client code with colleagues sees only their own registrations.
  */
+/** Options shared by the page query, the totals query and the export. */
+export interface BillsForMccOptions {
+  registeredByUserId?: number | null;
+  /** Free-text match over bill #, patient, PID, doctor, customer, mobile and
+   *  the patient's Sample IDs. Applied in SQL so it spans the whole period,
+   *  not just the loaded page. */
+  q?: string | null;
+  /** 1-based page. Omit (with pageSize) to return every matching row — the
+   *  export path relies on that. */
+  page?: number | null;
+  pageSize?: number | null;
+}
+
+export interface BillTotals {
+  /** Rows matching the filters — drives the pager and the print warning. */
+  count: number;
+  balance: number;
+  amount: number;
+  amountPaid: number;
+  discount: number;
+  /** Bills still owing (balance > 0) across the whole period. */
+  pendingCount: number;
+}
+
+/**
+ * The WHERE fragment every bills query shares.
+ *
+ * Rows, totals and export MUST select from an identical predicate: if they
+ * drift, the page footer stops describing the rows above it and a financial
+ * total silently misreports. Binding the parameters here (rather than at each
+ * call site) is what keeps them in lockstep.
+ */
+function billsWhere(
+  req: sql.Request,
+  mccId: number,
+  fromIso: string,
+  toIso: string,
+  mineId: number | null,
+  q: string | null,
+): string {
+  req
+    .input('mcc', sql.Int, mccId)
+    .input('from', sql.VarChar(10), fromIso)
+    .input('to', sql.VarChar(10), toIso);
+  // Exact marker match (the SP writes CONCAT('telo:', userId), no spaces).
+  let mineClause = '';
+  if (mineId != null) {
+    req.input('addedBy', sql.NVarChar(64), `telo:${mineId}`);
+    mineClause = 'AND b.addedby = @addedBy';
+  }
+  let qClause = '';
+  const needle = (q ?? '').trim();
+  if (needle) {
+    // Metacharacters are stripped, not escaped — the box is a contains-match.
+    req.input('q', sql.NVarChar(120), `%${needle.replace(/[%_[\]]/g, ' ').slice(0, 100)}%`);
+    qClause = `AND (
+         b.patientname       LIKE @q
+      OR CONVERT(VARCHAR(20), b.bill_number) LIKE @q
+      OR b.medid             LIKE @q
+      OR b.mobile_number     LIKE @q
+      OR d.doctor_name       LIKE @q
+      OR c.customer_name     LIKE @q
+      OR EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_patient_samples s
+                  WHERE s.patient_id = TRY_CONVERT(INT, b.medid)
+                    AND s.vailid LIKE @q)
+    )`;
+  }
+  return `
+        WHERE b.addedby LIKE 'telo:%'
+          AND b.mcc_code = @mcc
+          AND b.bill_date >= CAST(@from AS DATE)
+          AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
+          ${mineClause}
+          ${qClause}`;
+}
+
+/** Scope gate shared by the bills and totals queries. */
+function mccInScope(mccId: number, scope: number[]): boolean {
+  const ids = scope.filter((n) => Number.isInteger(n));
+  if (ids.length === 0) return false;
+  const unrestricted = ids.length > 1000;
+  return unrestricted || ids.includes(mccId);
+}
+
+/**
+ * Period totals over EVERY matching bill, computed in SQL.
+ *
+ * These must never be derived from a page of rows — the account summary's
+ * balance has to cover the whole period regardless of what is on screen.
+ */
+export async function getTeloBillTotalsForMcc(
+  mccId: number,
+  scope: number[],
+  fromIso: string,
+  toIso: string,
+  opts: BillsForMccOptions = {},
+): Promise<BillTotals> {
+  const empty: BillTotals = { count: 0, balance: 0, amount: 0, amountPaid: 0, discount: 0, pendingCount: 0 };
+  if (!mccInScope(mccId, scope)) return empty;
+  const mineId =
+    opts.registeredByUserId != null && Number.isInteger(opts.registeredByUserId)
+      ? opts.registeredByUserId
+      : null;
+  return withRetry(async () => {
+    const pool = await getPool();
+    const req = pool.request();
+    const where = billsWhere(req, mccId, fromIso, toIso, mineId, opts.q ?? null);
+    const r = await req.query<BillTotals>(`
+      SELECT
+        COUNT(*)                              AS count,
+        ISNULL(SUM(b.Balance), 0)             AS balance,
+        ISNULL(SUM(b.amount), 0)              AS amount,
+        ISNULL(SUM(b.amount_paid), 0)         AS amountPaid,
+        ISNULL(SUM(ISNULL(b.discount_amount, 0)), 0) AS discount,
+        SUM(CASE WHEN b.Balance > 0 THEN 1 ELSE 0 END) AS pendingCount
+      FROM dbo.tbl_billing_patient_detail b
+      LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
+      LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
+      ${where}
+    `);
+    const x = r.recordset[0];
+    return x
+      ? {
+          count: Number(x.count ?? 0),
+          balance: Number(x.balance ?? 0),
+          amount: Number(x.amount ?? 0),
+          amountPaid: Number(x.amountPaid ?? 0),
+          discount: Number(x.discount ?? 0),
+          pendingCount: Number(x.pendingCount ?? 0),
+        }
+      : empty;
+  });
+}
+
 export async function listTeloBillsForMcc(
   mccId: number,
   scope: number[],
   fromIso: string,
   toIso: string,
-  registeredByUserId?: number | null,
+  registeredByUserIdOrOpts?: number | null | BillsForMccOptions,
 ): Promise<PendingBillRow[]> {
-  const ids = scope.filter((n) => Number.isInteger(n));
-  if (ids.length === 0) return [];
-  const unrestricted = ids.length > 1000;
-  if (!unrestricted && !ids.includes(mccId)) return [];
+  // Back-compat: this used to take a bare `registeredByUserId`.
+  const opts: BillsForMccOptions =
+    registeredByUserIdOrOpts != null && typeof registeredByUserIdOrOpts === 'object'
+      ? registeredByUserIdOrOpts
+      : { registeredByUserId: registeredByUserIdOrOpts ?? null };
+  if (!mccInScope(mccId, scope)) return [];
   const mineId =
-    registeredByUserId != null && Number.isInteger(registeredByUserId)
-      ? registeredByUserId
+    opts.registeredByUserId != null && Number.isInteger(opts.registeredByUserId)
+      ? opts.registeredByUserId
       : null;
+  // Page only when BOTH are given; the export deliberately omits them.
+  const paged =
+    Number.isInteger(opts.page) &&
+    Number.isInteger(opts.pageSize) &&
+    (opts.page as number) > 0 &&
+    (opts.pageSize as number) > 0;
   return withRetry(async () => {
     const pool = await getPool();
-    const req = pool
-      .request()
-      .input('mcc', sql.Int, mccId)
-      .input('from', sql.VarChar(10), fromIso)
-      .input('to', sql.VarChar(10), toIso);
-    // Exact marker match (the SP writes CONCAT('telo:', userId), no spaces).
-    let mineClause = '';
-    if (mineId != null) {
-      req.input('addedBy', sql.NVarChar(64), `telo:${mineId}`);
-      mineClause = 'AND b.addedby = @addedBy';
+    const req = pool.request();
+    const where = billsWhere(req, mccId, fromIso, toIso, mineId, opts.q ?? null);
+    let pageClause = '';
+    if (paged) {
+      req
+        .input('off', sql.Int, ((opts.page as number) - 1) * (opts.pageSize as number))
+        .input('lim', sql.Int, opts.pageSize as number);
+      pageClause = 'OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY';
     }
     const r = await req
       .query<{
@@ -286,12 +426,9 @@ export async function listTeloBillsForMcc(
         FROM dbo.tbl_billing_patient_detail b
         LEFT JOIN dbo.tbl_med_mcc_doctors  d ON d.id = b.ref_doctor
         LEFT JOIN dbo.tbl_med_mcc_customer c ON c.id = b.ref_customer
-        WHERE b.addedby LIKE 'telo:%'
-          AND b.mcc_code = @mcc
-          AND b.bill_date >= CAST(@from AS DATE)
-          AND b.bill_date <  DATEADD(day, 1, CAST(@to AS DATE))
-          ${mineClause}
+        ${where}
         ORDER BY b.bill_date DESC, b.id DESC
+        ${pageClause}
       `);
     return r.recordset.map((x) => ({
       billId: x.billId,

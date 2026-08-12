@@ -19,7 +19,15 @@ const PRINT_WARN_ROWS = 1500;
  * silently trim a financial document; instead a large print is confirmed
  * first, so the wait is expected rather than mysterious.
  */
-export function PrintReportButton({ rowCount = 0 }: { rowCount?: number }) {
+export function PrintReportButton({
+  rowCount = 0,
+  printHref,
+}: {
+  rowCount?: number;
+  /** URL of the full-statement view (?print=1), which loads every bill in the
+   *  period and opens the dialog itself. */
+  printHref: string;
+}) {
   function onPrint() {
     if (
       rowCount > PRINT_WARN_ROWS &&
@@ -32,7 +40,10 @@ export function PrintReportButton({ rowCount = 0 }: { rowCount?: number }) {
     ) {
       return;
     }
-    window.print();
+    // Open the complete statement in its own tab; it prints on load. The
+    // screen view only holds one page, so printing it directly would produce
+    // a partial statement.
+    window.open(printHref, '_blank', 'noopener');
   }
 
   return (
