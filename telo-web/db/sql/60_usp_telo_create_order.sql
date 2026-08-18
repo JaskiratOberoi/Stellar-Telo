@@ -1,6 +1,26 @@
 /*
  * 60_usp_telo_create_order.sql  —  THE atomic order write.
  *
+ * ⚠ SHARED PROCEDURE — Telo is NOT the only caller.
+ *
+ * Stellar Infinity calls dbo.usp_telo_create_order too, and does not keep a
+ * copy of it: this file is the definition of record for BOTH products. A
+ * deploy from this repo (npm run deploy:sp, with or without a file argument —
+ * no-arg walks all of db/sql/) CREATE-OR-ALTERs the live procedure, so
+ * anything Infinity added and this file lacks is silently destroyed.
+ *
+ * That has already come close once: Infinity added @priceAtClientRate in prod
+ * on 2026-08-18, and a Telo redeploy of this file would have removed it and
+ * broken their B2B ordering. Before editing, diff this file against the
+ * deployed definition (sys.sql_modules) and carry over anything you find.
+ *
+ * Parameters exist here that Telo never passes and must not remove:
+ *   @origin            — origin marker prefix; Infinity passes 'inf:'
+ *   @priceAtClientRate — price at the client rate while still tagging b2b
+ */
+/*
+ * 60_usp_telo_create_order.sql — order-write details follow.
+ *
  * One transaction across the LIS order chain:
  *   ① tbl_med_mcc_patient_master   (create patient, or reuse @patientId)
  *   ② tbl_med_mcc_patient_tests    (one row per line — UNbilled: amount_checked
@@ -94,7 +114,21 @@ CREATE OR ALTER PROCEDURE dbo.usp_telo_create_order
     -- pricing, gold-card, split-payment and custom-test rules, and a second
     -- copy of it writing to the same tables would drift the first time either
     -- side fixed a bug.
-    @origin           NVARCHAR(20)   = N'telo:'
+    @origin           NVARCHAR(20)   = N'telo:',
+    /* Price the basket at the CLIENT'S RATE while still tagging the order
+       b2b. @billAtMrp alone cannot express that: it decides the price AND is
+       what writes dbo.telo_order_kind, so an Infinity B2B order wanting rate
+       pricing would have had to drop the tag and vanish from the B2B worklist.
+
+       Noble bills a collection centre what the centre owes the LAB. MRP is
+       what the centre charges its own patient and stays in the order form for
+       margin only. This also makes the bill agree with the wallet, which
+       usp_telo_accession_samples has always debited at the client rate.
+
+       LAST in the list and DEFAULT 0 so no existing caller - Telo above all,
+       whose call sites are not in this repo - changes behaviour or argument
+       position. */
+    @priceAtClientRate BIT           = 0
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -309,11 +343,11 @@ BEGIN
         --   tier 2: catalogue MRP
         --   tier 3: 0 (never NULL — billing line needs a number)
         COALESCE(
-          CASE WHEN @billAtMrp = 1 THEN NULL ELSE (SELECT sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
+          CASE WHEN @billAtMrp = 1 AND @priceAtClientRate = 0 THEN NULL ELSE (SELECT sr.rate FROM dbo.tbl_med_mcc_test_special_rates sr
              WHERE sr.mcccode = @mcc
                AND sr.testtype = CASE i.itemKind WHEN 0 THEN 'T' WHEN 1 THEN 'P' ELSE 'M' END
                AND sr.testid = i.testMasterId) END,
-          CASE WHEN @billAtMrp = 1 THEN NULL ELSE CASE i.itemKind
+          CASE WHEN @billAtMrp = 1 AND @priceAtClientRate = 0 THEN NULL ELSE CASE i.itemKind
             WHEN 0 THEN (SELECT r.Price FROM dbo.tbl_med_test_rates_with_pcc_type r
                            WHERE r.TestCode = i.testMasterId
                              AND r.RateTypeId = @rateTypeId AND r.IsActive = 1)
