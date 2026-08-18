@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Pin, PinOff, Search, X } from 'lucide-react';
 import { fmtIST } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
@@ -61,6 +62,8 @@ export function BalancesBillsTable({
   from,
   to,
   mine,
+  q,
+  matchCount,
 }: {
   bills: BalanceBill[];
   unpinnedIds: number[];
@@ -68,62 +71,72 @@ export function BalancesBillsTable({
   from: string;
   to: string;
   mine: boolean;
+  /** The search currently APPLIED by the server (from the URL). */
+  q: string;
+  /** Rows matching `q` across the whole period — not just this page. */
+  matchCount: number;
 }) {
+  const router = useRouter();
   const [unpinned, setUnpinned] = useState<Set<number>>(
     () => new Set(unpinnedIds),
   );
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [, startTransition] = useTransition();
-  const [query, setQuery] = useState('');
+  const [isSearchPending, startSearchTransition] = useTransition();
+  // Seeded from the URL so a shared/reloaded link shows its own query.
+  const [query, setQuery] = useState(q);
 
   const isPinned = (b: BalanceBill) =>
     b.balance < 0 && !unpinned.has(b.billId);
 
-  // Free-text search across every field on the bill — bill #, patient name,
-  // PID, SIDs, ref doctor, MRD/visit, payment mode, mobile, and the money
-  // columns (amount/discount/paid/balance) plus the date. Pure client-side
-  // filter over the already-loaded rows, so it's instant. Multi-word queries
-  // are AND-matched (e.g. "raja 120" needs both tokens present).
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return bills;
-    const terms = q.split(/\s+/);
-    return bills.filter((b) => {
-      const hay = [
-        b.billNumber,
-        b.billId,
-        b.patientName,
-        b.patientId,
-        b.sids,
-        b.doctorName,
-        b.customerName,
-        b.paymentType,
-        b.mobile,
-        b.amount,
-        b.discount,
-        b.amountPaid,
-        b.balance,
-        b.age,
-        b.billDate ? fmtIST(b.billDate, 'date') : null,
-        b.billDate, // raw ISO so YYYY-MM-DD queries also match
-      ]
-        .filter((v) => v != null && v !== '')
-        .join(' ')
-        .toLowerCase();
-      return terms.every((t) => hay.includes(t));
-    });
-  }, [bills, query]);
+  // Search runs in SQL over EVERY bill in the period (see db/read/ledger.ts
+  // billsWhere), not over the loaded page — a bill on page 24 has to be
+  // findable from page 1. That means it travels in the URL, and always resets
+  // to page 1: a match set has its own paging.
+  const searchHref = useCallback(
+    (next: string) => {
+      const params = new URLSearchParams({ from, to });
+      if (mine) params.set('mine', '1');
+      if (next) params.set('q', next);
+      return `/balances/${mccId}?${params.toString()}`;
+    },
+    [mccId, from, to, mine],
+  );
+
+  const runSearch = useCallback(
+    (next: string) => {
+      startSearchTransition(() => {
+        router.replace(searchHref(next), { scroll: false });
+      });
+    },
+    [router, searchHref],
+  );
+
+  // Follow the URL when it changes underneath us (Back button, period change,
+  // a cleared search) so the box never disagrees with the rows below it.
+  useEffect(() => {
+    setQuery(q);
+  }, [q]);
+
+  // Debounced — each keystroke would otherwise be a full query across
+  // thousands of bills. Enter (below) skips the wait.
+  useEffect(() => {
+    const next = query.trim();
+    if (next === q) return;
+    const t = setTimeout(() => runSearch(next), 350);
+    return () => clearTimeout(t);
+  }, [query, q, runSearch]);
 
   // Pinned negative rows float to the top; everything else keeps the server's
   // date-desc order. Array.sort is stable, so equal-group rows are untouched.
   const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
+    return [...bills].sort((a, b) => {
       const pa = isPinned(a) ? 0 : 1;
       const pb = isPinned(b) ? 0 : 1;
       return pa - pb;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, unpinned]);
+  }, [bills, unpinned]);
 
   const pinnedCount = sorted.filter(isPinned).length;
   const isSearching = query.trim() !== '';
@@ -167,14 +180,23 @@ export function BalancesBillsTable({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search bill #, name, PID, SID, mobile, amount, discount…"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                runSearch(query.trim());
+              }
+            }}
+            placeholder="Search all bills in this period — bill #, name, PID, SID, mobile, amount…"
             aria-label="Search bills"
             className="h-9 w-full rounded-md border border-foreground/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
           />
           {isSearching && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => {
+                setQuery('');
+                runSearch('');
+              }}
               aria-label="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
             >
@@ -182,9 +204,15 @@ export function BalancesBillsTable({
             </button>
           )}
         </div>
+        {/* Counted in SQL over the whole period. It used to read "N of 200",
+            which described the loaded page and hid every match beyond it. */}
         {isSearching && (
           <span className="text-xs text-muted-foreground">
-            {sorted.length} match{sorted.length === 1 ? '' : 'es'} of {bills.length}
+            {isSearchPending
+              ? 'Searching…'
+              : `${matchCount.toLocaleString('en-IN')} match${
+                  matchCount === 1 ? '' : 'es'
+                } in this period`}
           </span>
         )}
       </div>
@@ -208,8 +236,10 @@ export function BalancesBillsTable({
         {sorted.length === 0 ? (
           <TableRow>
             <TableCell colSpan={11} className="text-muted-foreground">
-              {isSearching
-                ? `No bills match “${query.trim()}”.`
+              {isSearchPending
+                ? 'Searching…'
+                : isSearching
+                ? `No bills match “${query.trim()}” anywhere in this period.`
                 : mine
                   ? 'No bills registered by you for this client in this date range.'
                   : 'No Telo bills for this client in this date range.'}

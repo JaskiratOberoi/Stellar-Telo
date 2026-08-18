@@ -230,7 +230,9 @@ export default async function BalanceMccPage({
         <StatCard
           label="Total billed"
           value={inr(totalAmount)}
-          hint={`${data.bills.length} bill${data.bills.length === 1 ? '' : 's'}`}
+          // Period count, NOT data.bills.length — that's one page, so the card
+          // read "200 bills" beside a ₹53L period total.
+          hint={`${data.totals.count.toLocaleString('en-IN')} bill${data.totals.count === 1 ? '' : 's'}`}
         />
         <StatCard
           label="Collected in period"
@@ -253,7 +255,9 @@ export default async function BalanceMccPage({
         />
         <StatCard
           label="Avg bill"
-          value={inr(data.bills.length > 0 ? Math.round(totalAmount / data.bills.length) : 0)}
+          // Period total ÷ period count. Dividing by the page length made the
+          // average ~31× too high on a 31-page account.
+          value={inr(data.totals.count > 0 ? Math.round(totalAmount / data.totals.count) : 0)}
           hint={fmtIST(from, 'date') + ' → ' + fmtIST(to, 'date')}
         />
       </div>
@@ -282,6 +286,8 @@ export default async function BalanceMccPage({
         from={from}
         to={to}
         mine={mine}
+        q={q}
+        matchCount={data.totals.count}
       />
 
       {/* Pager — plain links so paging survives a reload/share and needs no

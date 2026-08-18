@@ -274,7 +274,27 @@ function billsWhere(
   const needle = (q ?? '').trim();
   if (needle) {
     // Metacharacters are stripped, not escaped — the box is a contains-match.
-    req.input('q', sql.NVarChar(120), `%${needle.replace(/[%_[\]]/g, ' ').slice(0, 100)}%`);
+    const safe = needle.replace(/[%_[\]]/g, ' ').slice(0, 100);
+    req.input('q', sql.NVarChar(120), `%${safe}%`);
+    req.input('qpfx', sql.NVarChar(120), `${safe}%`);
+    // Money is matched EXACTLY, and only when the needle is a number. A
+    // contains-match on amounts is mostly noise ("100" hits 1100, 11000, …),
+    // and it costs a CONVERT per row per column; equality is both sharper and
+    // ~150× cheaper (measured 7ms vs 1.2s on a 6k-bill account).
+    let moneyClause = '';
+    if (/^\d{1,9}(\.\d{1,2})?$/.test(safe)) {
+      req.input('qnum', sql.Decimal(18, 2), Number(safe));
+      moneyClause = `
+      OR b.amount                     = @qnum
+      OR b.amount_paid                = @qnum
+      OR ISNULL(b.discount_amount, 0) = @qnum
+      OR b.Balance                    = @qnum`;
+    }
+    // SIDs match by PREFIX, via IN rather than a correlated EXISTS. The
+    // correlated form re-scanned all 5.5M sample rows once per bill and never
+    // returned (>180s); this seeks IX_patient_samples_vailid in ~10ms. A
+    // trailing-wildcard-only match is also the right semantic for an
+    // identifier the operator types from the top.
     qClause = `AND (
          b.patientname       LIKE @q
       OR CONVERT(VARCHAR(20), b.bill_number) LIKE @q
@@ -282,9 +302,11 @@ function billsWhere(
       OR b.mobile_number     LIKE @q
       OR d.doctor_name       LIKE @q
       OR c.customer_name     LIKE @q
-      OR EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_patient_samples s
-                  WHERE s.patient_id = TRY_CONVERT(INT, b.medid)
-                    AND s.vailid LIKE @q)
+      OR b.payment_type      LIKE @q
+      OR CONVERT(VARCHAR(10), b.bill_date, 120) LIKE @q${moneyClause}
+      OR TRY_CONVERT(INT, b.medid) IN (
+           SELECT s.patient_id FROM dbo.tbl_med_mcc_patient_samples s
+            WHERE s.vailid LIKE @qpfx)
     )`;
   }
   return `
@@ -485,6 +507,9 @@ export async function searchTeloBills(
     // Escape LIKE wildcards in the user's needle so '%'/'_' are literal.
     const escaped = needle.replace(/[[%_]/g, (c) => `[${c}]`);
     req.input('q', sql.NVarChar(120), `%${escaped}%`);
+    // SID prefix — see billsWhere: the correlated EXISTS this replaced made
+    // the query scan 5.5M sample rows per candidate bill.
+    req.input('qpfx', sql.NVarChar(120), `${escaped}%`);
 
     let scopeClause = unrestricted
       ? ''
@@ -553,9 +578,9 @@ export async function searchTeloBills(
            OR b.mobile_number LIKE @q
            OR d.doctor_name LIKE @q
            OR c.customer_name LIKE @q
-           OR EXISTS (SELECT 1 FROM dbo.tbl_med_mcc_patient_samples s2
-                       WHERE s2.patient_id = TRY_CONVERT(INT, b.medid)
-                         AND s2.vailid LIKE @q)
+           OR TRY_CONVERT(INT, b.medid) IN (
+                SELECT s2.patient_id FROM dbo.tbl_med_mcc_patient_samples s2
+                 WHERE s2.vailid LIKE @qpfx)
         )
       ORDER BY b.bill_date DESC, b.id DESC
     `);
