@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Pin, PinOff, Search, X } from 'lucide-react';
@@ -37,6 +44,12 @@ export interface BalanceBill {
 }
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+
+/** Idle time before a typed query is sent. Long enough to type a bill number
+ *  through without the results moving underneath you. */
+const SEARCH_DEBOUNCE_MS = 600;
+/** Below this, the box does not search at all — see the debounce effect. */
+const MIN_QUERY_LEN = 2;
 
 // Patient age label — ageType 1=Years (default), 2=Months, 3=Days.
 function fmtPatientAge(age: number | null, ageType: number | null): string {
@@ -103,8 +116,17 @@ export function BalancesBillsTable({
     [mccId, from, to, mine],
   );
 
+  // What the URL was last asked for. Compared against the incoming `q` to tell
+  // OUR OWN navigation echoing back from a genuinely external URL change.
+  const appliedRef = useRef(q);
+  const inputRef = useRef<HTMLInputElement>(null);
+  /** Timestamp of the last keystroke — see the focus-recovery effect. */
+  const lastTypedRef = useRef(0);
+
   const runSearch = useCallback(
     (next: string) => {
+      if (next === appliedRef.current) return;
+      appliedRef.current = next;
       startSearchTransition(() => {
         router.replace(searchHref(next), { scroll: false });
       });
@@ -112,20 +134,42 @@ export function BalancesBillsTable({
     [router, searchHref],
   );
 
-  // Follow the URL when it changes underneath us (Back button, period change,
-  // a cleared search) so the box never disagrees with the rows below it.
+  // Adopt the URL only when it changed from OUTSIDE this box — Back button,
+  // period switch, a link. Blindly mirroring `q` here is what ate keystrokes:
+  // a navigation that landed mid-typing rewrote the input back to the value
+  // that had been in flight, discarding everything typed since it left.
   useEffect(() => {
+    if (q === appliedRef.current) return;
+    appliedRef.current = q;
     setQuery(q);
   }, [q]);
 
-  // Debounced — each keystroke would otherwise be a full query across
-  // thousands of bills. Enter (below) skips the wait.
+  // Belt-and-braces for the other half of "it jumps": if a re-render ever
+  // detaches the input, focus lands on <body> and the next keystroke goes
+  // nowhere. Reclaim it only when it was lost to the navigation itself —
+  // never when the operator deliberately clicked into something else.
   useEffect(() => {
-    const next = query.trim();
-    if (next === q) return;
-    const t = setTimeout(() => runSearch(next), 350);
+    const el = inputRef.current;
+    if (!el || document.activeElement === el) return;
+    const lostToNav =
+      !document.activeElement || document.activeElement === document.body;
+    if (lostToNav && Date.now() - lastTypedRef.current < 2000) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, [q]);
+
+  // Debounced, and only once there's enough to search on. A single character
+  // matches most of the account and fires the heaviest query in the page for
+  // no useful result, so under two characters means "no search" — which also
+  // makes deleting back down to one character clear the filter.
+  useEffect(() => {
+    const typed = query.trim();
+    const next = typed.length >= MIN_QUERY_LEN ? typed : '';
+    if (next === appliedRef.current) return;
+    const t = setTimeout(() => runSearch(next), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [query, q, runSearch]);
+  }, [query, runSearch]);
 
   // Pinned negative rows float to the top; everything else keeps the server's
   // date-desc order. Array.sort is stable, so equal-group rows are untouched.
@@ -139,7 +183,11 @@ export function BalancesBillsTable({
   }, [bills, unpinned]);
 
   const pinnedCount = sorted.filter(isPinned).length;
-  const isSearching = query.trim() !== '';
+  // Two different states: text sitting in the box (show the clear button) vs a
+  // search the server has actually applied (show the match count). They differ
+  // while debouncing, and for a query too short to search on.
+  const hasText = query.trim() !== '';
+  const isFiltered = q !== '';
 
   function setPin(billId: number, nextPinned: boolean) {
     // Optimistic: update local set immediately, then persist.
@@ -177,20 +225,27 @@ export function BalancesBillsTable({
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
+            ref={inputRef}
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              lastTypedRef.current = Date.now();
+              setQuery(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                runSearch(query.trim());
+                // Same floor as the debounce, otherwise the effect would
+                // immediately undo a one-character search forced from here.
+                const typed = query.trim();
+                runSearch(typed.length >= MIN_QUERY_LEN ? typed : '');
               }
             }}
             placeholder="Search all bills in this period — bill #, name, PID, SID, mobile, amount…"
             aria-label="Search bills"
             className="h-9 w-full rounded-md border border-foreground/10 bg-input pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/60"
           />
-          {isSearching && (
+          {hasText && (
             <button
               type="button"
               onClick={() => {
@@ -206,13 +261,15 @@ export function BalancesBillsTable({
         </div>
         {/* Counted in SQL over the whole period. It used to read "N of 200",
             which described the loaded page and hid every match beyond it. */}
-        {isSearching && (
+        {(isSearchPending || isFiltered || hasText) && (
           <span className="text-xs text-muted-foreground">
             {isSearchPending
               ? 'Searching…'
-              : `${matchCount.toLocaleString('en-IN')} match${
-                  matchCount === 1 ? '' : 'es'
-                } in this period`}
+              : isFiltered
+                ? `${matchCount.toLocaleString('en-IN')} match${
+                    matchCount === 1 ? '' : 'es'
+                  } in this period`
+                : 'Keep typing…'}
           </span>
         )}
       </div>
@@ -238,8 +295,8 @@ export function BalancesBillsTable({
             <TableCell colSpan={11} className="text-muted-foreground">
               {isSearchPending
                 ? 'Searching…'
-                : isSearching
-                ? `No bills match “${query.trim()}” anywhere in this period.`
+                : isFiltered
+                ? `No bills match “${q}” anywhere in this period.`
                 : mine
                   ? 'No bills registered by you for this client in this date range.'
                   : 'No Telo bills for this client in this date range.'}
